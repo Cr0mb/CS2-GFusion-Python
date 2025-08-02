@@ -58,7 +58,7 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 </details>
 
 <details>
-<summary><strong>Aimbot</strong></summary>
+<summary><strong>Aimbot & Recoil Control System (RCS)</strong></summary>
 
 - Aimbot Enabled  
 - Aim Key  
@@ -72,30 +72,15 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 - Downward Offset  
 - DeathMatch Mode
 
-</details>
-
-<details>
-<summary><strong>Aimbot Prediction</strong></summary>
-
 - Learning Mode  
 - Learn Directory  
 - Velocity Prediction Toggle  
 - Velocity Prediction Factor
 
-</details>
-
-<details>
-<summary><strong>Aimbot Smooth & Sensitivity</strong></summary>
-
 - Smooth Base & Variation  
 - Sensitivity  
 - Invert Y-Axis  
 - Max Mouse Move Limit
-
-</details>
-
-<details>
-<summary><strong>Recoil Control System (RCS)</strong></summary>
 
 - RCS Toggle  
 - RCS Scale  
@@ -195,6 +180,7 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 - Money ESP Text Color
 
 </details>
+
 
 
 
