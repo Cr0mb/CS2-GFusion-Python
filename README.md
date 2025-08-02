@@ -207,10 +207,8 @@ This script must be run with administrator rights. The game must be running befo
 ## Security and Optimization
 
 * No third-party memory libraries
-* External overlay rendering with PyQt5
-* Designed for USB-bound execution
-* HWID and IP validation supported
-* Supports anti-debug and basic auth logic
+* External overlay rendering
+* Designed for USB-bound execution (not necessary)
 
 ---
 
