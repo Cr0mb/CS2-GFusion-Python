@@ -219,8 +219,3 @@ This script must be run with administrator rights. The game must be running befo
 This software is provided for research and educational purposes only. Using it on protected servers may result in bans. The author is not responsible for misuse.
 
 ---
-
-## Author
-
-Created by cr0mb
-GitHub: [github.com/cr0mb](https://github.com/cr0mb)
