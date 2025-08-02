@@ -1,5 +1,6 @@
 <img width="1169" height="711" alt="image" src="https://github.com/user-attachments/assets/041e5b72-3454-4b4b-851c-cf8a6e9eb0c8" />
 
+For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 
 # GFusion-CS2-Cheat
 
