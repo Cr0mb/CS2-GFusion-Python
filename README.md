@@ -46,16 +46,6 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 </details>
 
 <details>
-<summary><strong>ESP Customization</strong></summary>
-
-- Crosshair Size  
-- Head ESP Size & Shape  
-- Bone Dot Size & Shape  
-- Line ESP Position
-
-</details>
-
-<details>
 <summary><strong>Local Info Box</strong></summary>
 
 - Local Info Box Toggle  
@@ -182,28 +172,30 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 </details>
 
 <details>
-<summary><strong>Color Settings</strong></summary>
+<summary><strong>ESP Customization & Color Settings</strong></summary>
 
-- Box (T / CT)  
-- Bone Lines  
-- Head ESP  
-- Bone Dots  
-- Healthbar / Armorbar  
-- Health / Armor Text  
-- Name ESP Text / Effects  
-- Distance Text  
-- Flash / Scope Effects  
-- Spectator List  
-- Weapon Text  
-- FOV Overlay  
-- Crosshair  
-- Trace ESP  
-- Velocity ESP / Text  
-- Speed ESP  
-- Coordinates ESP  
-- Money Text
+- Crosshair Size & Color  
+- Head ESP Size, Shape & Color  
+- Bone Dot Size, Shape & Color  
+- Line ESP Position & Color  
+- Box ESP Color (T / CT)  
+- Bone Lines Color  
+- Healthbar / Armorbar Colors  
+- Health / Armor Text Colors  
+- Name ESP Text & Effects Color  
+- Distance ESP Text Color  
+- Flash / Scope Effect Colors  
+- Spectator List Color  
+- Weapon ESP Text Color  
+- FOV Overlay Color  
+- Trace ESP Color  
+- Velocity ESP & Text Colors  
+- Speed ESP Text Color  
+- Coordinates ESP Text Color  
+- Money ESP Text Color
 
 </details>
+
 
 
 
