@@ -182,13 +182,6 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 </details>
 
 <details>
-<summary><strong>Utility</strong></summary>
-
-- Aim Stop Toggle
-
-</details>
-
-<details>
 <summary><strong>Color Settings</strong></summary>
 
 - Box (T / CT)  
