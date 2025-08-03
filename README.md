@@ -218,3 +218,16 @@ This script must be run with administrator rights. The game must be running befo
 This software is provided for research and educational purposes only. Using it on protected servers may result in bans. The author is not responsible for misuse.
 
 ---
+
+Copyright (c) 2025 Cr0mb
+
+Permission is granted to use and distribute this software in its original, unmodified form, provided that:
+
+1. This copyright notice and license remain included in all copies.
+2. No modifications or derivative works may be made or distributed without prior written permission from the author.
+
+To request permission for modification, contact the author on Discord: cr0mbleonthegame
+
+Unauthorized modification, reverse engineering, or redistribution of modified versions is strictly prohibited.
+
+By using or distributing this software, you agree to these terms.
