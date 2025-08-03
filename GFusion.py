@@ -1933,6 +1933,7 @@ class MainWindow(QWidget):
         QApplication.quit()
 
 def run():
+    print("Made by GitHub.com/Cr0mb/")
     app = QApplication(sys.argv)
 
     win = MainWindow()
