@@ -190,7 +190,7 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 
 1. Install required dependencies:
 ```
-pip install pyqt5 matplotlib pywin32 keyboard requests
+pip install pyqt5 matplotlib pywin32 keyboard requests cryptography
 ````
 
 2. Run the launcher:
