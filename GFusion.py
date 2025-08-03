@@ -650,6 +650,7 @@ class TriggerBotTab(QWidget):
         self.trigger_checkbox.setChecked(getattr(cfg, "triggerbot_enabled", False))
         self.trigger_key_label.setText(f"Trigger Key: {cfg.trigger_key}")
         self.shoot_teammates_cb.setChecked(getattr(cfg, "shoot_teammates", False))
+        self.always_on_cb.setChecked(getattr(cfg, "triggerbot_always_on", False))  # ← Added this
         self.cooldown_slider.setValue(int(cfg.triggerbot_cooldown * 10))
         self.cooldown_value.setText(f"{cfg.triggerbot_cooldown:.2f}s")
 
@@ -793,7 +794,7 @@ class MiscTab(QWidget):
         team_rgb = tuple(int(c * 255) for c in team_current_color[:3])
         team_color_btn = QPushButton()
         team_color_btn.setFixedSize(40, 20)
-        team_color_btn.setStyleSheet(f"background-color: rgb{team_rgb}; border: 1px solid black;")
+        team_color_btn.setStyleSheet(f"background-color: rgb({team_rgb[0]}, {team_rgb[1]}, {team_rgb[2]}); border: 1px solid black;")
         team_color_row.addWidget(team_color_btn)
 
         def choose_team_color():
@@ -989,20 +990,34 @@ class MiscTab(QWidget):
         self.fov_checkbox.setChecked(getattr(cfg, "fov_changer_enabled", True))
         self.fov_slider.setValue(cfg.game_fov)
         self.fov_label.setText(f"Game FOV: {cfg.game_fov}")
+        
         self.glow_checkbox.setChecked(getattr(Config, "glow", False))
+        self.glow_show_enemies_cb.setChecked(getattr(Config, "glow_show_enemies", True))
+        self.glow_show_team_cb.setChecked(getattr(Config, "glow_show_team", True))
+        
         self.bhop_checkbox.setChecked(getattr(Config, "bhop_enabled", False))
-
-        # Refresh moved checkboxes
+        self.local_info_box_cb.setChecked(getattr(Config, "show_local_info_box", True))
+        
         self.grenade_pred_cb.setChecked(getattr(Config, "grenade_prediction_enabled", False))
         self.noflash_cb.setChecked(getattr(Config, "noflash_enabled", False))
         self.spectator_list_cb.setChecked(getattr(Config, "spectator_list_enabled", False))
-        self.watermark_cb.setChecked(getattr(Config, "watermark_enabled", ))
-        self.local_info_box_cb.setChecked(getattr(Config, "show_local_info_box", True))
-
-        # Update button colors on refresh
+        self.watermark_cb.setChecked(getattr(Config, "watermark_enabled", True))
+        
+        self.toggle_key_label.setText(f"Toggle Menu Key: {cfg.toggle_menu_key}")
+        
+        # Update button colors
         for key, btn in self.ui_elements.get("color_buttons", {}).items():
             rgb = getattr(Config, key, (255, 255, 255))
-            btn.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid black;")
+            # rgb might be either tuple of 3 ints or 4 floats in 0-1 range, normalize accordingly:
+            if len(rgb) == 4:  # assume float rgba (0-1)
+                r, g, b, a = rgb
+                r = int(r * 255)
+                g = int(g * 255)
+                b = int(b * 255)
+            else:  # assume integer rgb
+                r, g, b = rgb[:3]
+            btn.setStyleSheet(f"background-color: rgb({r}, {g}, {b}); border: 1px solid black;")
+
 
 class AimbotTab(QWidget):
     def __init__(self):
@@ -1224,41 +1239,43 @@ class AimbotTab(QWidget):
 
 
         # Sensitivity Slider (inverted)
-        sens_label = QLabel(f"Sensitivity: {Config.sensitivity:.3f}")
-        sens_slider = NoScrollSlider(Qt.Horizontal)
-        sens_slider.setMinimum(8)       # corresponds to 0.008
-        sens_slider.setMaximum(1000)    # corresponds to 1.0
+        self.sens_label = QLabel(f"Sensitivity: {Config.sensitivity:.3f}")
+        self.sens_slider = NoScrollSlider(Qt.Horizontal)
+        self.sens_slider.setMinimum(8)       # corresponds to 0.008
+        self.sens_slider.setMaximum(1000)    # corresponds to 1.0
+
         # Inverted: max slider position = min sensitivity, min slider position = max sensitivity
-        # So, we invert initial value accordingly:
         initial_slider_val = 1000 - int(Config.sensitivity * 1000) + 8
-        sens_slider.setValue(initial_slider_val)
+        self.sens_slider.setValue(initial_slider_val)
 
         def update_sensitivity(value):
-            # invert slider value
             real_val = (1000 - value + 8) / 1000
             real_val = max(0.008, min(1.0, real_val))  # clamp just in case
             setattr(Config, "sensitivity", real_val)
-            sens_label.setText(f"Sensitivity: {real_val:.3f}")
+            self.sens_label.setText(f"Sensitivity: {real_val:.3f}")
 
-        sens_slider.valueChanged.connect(update_sensitivity)
+        self.sens_slider.valueChanged.connect(update_sensitivity)
+
 
         sens_layout = QVBoxLayout()
-        sens_layout.addWidget(sens_label)
-        sens_layout.addWidget(sens_slider)
+        sens_layout.addWidget(self.sens_label)
+        sens_layout.addWidget(self.sens_slider)
+
 
         sens_container = QWidget()
         sens_container.setLayout(sens_layout)
         input_section.addWidget(sens_container, 0, 0, 1, 2)  # span two columns
 
         # Invert Y Checkbox
-        invert_y_cb = CheatCheckBox("Invert Y")
-        invert_y_cb.setChecked(Config.invert_y == -1)
+        self.invert_y_cb = CheatCheckBox("Invert Y")
+        self.invert_y_cb.setChecked(Config.invert_y == -1)
 
         def toggle_invert_y(state):
             setattr(Config, "invert_y", -1 if state == Qt.Checked else 1)
 
-        invert_y_cb.stateChanged.connect(toggle_invert_y)
-        input_section.addWidget(invert_y_cb, 0, 2)  # Adjust column as desired
+        self.invert_y_cb.stateChanged.connect(toggle_invert_y)
+        input_section.addWidget(self.invert_y_cb, 0, 2)  # Adjust column as desired
+
 
         layout.addLayout(input_section)
 
@@ -1312,49 +1329,62 @@ class AimbotTab(QWidget):
 
     def refresh_ui(self):
         """Refresh all UI elements with current config values"""
-        # Update all checkboxes
+
+        # --- Checkboxes ---
         for attr, checkbox in self.ui_elements.get('checkboxes', {}).items():
             checkbox.setChecked(getattr(Config, attr))
-        
-        # Update all float sliders
+
+        # --- Float Sliders ---
         for attr, (slider, label, mult) in self.ui_elements.get('float_sliders', {}).items():
             val = getattr(Config, attr)
             slider.setValue(int(val * mult))
             label.setText(f"{attr.replace('_', ' ').title()}: {val:.2f}")
-        
-        # Update all int sliders
+
+        # --- Int Sliders ---
         for attr, (slider, label) in self.ui_elements.get('int_sliders', {}).items():
             val = getattr(Config, attr)
             slider.setValue(val)
             label.setText(f"{attr.replace('_', ' ').title()}: {val}")
-        
-        # Update all line edits
+
+        # --- Line Edits ---
         for attr, edit in self.ui_elements.get('line_edits', {}).items():
             edit.setText(str(getattr(Config, attr)))
-        
-        # Update combobox
-        self.bone_select.setCurrentText(Config.target_bone_name)
-        self.learn_dir_label.setText(f"Learning Dir: {Config.learn_dir}")
-        self.aim_key_combo.setCurrentText(Config.aim_key)
 
-        # Update color buttons
+        # --- Comboboxes ---
+        if hasattr(self, 'bone_select'):
+            self.bone_select.setCurrentText(Config.target_bone_name)
+        if hasattr(self, 'aim_key_combo'):
+            self.aim_key_combo.setCurrentText(Config.aim_key)
+        if hasattr(self, 'auto_pistol_key_combo'):
+            self.auto_pistol_key_combo.setCurrentText(Config.activation_key.lower())
+
+        # --- Labels ---
+        if hasattr(self, 'learn_dir_label'):
+            self.learn_dir_label.setText(f"Learning Dir: {Config.learn_dir}")
+        if hasattr(self, 'fire_rate_label'):
+            self.fire_rate_label.setText(f"Fire Rate: {Config.fire_rate:.2f}s")
+        if hasattr(self, 'sens_label'):
+            self.sens_label.setText(f"Sensitivity: {Config.sensitivity:.3f}")
+
+        # --- Color Buttons ---
         for attr, btn in self.ui_elements.get('color_buttons', {}).items():
             color = getattr(Config, attr, (255, 255, 255))
             btn.setStyleSheet(f"background-color: rgb{color}; border: 1px solid black;")
 
-        # Refresh controls not in ui_elements dict
-        self.auto_pistol_cb.setChecked(Config.auto_pistol_enabled)
-        self.auto_pistol_key_combo.setCurrentText(Config.activation_key.lower())
-        self.fire_rate_slider.setValue(int(Config.fire_rate * 100))
-        self.fire_rate_label.setText(f"Fire Rate: {Config.fire_rate:.2f}s")
+        # --- Sliders ---
+        if hasattr(self, 'fire_rate_slider'):
+            self.fire_rate_slider.setValue(int(Config.fire_rate * 100))
 
-        # Update sensitivity slider (inverted)
-        sens_val = getattr(Config, "sensitivity", 0.1)
-        self.sens_label.setText(f"Sensitivity: {sens_val:.3f}")
-        slider_val = 1000 - int(sens_val * 1000) + 8
-        self.sens_slider.setValue(slider_val)
+        if hasattr(self, 'sens_slider'):
+            sens_val = max(0.008, min(1.0, getattr(Config, "sensitivity", 0.1)))
+            slider_val = 1000 - int(sens_val * 1000) + 8
+            self.sens_slider.setValue(slider_val)
 
-        self.invert_y_cb.setChecked(getattr(Config, "invert_y", 1) == -1)
+        # --- Individual Checkboxes ---
+        if hasattr(self, 'auto_pistol_cb'):
+            self.auto_pistol_cb.setChecked(Config.auto_pistol_enabled)
+        if hasattr(self, 'invert_y_cb'):
+            self.invert_y_cb.setChecked(Config.invert_y == -1)
 
     def section_title(self, text):
         label = QLabel(text)
@@ -1750,7 +1780,7 @@ def start_toggle_listener(main_window):
     def listen():
         while True:
             try:
-                if keyboard.is_pressed(cfg.toggle_menu_key):
+                if keyboard.is_pressed(Config.toggle_menu_key):
                     main_window.setVisible(not main_window.isVisible())
                     while keyboard.is_pressed(cfg.toggle_menu_key):
                         pass
