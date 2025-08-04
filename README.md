@@ -5,13 +5,13 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 **Donate:** https://paypal.me/GHaxLegit?country.x=US&locale.x=en_US
 
 **Videos**  
-[**V1**](https://www.youtube.com/watch?v=vk7iz4ZaDlY)  
-[**V1.2**](https://www.youtube.com/watch?v=qhYLK4H8oOQ)  
-[**V1.5**](https://www.youtube.com/watch?v=nFDo0aIdPoE)  
-[**V2**](https://www.youtube.com/watch?v=e3C_HtMf_DY)  
-[**V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
-[**V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
-[**V2.2**](https://www.youtube.com/watch?v=JXbsdEL282s)  
+[**GFusion V1**](https://www.youtube.com/watch?v=vk7iz4ZaDlY)  
+[**GFusion V1.2**](https://www.youtube.com/watch?v=qhYLK4H8oOQ)  
+[**GFusion V1.5**](https://www.youtube.com/watch?v=nFDo0aIdPoE)  
+[**GFusion V2**](https://www.youtube.com/watch?v=e3C_HtMf_DY)  
+[**GFusion V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
+[**GFusion V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
+[**GFusion V2.2**](https://www.youtube.com/watch?v=JXbsdEL282s)  
 
 
 # GFusion-CS2-Cheat
