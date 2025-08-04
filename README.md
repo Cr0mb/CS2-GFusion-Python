@@ -4,6 +4,16 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 
 **Donate:** https://paypal.me/GHaxLegit?country.x=US&locale.x=en_US
 
+**Videos**  
+[**V1**](https://www.youtube.com/watch?v=vk7iz4ZaDlY)  
+[**V1.2**](https://www.youtube.com/watch?v=qhYLK4H8oOQ)  
+[**V1.5**](https://www.youtube.com/watch?v=nFDo0aIdPoE)  
+[**V2**](https://www.youtube.com/watch?v=e3C_HtMf_DY)  
+[**V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
+[**V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
+[**V2.2**](https://www.youtube.com/watch?v=JXbsdEL282s)  
+
+
 # GFusion-CS2-Cheat
 
 GFusion is a fully external Python-based cheat framework for Counter-Strike 2. It is built using ctypes, win32api, and PyQt5. It does not rely on any common cheat libraries like pymem or pyMeow.
