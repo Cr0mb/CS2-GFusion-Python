@@ -378,7 +378,18 @@ class Overlay:
         win32gui.SelectObject(hdc, old_pen)
         win32gui.SelectObject(hdc, old_brush)
 
+    def check_and_update_obs_toggle(self):
+        from Process.config import Config
+        if not hasattr(self, '_last_obs_value'):
+            self._last_obs_value = Config.obs_protection_enabled
+            self.update_obs_protection()
+        elif self._last_obs_value != Config.obs_protection_enabled:
+            self._last_obs_value = Config.obs_protection_enabled
+            self.update_obs_protection()
+
     def begin_scene(self):
+        from Process.config import Config
+        self.update_obs_protection()  # <- Add this line
         elapsed = time.perf_counter() - self._last_time
         if elapsed < 1/self.fps:
             time.sleep(1/self.fps - elapsed)
@@ -386,10 +397,20 @@ class Overlay:
         win32gui.FillRect(self.memdc.GetSafeHdc(), (0,0,self.width,self.height), self.black_brush)
         return True
 
+
     def end_scene(self):
         self.hdc_obj.BitBlt((0,0), (self.width,self.height), self.memdc, (0,0), win32con.SRCCOPY)
 
+    def update_obs_protection(self):
+        from Process.config import Config
+        if hasattr(self, 'hwnd'):
+            if getattr(Config, "obs_protection_enabled", True):
+                windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x11)
+            else:
+                windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x00)
+
     def init_window(self, title):
+        from Process.config import Config  # ensure config is accessible
         wc = win32gui.WNDCLASS()
         wc.lpfnWndProc = self._wnd_proc
         wc.lpszClassName = title
@@ -401,6 +422,9 @@ class Overlay:
         self.hwnd = win32gui.CreateWindowEx(ex_style, class_atom, title,
                                             win32con.WS_POPUP, 0, 0, self.width, self.height,
                                             None, None, wc.hInstance, None)
+
+        self.update_obs_protection()
+
         win32gui.SetLayeredWindowAttributes(self.hwnd, 0, 0, win32con.LWA_COLORKEY)
         win32gui.ShowWindow(self.hwnd, win32con.SW_SHOW)
         self.hdc = win32gui.GetDC(self.hwnd)
@@ -409,6 +433,7 @@ class Overlay:
         self.buffer = win32ui.CreateBitmap()
         self.buffer.CreateCompatibleBitmap(self.hdc_obj, self.width, self.height)
         self.memdc.SelectObject(self.buffer)
+
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
         if msg == win32con.WM_DESTROY:
