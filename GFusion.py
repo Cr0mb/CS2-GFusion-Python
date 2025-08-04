@@ -1524,6 +1524,7 @@ class ESPTab(QWidget):
         basic_grid.setHorizontalSpacing(15)
         basic_grid.setVerticalSpacing(8)
         basic_features = [
+            ("Hide from Screen Capture", "obs_protection_enabled"),
             ("Show Box ESP", "show_box_esp"),
             ("Health Bar", "healthbar_enabled"),
             ("Armor Bar", "armorbar_enabled"),
