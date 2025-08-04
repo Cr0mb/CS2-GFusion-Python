@@ -31,7 +31,7 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 
 <details>
 <summary><strong>ESP Features</strong></summary>
-- OBS Proof
+- OBS Proof - only works on Windows 10 build 1903+ (2019 or later)
 - Box ESP  
 - Healthbar ESP  
 - Armorbar ESP  
@@ -214,6 +214,7 @@ python start.pyw
 3. Press `Insert` to open or close the GUI while CS2 is running.
 
 This script must be run with administrator rights. The game must be running before you start the script.
+If menu doesn't show you may need to disable anti-virus.
 
 ---
 
