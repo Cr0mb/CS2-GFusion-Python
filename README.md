@@ -222,11 +222,3 @@ This script must be run with administrator rights. The game must be running befo
 * No third-party memory libraries
 * External overlay rendering
 * Designed for USB-bound execution (not necessary)
-
----
-
-## Disclaimer
-
-This software is provided for research and educational purposes only. Using it on protected servers may result in bans. The author is not responsible for misuse.
-
----
