@@ -1677,13 +1677,21 @@ class ESPTab(QWidget):
     def add_checkbox_to_grid(self, grid, row, col, label, config_attr):
         cb = CheatCheckBox(label)
         cb.setChecked(getattr(Config, config_attr, False))
-        cb.stateChanged.connect(lambda state: setattr(Config, config_attr, state == Qt.Checked))
+
+        def on_state_change(state):
+            enabled = state == Qt.Checked
+            setattr(Config, config_attr, enabled)
+            if config_attr == "obs_protection_enabled" and hasattr(self, 'main_window'):
+                self.main_window.set_obs_protection(enabled)
+
+        cb.stateChanged.connect(on_state_change)
         grid.addWidget(cb, row, col)
-        
+
         # Store reference for refresh
         if 'checkboxes' not in self.ui_elements:
             self.ui_elements['checkboxes'] = {}
         self.ui_elements['checkboxes'][config_attr] = cb
+
 
     def add_checkbox(self, layout, label, config_attr):
         cb = CheatCheckBox(label)
@@ -1793,6 +1801,20 @@ def start_toggle_listener(main_window):
     t = threading.Thread(target=listen, daemon=True)
     t.start()
 
+import ctypes
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget, QApplication
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QWindow
+
+# WinAPI constant for display affinity
+WDA_EXCLUDEFROMCAPTURE = 0x11
+
+# Load SetWindowDisplayAffinity
+user32 = ctypes.windll.user32
+SetWindowDisplayAffinity = user32.SetWindowDisplayAffinity
+SetWindowDisplayAffinity.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
+SetWindowDisplayAffinity.restype = ctypes.wintypes.BOOL
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -1800,11 +1822,11 @@ class MainWindow(QWidget):
         self.setGeometry(100, 100, 950, 700)
         self.setMinimumSize(900, 650)
 
-        # Remove window frame
+        # Frameless, transparent, always on top
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # Styling (optional - can be customized)
+        # Styling
         self.setStyleSheet("""
             QWidget {
                 background-color: #181818;
@@ -1859,23 +1881,20 @@ class MainWindow(QWidget):
             }
         """)
 
-
-
-
-        # Custom drag variables
-        self.old_pos = None
+        # Drag movement setup
         self._drag_active = False
         self._drag_start_pos = None
-        
-        # Create tabs
+
+        # Tabs
         self.tabs = QTabWidget()
         self.aimbot_tab = AimbotTab()
         self.esp_tab = ESPTab()
+        self.esp_tab.main_window = self
         self.triggerbot_tab = TriggerBotTab()
         self.misc_tab = MiscTab()
         self.config_tab = ConfigTab()
         self.recoil_viewer_tab = RecoilViewer()
-        
+
         self.tabs.addTab(self.aimbot_tab, "Aimbot")
         self.tabs.addTab(self.esp_tab, "ESP")
         self.tabs.addTab(self.triggerbot_tab, "TriggerBot")
@@ -1883,23 +1902,43 @@ class MainWindow(QWidget):
         self.tabs.addTab(self.recoil_viewer_tab, "Aim Visualization")
         self.tabs.addTab(self.config_tab, "Config")
 
-        # Connect config loaded signal to refresh all tabs
         self.config_tab.config_loaded.connect(self.refresh_all_tabs)
 
+        # Layout
         layout = QVBoxLayout()
         layout.setSpacing(10)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.addWidget(self.tabs)
 
-        # Exit button
+        # Exit Button
         exit_btn = QPushButton("Exit")
         exit_btn.clicked.connect(self.exit_app)
         layout.addWidget(exit_btn)
 
         self.setLayout(layout)
 
+        # Delay OBS cloak activation until window is shown
+        QTimer.singleShot(100, self.make_obs_proof)
+
+        if getattr(Config, "obs_protection_enabled", False):
+            self.set_obs_protection(True)
+
+    def set_obs_protection(self, enabled):
+        hwnd = int(self.winId())
+        if enabled:
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+        else:
+            SetWindowDisplayAffinity(hwnd, 0)
+
+    def make_obs_proof(self):
+        hwnd = self.winId().__int__()
+        success = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+        if not success:
+            print("[!] Failed to cloak window from OBS.")
+        else:
+            print("")
+
     def refresh_all_tabs(self):
-        """Refresh all tab UIs when config is loaded"""
         try:
             self.aimbot_tab.refresh_ui()
             self.esp_tab.refresh_ui()
