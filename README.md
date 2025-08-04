@@ -2,6 +2,8 @@
 
 For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 
+**Donate:** https://paypal.me/GHaxLegit?country.x=US&locale.x=en_US
+
 # GFusion-CS2-Cheat
 
 GFusion is a fully external Python-based cheat framework for Counter-Strike 2. It is built using ctypes, win32api, and PyQt5. It does not rely on any common cheat libraries like pymem or pyMeow.
