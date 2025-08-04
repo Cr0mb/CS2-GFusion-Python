@@ -21,7 +21,7 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 
 <details>
 <summary><strong>ESP Features</strong></summary>
-
+- OBS Proof
 - Box ESP  
 - Healthbar ESP  
 - Armorbar ESP  
