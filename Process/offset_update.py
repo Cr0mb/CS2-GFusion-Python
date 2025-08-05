@@ -1,22 +1,41 @@
 import json
-import sys
 import os
+import shutil
+import subprocess
+import sys
 import urllib.request
+
+# === Ensure correct working directory ===
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+print(f"[DEBUG] Running in: {os.getcwd()}")
 
 class Offsets:
     @classmethod
     def update_offsets_py(cls):
         try:
-            # URLs for the JSON files
-            urls = {
-                "offsets.json": "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json",
-                "client_dll.json": "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json"
-            }
+            dumper_url = "https://github.com/Cr0mb/CS2-GFusion-Python/releases/download/dumper/cs2-dumper.exe"
+            dumper_path = "cs2-dumper.exe"
 
-            # Download the JSON files
-            for filename, url in urls.items():
-                print(f"[*] Downloading {filename}...")
-                urllib.request.urlretrieve(url, filename)
+            if not os.path.exists(dumper_path):
+                print("[INFO] Downloading cs2-dumper.exe...")
+                urllib.request.urlretrieve(dumper_url, dumper_path)
+                print("[INFO] Download complete.")
+
+            # === Step 2: Run cs2-dumper.exe ===
+            print("[INFO] Running cs2-dumper.exe...")
+            subprocess.run([dumper_path], check=True)
+            print("[INFO] cs2-dumper.exe finished.")
+
+            output_dir = "output"
+            for file_name in ["offsets.json", "client_dll.json"]:
+                src = os.path.join(output_dir, file_name)
+                dst = os.path.join(".", file_name)
+                if os.path.exists(src):
+                    shutil.move(src, dst)
+                    print(f"[INFO] Moved {file_name} to current directory.")
+                else:
+                    raise FileNotFoundError(f"{file_name} not found in {output_dir}")
 
             with open("offsets.json", "r", encoding="utf-8") as f:
                 offset = json.load(f)
@@ -60,10 +79,7 @@ class Offsets:
 
             all_offsets.update(manual_offsets)
 
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            offsets_path = os.path.join(script_dir, "offsets.py")
-
-            with open(offsets_path, "w", encoding="utf-8") as f:
+            with open("offsets.py", "w", encoding="utf-8") as f:
                 f.write("class Offsets:\n")
                 if not all_offsets:
                     f.write("    pass\n")
@@ -71,20 +87,28 @@ class Offsets:
                     for name in sorted(all_offsets):
                         f.write(f"    {name} = {all_offsets[name]}\n")
 
+            print("[SUCCESS] offsets.py updated successfully.")
 
-            print("[*] offsets.py updated successfully.")
+            files_to_delete = [
+                "cs2-dumper.exe",
+                "offsets.json",
+                "client_dll.json",
+                "cs2-dumper.log"
+            ]
+            for file in files_to_delete:
+                if os.path.exists(file):
+                    os.remove(file)
+                    print(f"[CLEANUP] Deleted {file}")
+
+            if os.path.exists(output_dir):
+                shutil.rmtree(output_dir)
+                print(f"[CLEANUP] Removed {output_dir} directory")
 
         except Exception as e:
-            print(f"[!] Failed to update offsets.py: {e}")
+            print(f"[ERROR] Failed to update offsets.py: {e}")
             sys.exit(1)
-        finally:
-            for filename in ["offsets.json", "client_dll.json"]:
-                if os.path.exists(filename):
-                    try:
-                        os.remove(filename)
-                        print(f"[*] Deleted temporary file: {filename}")
-                    except Exception as e:
-                        print(f"[!] Failed to delete {filename}: {e}")
+
 
 # Run the update
-Offsets.update_offsets_py()
+if __name__ == "__main__":
+    Offsets.update_offsets_py()
