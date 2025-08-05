@@ -983,7 +983,9 @@ class MiscTab(QWidget):
 
     def update_toggle_key(self, key):
         cfg.toggle_menu_key = key
+        Config.toggle_menu_key = key  # <-- ensure global Config is updated
         self.toggle_key_label.setText(f"Toggle Menu Key: {key}")
+
 
     def refresh_ui(self):
         """Refresh all UI elements with current config values"""
