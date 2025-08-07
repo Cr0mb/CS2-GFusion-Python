@@ -164,11 +164,6 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 <summary><strong>WalkBot</strong></summary>
 
 - WalkBot Toggle  
-- WalkBot Radius  
-- WalkBot Speed  
-- WalkBot Activation Key  
-- WalkBot Height Offset  
-- WalkBot Mode (Circle / Custom Path)
 
 </details>
 
