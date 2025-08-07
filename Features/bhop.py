@@ -212,6 +212,14 @@ class BHopProcess:
         return int.from_bytes(data, byteorder='little')
 
     def run(self):
+        # Boost script priority
+        kernel32 = ctypes.windll.kernel32
+        PROCESS_PRIORITY_CLASS = 0x00000080  # HIGH_PRIORITY_CLASS
+        kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), PROCESS_PRIORITY_CLASS)
+
+        cached_pawn = 0
+        pawn_refresh_interval = 10
+        pawn_refresh_counter = 0
 
         while True:
             try:
@@ -222,36 +230,38 @@ class BHopProcess:
                     self.cached_exe = self.get_foreground_exe()
                 self.iteration += 1
 
-                if not Config.bhop_enabled:
-                    time.sleep(0.01)
-                    continue
-
-                if self.cached_exe != self.process_name:
-                    time.sleep(0.01)
+                if not Config.bhop_enabled or self.cached_exe != self.process_name:
+                    time.sleep(0.003)
                     continue
 
                 if keyboard.is_pressed('space'):
-                    pawn_ptr = self.read_longlong(self.base_addr + Offsets.dwLocalPlayerPawn)
-                    if pawn_ptr == 0:
-                        time.sleep(0.01)
+                    # Refresh pawn pointer every few iterations
+                    if pawn_refresh_counter <= 0:
+                        cached_pawn = self.read_longlong(self.base_addr + Offsets.dwLocalPlayerPawn)
+                        pawn_refresh_counter = pawn_refresh_interval
+                    else:
+                        pawn_refresh_counter -= 1
+
+                    if cached_pawn == 0:
+                        time.sleep(0.003)
                         continue
 
-                    flags = self.read_int(pawn_ptr + Offsets.m_fFlags)
+                    flags = self.read_int(cached_pawn + Offsets.m_fFlags)
                     on_ground = (flags & 1) == 1
 
-                    now = time.time()
+                    now = time.monotonic()
                     if on_ground and now - self.last_jump_time > self.jump_cooldown:
                         self.press_spacebar()
                         self.last_jump_time = now
 
-                time.sleep(0.0015)
+                time.sleep(0.0005)  # Tighten loop without waste
 
             except KeyboardInterrupt:
                 print("\n[BHop] Interrupted by user, stopping...")
                 break
             except Exception as e:
                 print(f"[BHop ERROR] Exception in main loop: {e}")
-                time.sleep(0.01)
+                time.sleep(0.005)
 
         print("[BHop] Stopped.")
 

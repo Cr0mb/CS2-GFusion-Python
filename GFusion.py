@@ -48,6 +48,40 @@ triggerbot_instance = None
 fov_thread = None
 fov_changer = None
 
+walkbot_thread = None
+
+def run_walkbot():
+    from Features.walk_bot import walk_in_circle
+    import threading
+
+    # Set both loops running in parallel
+    def walk_loop():
+        walk_in_circle()
+
+    def click_loop_thread():
+        click_loop()
+
+    walk_thread = threading.Thread(target=walk_loop, daemon=True)
+    click_thread = threading.Thread(target=click_loop_thread, daemon=True)
+
+    walk_thread.start()
+    click_thread.start()
+
+    walk_thread.join()
+    click_thread.join()
+
+def start_walkbot_thread():
+    global walkbot_thread
+    if walkbot_thread is None or not walkbot_thread.is_alive():
+        Config.walkbot_stop = False
+        Config.walkbot_enabled = True
+        walkbot_thread = threading.Thread(target=run_walkbot, daemon=True)
+        walkbot_thread.start()
+
+def stop_walkbot_thread():
+    Config.walkbot_enabled = False
+    Config.walkbot_stop = True
+
 def start_auto_pistol_thread():
     global auto_pistol_thread
     if not cfg.auto_pistol_enabled:
@@ -894,6 +928,14 @@ class MiscTab(QWidget):
         misc_title.setStyleSheet("font-weight: bold; font-size: 12pt;")
         misc_section.addWidget(misc_title)
 
+        self.walkbot_cb = CheatCheckBox("Enable WalkBot")
+        self.walkbot_cb.setChecked(getattr(Config, "walkbot_enabled", False))
+        self.walkbot_cb.stateChanged.connect(
+            lambda state: start_walkbot_thread() if state == Qt.Checked else stop_walkbot_thread()
+        )
+        misc_section.addWidget(self.walkbot_cb)
+
+
         self.grenade_pred_cb = CheatCheckBox("Grenade Prediction (simple)")
         self.grenade_pred_cb.setChecked(getattr(Config, "grenade_prediction_enabled", False))
         self.grenade_pred_cb.stateChanged.connect(
@@ -983,9 +1025,7 @@ class MiscTab(QWidget):
 
     def update_toggle_key(self, key):
         cfg.toggle_menu_key = key
-        Config.toggle_menu_key = key  # <-- ensure global Config is updated
         self.toggle_key_label.setText(f"Toggle Menu Key: {key}")
-
 
     def refresh_ui(self):
         """Refresh all UI elements with current config values"""
@@ -999,6 +1039,8 @@ class MiscTab(QWidget):
         
         self.bhop_checkbox.setChecked(getattr(Config, "bhop_enabled", False))
         self.local_info_box_cb.setChecked(getattr(Config, "show_local_info_box", True))
+        
+        self.walkbot_cb.setChecked(getattr(Config, "walkbot_enabled", False))
         
         self.grenade_pred_cb.setChecked(getattr(Config, "grenade_prediction_enabled", False))
         self.noflash_cb.setChecked(getattr(Config, "noflash_enabled", False))

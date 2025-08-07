@@ -288,33 +288,30 @@ def get_entities(handle, base):
     return result
 
 class Overlay:
-    BONE_POSITIONS = {
-        "head": 6, "chest": 15, "left_hand": 10,
-        "right_hand": 2, "left_leg": 23, "right_leg": 26,
-    }
+    BONE_POSITIONS = {"head": 6, "chest": 15, "left_hand": 10, "right_hand": 2, "left_leg": 23, "right_leg": 26}
     BONE_CONNECTIONS = [
-        (0, 2), (2, 4), (4, 5), (5, 6),
-        (4, 8), (8, 9), (9, 10),
-        (4, 13), (13, 14), (14, 15),
-        (0, 22), (22, 23), (23, 24),
+        (0, 2), (2, 4), (4, 5), (5, 6), (4, 8), (8, 9), (9, 10),
+        (4, 13), (13, 14), (14, 15), (0, 22), (22, 23), (23, 24),
         (0, 25), (25, 26), (26, 27)
     ]
 
     def __init__(self, title="GHax", fps=144):
         self.width, self.height = win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1)
         self.fps = fps
-        self.font_cache, self.pen_cache, self.brush_cache = {}, {}, {}
         self._last_time = time.perf_counter()
+        self.font_cache, self.pen_cache, self.brush_cache = {}, {}, {}
         self.init_window(title)
         self.black_brush = self.get_brush((0, 0, 0))
+        self._last_obs_value = None  # init once
 
     def __del__(self):
-        for gdi_cache in (self.font_cache, self.pen_cache, self.brush_cache):
-            for obj in gdi_cache.values():
+        for cache in (self.font_cache, self.pen_cache, self.brush_cache):
+            for obj in cache.values():
                 win32gui.DeleteObject(obj)
-        for attr in ('buffer', 'memdc', 'hdc_obj'):
-            if hasattr(self, attr):
-                getattr(self, attr).DeleteDC() if 'dc' in attr else getattr(self, attr).DeleteObject()
+        for attr in ['buffer', 'memdc', 'hdc_obj']:
+            dc = getattr(self, attr, None)
+            if dc:
+                dc.DeleteDC() if 'dc' in attr else dc.DeleteObject()
         if hasattr(self, 'hdc'):
             win32gui.ReleaseDC(self.hwnd, self.hdc)
         if hasattr(self, 'hwnd'):
@@ -338,102 +335,92 @@ class Overlay:
         return self.brush_cache[color]
 
     def draw_circle(self, x, y, r, color):
-        r *= 0.8
         hdc = self.memdc.GetSafeHdc()
-        old_pen = win32gui.SelectObject(hdc, self.get_pen(color))
-        old_brush = win32gui.SelectObject(hdc, win32gui.GetStockObject(win32con.NULL_BRUSH))
-        win32gui.Ellipse(hdc, int(x-r), int(y-r), int(x+r), int(y+r))
-        win32gui.SelectObject(hdc, old_pen)
-        win32gui.SelectObject(hdc, old_brush)
+        r *= 0.8
+        pen = self.get_pen(color)
+        win32gui.SelectObject(hdc, pen)
+        win32gui.SelectObject(hdc, win32gui.GetStockObject(win32con.NULL_BRUSH))
+        win32gui.Ellipse(hdc, int(x - r), int(y - r), int(x + r), int(y + r))
 
     def draw_text(self, text, x, y, color=(255,255,255), size=14, centered=False):
         hdc = self.memdc.GetSafeHdc()
-        old_font = win32gui.SelectObject(hdc, self.get_font(size))
+        font = self.get_font(size)
+        win32gui.SelectObject(hdc, font)
         win32gui.SetTextColor(hdc, win32api.RGB(*color))
         win32gui.SetBkMode(hdc, win32con.TRANSPARENT)
         if centered:
             w, h = win32gui.GetTextExtentPoint32(hdc, text)
-            x -= w//2; y -= h//2
+            x -= w // 2
+            y -= h // 2
         self.memdc.TextOut(int(x), int(y), text)
-        win32gui.SelectObject(hdc, old_font)
 
     def draw_box(self, x, y, w, h, color):
-        self._draw_shape(win32gui.Rectangle, x, y, x+w, y+h, color)
+        self._draw_shape(win32gui.Rectangle, x, y, x + w, y + h, color)
 
     def draw_filled_rect(self, x, y, w, h, color):
-        win32gui.FillRect(self.memdc.GetSafeHdc(), (int(x), int(y), int(x+w), int(y+h)), self.get_brush(color))
+        win32gui.FillRect(self.memdc.GetSafeHdc(), (int(x), int(y), int(x + w), int(y + h)), self.get_brush(color))
 
     def draw_line(self, x1, y1, x2, y2, color):
         hdc = self.memdc.GetSafeHdc()
-        old_pen = win32gui.SelectObject(hdc, self.get_pen(color))
+        pen = self.get_pen(color)
+        win32gui.SelectObject(hdc, pen)
         win32gui.MoveToEx(hdc, int(x1), int(y1))
         win32gui.LineTo(hdc, int(x2), int(y2))
-        win32gui.SelectObject(hdc, old_pen)
 
     def _draw_shape(self, func, x1, y1, x2, y2, color):
         hdc = self.memdc.GetSafeHdc()
-        old_pen = win32gui.SelectObject(hdc, self.get_pen(color))
-        old_brush = win32gui.SelectObject(hdc, win32gui.GetStockObject(win32con.NULL_BRUSH))
+        pen = self.get_pen(color)
+        win32gui.SelectObject(hdc, pen)
+        win32gui.SelectObject(hdc, win32gui.GetStockObject(win32con.NULL_BRUSH))
         func(hdc, int(x1), int(y1), int(x2), int(y2))
-        win32gui.SelectObject(hdc, old_pen)
-        win32gui.SelectObject(hdc, old_brush)
 
     def check_and_update_obs_toggle(self):
         from Process.config import Config
-        if not hasattr(self, '_last_obs_value'):
-            self._last_obs_value = Config.obs_protection_enabled
-            self.update_obs_protection()
-        elif self._last_obs_value != Config.obs_protection_enabled:
-            self._last_obs_value = Config.obs_protection_enabled
+        val = Config.obs_protection_enabled
+        if self._last_obs_value != val:
+            self._last_obs_value = val
             self.update_obs_protection()
 
     def begin_scene(self):
-        from Process.config import Config
-        self.update_obs_protection()  # <- Add this line
+        self.check_and_update_obs_toggle()
         elapsed = time.perf_counter() - self._last_time
-        if elapsed < 1/self.fps:
-            time.sleep(1/self.fps - elapsed)
+        if elapsed < 1 / self.fps:
+            time.sleep((1 / self.fps) - elapsed)
         self._last_time = time.perf_counter()
-        win32gui.FillRect(self.memdc.GetSafeHdc(), (0,0,self.width,self.height), self.black_brush)
+        win32gui.FillRect(self.memdc.GetSafeHdc(), (0, 0, self.width, self.height), self.black_brush)
         return True
 
-
     def end_scene(self):
-        self.hdc_obj.BitBlt((0,0), (self.width,self.height), self.memdc, (0,0), win32con.SRCCOPY)
+        self.hdc_obj.BitBlt((0, 0), (self.width, self.height), self.memdc, (0, 0), win32con.SRCCOPY)
 
     def update_obs_protection(self):
         from Process.config import Config
         if hasattr(self, 'hwnd'):
-            if getattr(Config, "obs_protection_enabled", True):
-                windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x11)
-            else:
-                windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x00)
+            windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x11 if Config.obs_protection_enabled else 0x00)
 
     def init_window(self, title):
-        from Process.config import Config  # ensure config is accessible
         wc = win32gui.WNDCLASS()
         wc.lpfnWndProc = self._wnd_proc
         wc.lpszClassName = title
         wc.hInstance = win32api.GetModuleHandle(None)
         class_atom = win32gui.RegisterClass(wc)
 
-        ex_style = win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW
-
-        self.hwnd = win32gui.CreateWindowEx(ex_style, class_atom, title,
-                                            win32con.WS_POPUP, 0, 0, self.width, self.height,
+        style = win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW
+        self.hwnd = win32gui.CreateWindowEx(style, class_atom, title, win32con.WS_POPUP,
+                                            0, 0, self.width, self.height,
                                             None, None, wc.hInstance, None)
 
         self.update_obs_protection()
 
         win32gui.SetLayeredWindowAttributes(self.hwnd, 0, 0, win32con.LWA_COLORKEY)
         win32gui.ShowWindow(self.hwnd, win32con.SW_SHOW)
+
         self.hdc = win32gui.GetDC(self.hwnd)
         self.hdc_obj = win32ui.CreateDCFromHandle(self.hdc)
         self.memdc = self.hdc_obj.CreateCompatibleDC()
         self.buffer = win32ui.CreateBitmap()
         self.buffer.CreateCompatibleBitmap(self.hdc_obj, self.width, self.height)
         self.memdc.SelectObject(self.buffer)
-
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
         if msg == win32con.WM_DESTROY:
@@ -442,8 +429,7 @@ class Overlay:
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
     def get_module_base(self, pid, module_name):
-        TH32CS_SNAPMODULE = 0x00000008
-        snapshot = windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid)
+        snapshot = windll.kernel32.CreateToolhelp32Snapshot(0x8, pid)
 
         class MODULEENTRY32(ctypes.Structure):
             _fields_ = [
@@ -453,65 +439,72 @@ class Overlay:
                 ("hModule", wintypes.HMODULE), ("szModule", ctypes.c_char * 256), ("szExePath", ctypes.c_char * 260)
             ]
 
-        me32 = MODULEENTRY32()
-        me32.dwSize = ctypes.sizeof(MODULEENTRY32)
+        entry = MODULEENTRY32()
+        entry.dwSize = ctypes.sizeof(MODULEENTRY32)
 
-        base = None
-        if windll.kernel32.Module32First(snapshot, byref(me32)):
+        if windll.kernel32.Module32First(snapshot, byref(entry)):
             while True:
-                if me32.szModule.decode() == module_name:
-                    base = ctypes.cast(me32.modBaseAddr, ctypes.c_void_p).value
-                    break
-                if not windll.kernel32.Module32Next(snapshot, byref(me32)):
+                if entry.szModule.decode() == module_name:
+                    base = ctypes.cast(entry.modBaseAddr, ctypes.c_void_p).value
+                    windll.kernel32.CloseHandle(snapshot)
+                    return base
+                if not windll.kernel32.Module32Next(snapshot, byref(entry)):
                     break
         windll.kernel32.CloseHandle(snapshot)
-        return base
-
+        return None
 
 def RenderBoneESP(overlay, entity, matrix):
-    skeleton_enabled = getattr(Config, "skeleton_esp_enabled", False)
-    bone_dot_enabled = getattr(Config, "bone_dot_esp_enabled", False)
+    # Cache settings for performance
+    skeleton_enabled = Config.skeleton_esp_enabled
+    bone_dot_enabled = Config.bone_dot_esp_enabled
     if not (skeleton_enabled or bone_dot_enabled):
         return
 
-    color_bone = getattr(Config, "color_bone", (255, 255, 255))
-    bone_dot_size = getattr(Config, "bone_dot_size", 6)
-    bone_dot_color = getattr(Config, "bone_dot_color", (255, 0, 255))
-    bone_dot_shape = getattr(Config, "bone_dot_shape", "circle").lower()
+    color_bone = Config.color_bone
+    bone_dot_size = Config.bone_dot_size
+    bone_dot_color = Config.bone_dot_color
+    draw_circle = Config.bone_dot_shape.lower() == "circle"
 
+    # Build required bone set
     needed_bones = set()
     if skeleton_enabled:
         needed_bones.update(b for conn in overlay.BONE_CONNECTIONS for b in conn)
     if bone_dot_enabled:
         needed_bones.update(overlay.BONE_POSITIONS.values())
 
+    # Get screen positions once
+    width, height = overlay.width, overlay.height
     bone_screens = {}
     for bone in needed_bones:
         pos = entity.BonePos(bone)
-        if pos is None:
-            bone_screens[bone] = None
-            continue
-        screen = world_to_screen(matrix, pos, overlay.width, overlay.height)
-        bone_screens[bone] = screen if screen and "x" in screen and "y" in screen else None
+        if pos:
+            screen = world_to_screen(matrix, pos, width, height)
+            if screen and "x" in screen and "y" in screen:
+                bone_screens[bone] = (screen["x"], screen["y"])
+                continue
+        bone_screens[bone] = None
 
+    # Draw skeleton lines
     if skeleton_enabled:
+        draw_line = overlay.draw_line
         for start, end in overlay.BONE_CONNECTIONS:
-            a, b = bone_screens.get(start), bone_screens.get(end)
-            if not (a and b):
-                continue
-            overlay.draw_line(a["x"], a["y"], b["x"], b["y"], color_bone)
+            a, b = bone_screens[start], bone_screens[end]
+            if a and b:
+                draw_line(a[0], a[1], b[0], b[1], color_bone)
 
+    # Draw bone dots
     if bone_dot_enabled:
+        draw_circle_fn = overlay.draw_circle
+        draw_box_fn = overlay.draw_box
+        size = bone_dot_size
         for bone in overlay.BONE_POSITIONS.values():
-            screen = bone_screens.get(bone)
-            if not screen:
-                continue
-            x, y = screen["x"], screen["y"]
-            if bone_dot_shape == "circle":
-                overlay.draw_circle(x, y, bone_dot_size, bone_dot_color)
-            else:  # square or fallback
-                s = bone_dot_size
-                overlay.draw_box(x - s, y - s, s * 2, s * 2, bone_dot_color)
+            screen = bone_screens[bone]
+            if screen:
+                x, y = screen
+                if draw_circle:
+                    draw_circle_fn(x, y, size, bone_dot_color)
+                else:
+                    draw_box_fn(x - size, y - size, size * 2, size * 2, bone_dot_color)
 
 class BombStatus:
     def __init__(self, handle, base):
@@ -763,8 +756,8 @@ def main():
                 overlay.draw_filled_rect(wm_x, wm_y + wm_h // 2, wm_w, wm_h // 2, (40, 40, 40))
                 overlay.draw_box(wm_x, wm_y, wm_w, wm_h, (70, 120, 255))
                 overlay.draw_box(wm_x + 1, wm_y + 1, wm_w - 2, wm_h - 2, (20, 20, 30))
-                overlay.draw_text("GFusion", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
-                overlay.draw_text("GFusion", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
+                overlay.draw_text("GFusion V2.4", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
+                overlay.draw_text("GFusion V2.4", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
                 overlay.draw_text("Made by Cr0mb", wm_x + wm_w // 2, wm_y + (wm_h * 2) // 3, (120, 120, 150), 12, centered=True)
                 overlay.draw_filled_rect(wm_x + wm_w // 4, wm_y + wm_h - 8, wm_w // 2, 2, (70, 120, 255))
 

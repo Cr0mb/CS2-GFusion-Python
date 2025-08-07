@@ -2,11 +2,25 @@ import json
 import os
 
 class Config:    
+    # ===========================
+    # Watermark
+    # ===========================
+
     watermark_enabled = True
-    
+
+
+    # ===========================
+    # Walk Bot
+    # ===========================
+
+    circle_enabled = False
+    circle_stop = False
+
     # ===========================
     # ESP Toggles
     # ===========================
+    obs_protection_enabled = True
+    
     show_box_esp = False
     healthbar_enabled = False
     armorbar_enabled = False

