@@ -28,7 +28,8 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 
 <details>
 <summary><strong>ESP Features</strong></summary>
-- OBS Proof - only works on Windows 10 build 1903+ (2019 or later)
+
+- OBS Proof - only works on Windows 10 build 1903+ (2019 or later)  
 - Box ESP  
 - Healthbar ESP  
 - Armorbar ESP  
@@ -80,17 +81,17 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 - Target Switch Delay  
 - Aim Start Delay  
 - Downward Offset  
-- DeathMatch Mode
+- DeathMatch Mode  
 
 - Learning Mode  
 - Learn Directory  
 - Velocity Prediction Toggle  
-- Velocity Prediction Factor
+- Velocity Prediction Factor  
 
 - Smooth Base & Variation  
 - Sensitivity  
 - Invert Y-Axis  
-- Max Mouse Move Limit
+- Max Mouse Move Limit  
 
 - RCS Toggle  
 - RCS Scale  
@@ -160,6 +161,18 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 </details>
 
 <details>
+<summary><strong>WalkBot</strong></summary>
+
+- WalkBot Toggle  
+- WalkBot Radius  
+- WalkBot Speed  
+- WalkBot Activation Key  
+- WalkBot Height Offset  
+- WalkBot Mode (Circle / Custom Path)
+
+</details>
+
+<details>
 <summary><strong>Menu GUI</strong></summary>
 
 - Toggle Key: Insert
@@ -190,6 +203,7 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 - Money ESP Text Color
 
 </details>
+
 
 
 
