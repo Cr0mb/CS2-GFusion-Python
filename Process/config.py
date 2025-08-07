@@ -20,7 +20,8 @@ class Config:
     # ESP Toggles
     # ===========================
     obs_protection_enabled = True
-    
+    show_overlay_fps = True
+
     show_box_esp = False
     healthbar_enabled = False
     armorbar_enabled = False

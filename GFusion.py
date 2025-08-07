@@ -1600,6 +1600,7 @@ class ESPTab(QWidget):
             ("Speed ESP", "speed_esp"),
             ("Coordinate ESP", "coordinates_esp_enabled"),
             ("Trace ESP", "trace_esp_enabled"),
+            ("Show Drawing FPS", "show_overlay_fps"),
         ]
         self.add_slider(layout, "Max Trace Points", "trace_esp_max_points", 10, 500)
         for i, (label, attr) in enumerate(advanced_features):

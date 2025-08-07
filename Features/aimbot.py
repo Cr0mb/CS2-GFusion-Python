@@ -538,8 +538,12 @@ class AimbotRCS:
         GetAsyncKeyState = windll.user32.GetAsyncKeyState
 
         prev_weapon_id = None
-        sleep_base = 0.005
-        sleep_no_target = 0.02  # more sleep when no target
+        max_fps = 60
+        frame_time = 1.0 / max_fps
+
+        entity_cache = {}
+        cache_refresh_rate = 0.2  # seconds
+        last_cache_time = 0
 
         def normalize_angle_delta(delta):
             while delta > 180:
@@ -549,7 +553,7 @@ class AimbotRCS:
             return delta
 
         def squared_distance(a, b):
-            return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2
+            return sum((a[i] - b[i]) ** 2 for i in range(3))
 
         def is_valid_target(pawn, my_team):
             if not pawn:
@@ -557,39 +561,33 @@ class AimbotRCS:
             health = self.read(pawn + self.o.m_iHealth)
             if health <= 0:
                 return False
-            life_state = self.read(pawn + self.o.m_lifeState)
-            dormant = self.read(pawn + self.o.m_bDormant, "int")
+            if self.read(pawn + self.o.m_lifeState) != 256:
+                return False
+            if self.read(pawn + self.o.m_bDormant, "int"):
+                return False
             team = self.read(pawn + self.o.m_iTeamNum)
-            return life_state == 256 and not dormant and (self.cfg.DeathMatch or team != my_team)
+            return self.cfg.DeathMatch or team != my_team
 
         while not self.cfg.aim_stop:
-            aim_vk = get_vk_code(self.cfg.aim_key)
-            if aim_vk is None:
-                time.sleep(0.5)
-                continue
+            start_time = time.perf_counter()
+
             try:
-            # Poll mouse button
-                self.left_down = GetAsyncKeyState(aim_vk) & 0x8000 != 0
-
-                if not self.left_down:
-                    self.shots_fired = 0
-                    self.last_punch = (0.0, 0.0)
-                    self.last_aim_angle = None
-
-                if not self.is_cs2_focused():
+                aim_vk = get_vk_code(self.cfg.aim_key)
+                if aim_vk is None or not self.is_cs2_focused():
                     time.sleep(0.1)
                     continue
 
+                self.left_down = GetAsyncKeyState(aim_vk) & 0x8000 != 0
+
                 if not self.cfg.enabled:
-                    time.sleep(sleep_base)
+                    time.sleep(0.01)
                     continue
 
+                # Read once per frame
                 base = self.base
                 o = self.o
-
                 pawn = self.read(base + o.dwLocalPlayerPawn, "long")
                 if not pawn:
-                    time.sleep(sleep_base)
                     continue
 
                 weapon_id = self.weapon_tracker.get_current_weapon_id()
@@ -597,83 +595,88 @@ class AimbotRCS:
                     self.load_learning()
                     prev_weapon_id = weapon_id
 
-                health = self.read(pawn + o.m_iHealth)
-                if health <= 0:
-                    time.sleep(sleep_base)
+                if self.read(pawn + o.m_iHealth) <= 0:
+                    continue
+
+                if not self.weapon_tracker.is_weapon_valid_for_aim():
                     continue
 
                 ctrl = self.read(base + o.dwLocalPlayerController, "long")
-                if not self.weapon_tracker.is_weapon_valid_for_aim():
-                    self.shots_fired = 0
-                    self.last_punch = (0.0, 0.0)
-                    time.sleep(sleep_base)
-                    continue
-
                 my_team = self.read(pawn + o.m_iTeamNum)
                 my_pos = self.read_vec3(pawn + o.m_vOldOrigin)
+
                 view_angles_addr = base + o.dwViewAngles
                 pitch = self.read(view_angles_addr, "float")
                 yaw = self.read(view_angles_addr + 4, "float")
                 recoil_pitch = self.read(pawn + o.m_aimPunchAngle, "float")
                 recoil_yaw = self.read(pawn + o.m_aimPunchAngle + 4, "float")
+
                 entity_list = self.read(base + o.dwEntityList, "long")
                 if not entity_list:
-                    time.sleep(sleep_base)
                     continue
 
-                target = None
-                target_pos = None
-
-                if self.target_id is not None:
-                    t_ctrl = self.get_entity(entity_list, self.target_id)
-                    t_pawn = self.get_entity(entity_list, self.read(t_ctrl + o.m_hPlayerPawn) & 0x7FFF) if t_ctrl else 0
-                    if is_valid_target(t_pawn, my_team):
-                        bone_index = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw)
-                        pos = self.read_bone_pos(t_pawn, bone_index) or self.read_vec3(t_pawn + o.m_vOldOrigin)
-                        vel = self.read_vec3(t_pawn + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
-                        predicted = [pos[i] + vel[i] * 0.1 for i in range(3)]
-                        predicted[2] -= self.cfg.downward_offset
-                        tp, ty = self.calc_angle(my_pos, predicted)
-                        if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
-                            self.target_id = None
-                            self.last_target_lost_time = time.time()
-                        else:
-                            target, target_pos = t_pawn, predicted
-                    else:
-                        self.target_id = None
-                        self.last_target_lost_time = time.time()
-
-                if target is None:
-                    if self.last_target_lost_time and (time.time() - self.last_target_lost_time) < self.cfg.target_switch_delay:
-                        time.sleep(sleep_no_target)
-                        continue
-
-                    min_dist_sq = float("inf")
+                # =========================
+                # Entity Cache Refresh
+                # =========================
+                if time.time() - last_cache_time > cache_refresh_rate:
+                    entity_cache.clear()
                     for i in range(self.cfg.max_entities):
                         ctrl_ent = self.get_entity(entity_list, i)
                         if not ctrl_ent or ctrl_ent == ctrl:
                             continue
                         pawn_ent = self.get_entity(entity_list, self.read(ctrl_ent + o.m_hPlayerPawn) & 0x7FFF)
-                        if not is_valid_target(pawn_ent, my_team):
+                        if not pawn_ent or not is_valid_target(pawn_ent, my_team):
                             continue
-                        bone_index = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw)
-                        pos = self.read_bone_pos(pawn_ent, bone_index) or self.read_vec3(pawn_ent + o.m_vOldOrigin)
+                        entity_cache[i] = (ctrl_ent, pawn_ent)
+                    last_cache_time = time.time()
+
+                target, target_pos = None, None
+
+                # ================
+                # Track Target
+                # ================
+                if self.target_id in entity_cache:
+                    _, t_pawn = entity_cache[self.target_id]
+                    bone_idx = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw)
+                    pos = self.read_bone_pos(t_pawn, bone_idx) or self.read_vec3(t_pawn + o.m_vOldOrigin)
+                    vel = self.read_vec3(t_pawn + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
+                    predicted = [pos[i] + vel[i] * 0.1 for i in range(3)]
+                    predicted[2] -= self.cfg.downward_offset
+                    tp, ty = self.calc_angle(my_pos, predicted)
+                    if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
+                        self.target_id = None
+                        self.last_target_lost_time = time.time()
+                    else:
+                        target, target_pos = t_pawn, predicted
+
+                # =====================
+                # Acquire New Target
+                # =====================
+                if target is None:
+                    if self.last_target_lost_time and (time.time() - self.last_target_lost_time) < self.cfg.target_switch_delay:
+                        continue
+                    min_dist = float("inf")
+                    for i, (_, pawn_ent) in entity_cache.items():
+                        bone_idx = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw)
+                        pos = self.read_bone_pos(pawn_ent, bone_idx) or self.read_vec3(pawn_ent + o.m_vOldOrigin)
                         vel = self.read_vec3(pawn_ent + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
-                        predicted = [pos[i] + vel[i] * 0.1 for i in range(3)]
+                        predicted = [pos[j] + vel[j] * 0.1 for j in range(3)]
                         predicted[2] -= self.cfg.downward_offset
                         tp, ty = self.calc_angle(my_pos, predicted)
                         if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
                             continue
-                        dist_sq = squared_distance(my_pos, predicted)
-                        if dist_sq < min_dist_sq:
-                            min_dist_sq = dist_sq
+                        dist = squared_distance(my_pos, predicted)
+                        if dist < min_dist:
+                            min_dist = dist
                             target, target_pos, self.target_id = pawn_ent, predicted, i
 
+                # ================
+                # Aimbot Logic
+                # ================
                 if self.left_down:
+                    self.shots_fired += 1
                     if self.aim_start_time and time.time() - self.aim_start_time < self.cfg.aim_start_delay:
                         continue
-
-                    self.shots_fired += 1
                     if target and target_pos:
                         tp, ty = self.calc_angle(my_pos, target_pos)
                         if abs(self.angle_diff(ty, yaw)) > 90:
@@ -687,13 +690,9 @@ class AimbotRCS:
                             compensated_pitch = self.clamp_angle_diff(pitch, tp)
                             compensated_yaw = self.clamp_angle_diff(yaw, ty)
 
-                        if self.cfg.rcs_enabled:
-                            smooth = max(0.01, min(self.cfg.rcs_smooth_base + random.uniform(-self.cfg.rcs_smooth_var, self.cfg.rcs_smooth_var), 0.25))
-                        else:
-                            smooth = max(0.01, min(self.cfg.smooth_base + random.uniform(-self.cfg.smooth_var, self.cfg.smooth_var), 0.25))
+                        smooth = max(0.01, min(self.cfg.smooth_base + random.uniform(-self.cfg.smooth_var, self.cfg.smooth_var), 0.25))
                         key = self.quantize_angle(compensated_pitch, compensated_yaw, self.shots_fired)
                         dp, dy = self.get_learned_correction(key)
-
                         compensated_pitch += dp
                         compensated_yaw += dy
 
@@ -713,9 +712,8 @@ class AimbotRCS:
                         mouse_dx = int(-delta_yaw / self.cfg.sensitivity)
                         mouse_dy = int(-delta_pitch / self.cfg.sensitivity) * self.cfg.invert_y
 
-                        max_mouse_move = self.cfg.max_mouse_move
-                        mouse_dx = max(min(mouse_dx, max_mouse_move), -max_mouse_move)
-                        mouse_dy = max(min(mouse_dy, max_mouse_move), -max_mouse_move)
+                        mouse_dx = max(min(mouse_dx, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
+                        mouse_dy = max(min(mouse_dy, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
 
                         move_mouse(mouse_dx, mouse_dy)
 
@@ -734,17 +732,19 @@ class AimbotRCS:
                     self.shots_fired = 0
                     self.last_aim_angle = None
 
-                time.sleep(sleep_base + random.uniform(0, 0.003))
-
-            except (EOFError, BrokenPipeError):
-                break
             except Exception as e:
-                print(f"[!] Exception in AimbotRCS: {e}")
+                print(f"[!] AimbotRCS error: {e}")
                 time.sleep(0.3)
+
+            # =====================
+            # Frame Limiting
+            # =====================
+            elapsed = time.perf_counter() - start_time
+            sleep_time = max(0.0, frame_time - elapsed)
+            time.sleep(sleep_time)
 
         if self.cfg.enable_learning:
             self.save_learning()
-
         print("[AimbotRCS] Stopped.")
 
 def start_aim_rcs(cfg):

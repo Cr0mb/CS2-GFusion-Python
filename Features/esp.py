@@ -134,49 +134,82 @@ def world_to_screen(matrix, pos, width, height):
         "y": height / 2 - (y * inv_w) * height / 2
     }
 
-# --- Entity Wrapper ---
-
 class Entity:
     def __init__(self, controller, pawn, handle):
-        self.handle, self.controller, self.pawn = handle, controller, pawn
+        self.handle = handle
+        self.controller = controller
+        self.pawn = pawn
+        self.last_update_time = 0
+        self.cached_frame = -1
+        self.bone_base = None
+
+        # Cache offsets locally for speed
+        self._h = Offsets.m_iHealth
+        self._t = Offsets.m_iTeamNum
+        self._p = Offsets.m_vOldOrigin
+        self._scene_node_off = Offsets.m_pGameSceneNode
+        self._bone_array_off = Offsets.m_pBoneArray
+        self._player_name_off = Offsets.m_iszPlayerName
+        self._money_services_off = Offsets.m_pInGameMoneyServices
+        self._money_acc_off = Offsets.m_iAccount
+
+    def update(self, current_frame):
+        if self.cached_frame == current_frame:
+            return
+        self.cached_frame = current_frame
+        self.read_data()
 
     def read_data(self):
-        h, t, p = Offsets.m_iHealth, Offsets.m_iTeamNum, Offsets.m_vOldOrigin
-        self.hp = read_int(self.handle, self.pawn + h)
-        self.team = read_int(self.handle, self.pawn + t)
-        self.pos = read_vec3(self.handle, self.pawn + p)
+        hp = read_int(self.handle, self.pawn + self._h)
+        team = read_int(self.handle, self.pawn + self._t)
+        pos = read_vec3(self.handle, self.pawn + self._p)
 
-        scene_node = safe_read_uint64(self.handle, self.pawn + Offsets.m_pGameSceneNode)
-        self.bone_base = safe_read_uint64(self.handle, scene_node + Offsets.m_pBoneArray)
-        self.head = read_vec3(self.handle, self.bone_base + 6 * 0x20) if self.bone_base else None
+        scene_node = safe_read_uint64(self.handle, self.pawn + self._scene_node_off)
+        bone_base = None
+        if scene_node:
+            bone_base = safe_read_uint64(self.handle, scene_node + self._bone_array_off)
+        
+        head = None
+        if bone_base:
+            head = read_vec3(self.handle, bone_base + 6 * 0x20)
 
-        self.name = self.read_name()
+        self.hp = hp
+        self.team = team
+        self.pos = pos
+        self.bone_base = bone_base
+        self.head = head
 
-        # Get money from CCSPlayerController_InGameMoneyServices
-        try:
-            money_services = safe_read_uint64(self.handle, self.controller + Offsets.m_pInGameMoneyServices)
-            self.money = read_int(self.handle, money_services + Offsets.m_iAccount)
-        except:
-            self.money = 0
+        # Read name once and cache it unless it can change often (add logic if needed)
+        if not hasattr(self, 'name') or self.name is None:
+            self.name = self.read_name()
 
+        # Avoid try/except by checking pointer validity
+        money = 0
+        money_services = safe_read_uint64(self.handle, self.controller + self._money_services_off)
+        if money_services:
+            money = read_int(self.handle, money_services + self._money_acc_off)
+        self.money = money
 
     def read_name(self):
-        try:
-            raw = read_bytes(self.handle, self.controller + Offsets.m_iszPlayerName, 32)
+        raw = read_bytes(self.handle, self.controller + self._player_name_off, 32)
+        if raw:
             return raw.split(b'\x00')[0].decode(errors='ignore')
-        except:
-            return "Unknown"
+        return "Unknown"
 
     def BonePos(self, index):
-        if not hasattr(self, 'bone_base'):
-            node = safe_read_uint64(self.handle, self.pawn + Offsets.m_pGameSceneNode)
-            self.bone_base = safe_read_uint64(self.handle, node + Offsets.m_pBoneArray)
-        return read_vec3(self.handle, self.bone_base + index*0x20) if self.bone_base else None
+        if not self.bone_base:
+            scene_node = safe_read_uint64(self.handle, self.pawn + self._scene_node_off)
+            self.bone_base = safe_read_uint64(self.handle, scene_node + self._bone_array_off) if scene_node else None
+
+        if self.bone_base:
+            return read_vec3(self.handle, self.bone_base + index * 0x20)
+        return None
 
     def wts(self, matrix, width, height):
-        self.feet2d = world_to_screen(matrix, self.pos, width, height)
-        self.head2d = world_to_screen(matrix, self.head, width, height)
-        return self.feet2d is not None and self.head2d is not None
+        feet2d = world_to_screen(matrix, self.pos, width, height)
+        head2d = world_to_screen(matrix, self.head, width, height)
+        self.feet2d, self.head2d = feet2d, head2d
+        return feet2d is not None and head2d is not None
 
 class SpectatorList:
     def __init__(self, handle, client_base):
@@ -259,7 +292,6 @@ class SpectatorList:
             print(f"[Spectator Error] {type(e).__name__}: {e}")
             return []
 
-# --- Entity Collection ---
 
 def get_entities(handle, base):
     local = safe_read_uint64(handle, base + Offsets.dwLocalPlayerController)
@@ -267,25 +299,45 @@ def get_entities(handle, base):
     result = []
 
     for i in range(1, 65):
+        # Precompute indices
+        i_mask_7FFF = i & 0x7FFF
+        i_mask_1FF = i & 0x1FF
+
+        list_offset = ((i_mask_7FFF) >> 9) * 8 + 16
         try:
-            list_entry = entity_list + ((i & 0x7FFF) >> 9) * 8 + 16
+            list_entry = entity_list + list_offset
             entry = safe_read_uint64(handle, list_entry)
-            ctrl = safe_read_uint64(handle, entry + 120 * (i & 0x1FF))
+            if not entry:
+                continue
+
+            ctrl_offset = 120 * i_mask_1FF
+            ctrl = safe_read_uint64(handle, entry + ctrl_offset)
             if not ctrl or ctrl == local:
                 continue
 
             hPawn = safe_read_uint64(handle, ctrl + Offsets.m_hPlayerPawn)
-            pawn_entry = safe_read_uint64(handle, entity_list + ((hPawn & 0x7FFF) >> 9) * 8 + 16)
-            pawn = safe_read_uint64(handle, pawn_entry + 120 * (hPawn & 0x1FF))
+            if not hPawn:
+                continue
+
+            pawn_list_offset = ((hPawn & 0x7FFF) >> 9) * 8 + 16
+            pawn_entry = safe_read_uint64(handle, entity_list + pawn_list_offset)
+            if not pawn_entry:
+                continue
+
+            pawn_offset = 120 * (hPawn & 0x1FF)
+            pawn = safe_read_uint64(handle, pawn_entry + pawn_offset)
             if not pawn:
                 continue
 
             ent = Entity(ctrl, pawn, handle)
             ent.read_data()
             result.append(ent)
-        except:
+
+        except Exception as e:
             continue
+
     return result
+
 
 class Overlay:
     BONE_POSITIONS = {"head": 6, "chest": 15, "left_hand": 10, "right_hand": 2, "left_leg": 23, "right_leg": 26}
@@ -298,105 +350,178 @@ class Overlay:
     def __init__(self, title="GHax", fps=144):
         self.width, self.height = win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1)
         self.fps = fps
+        self._frame_time = 1 / fps
+        self._accumulator = 0.0
         self._last_time = time.perf_counter()
-        self.font_cache, self.pen_cache, self.brush_cache = {}, {}, {}
+
+        self._frame_count = 0
+        self._fps_timer = time.perf_counter()
+        self.current_fps = 0
+
+        self.font_cache = {}
+        self.pen_cache = {}
+        self.brush_cache = {}
+
+        self._last_obs_check_time = 0
+        self._obs_check_interval = 0.5  # check OBS toggle twice per second
+        self._last_obs_value = None
+
         self.init_window(title)
         self.black_brush = self.get_brush((0, 0, 0))
-        self._last_obs_value = None  # init once
+
+        # State caching for the current frame to minimize GDI calls
+        self._current_pen = None
+        self._current_brush = None
+        self._current_font = None
+        self._hdc = None
 
     def __del__(self):
         for cache in (self.font_cache, self.pen_cache, self.brush_cache):
             for obj in cache.values():
-                win32gui.DeleteObject(obj)
-        for attr in ['buffer', 'memdc', 'hdc_obj']:
+                try:
+                    win32gui.DeleteObject(obj)
+                except Exception:
+                    pass
+
+        for attr in ('buffer', 'memdc', 'hdc_obj'):
             dc = getattr(self, attr, None)
             if dc:
-                dc.DeleteDC() if 'dc' in attr else dc.DeleteObject()
+                try:
+                    dc.DeleteDC() if 'dc' in attr else dc.DeleteObject()
+                except Exception:
+                    pass
+
         if hasattr(self, 'hdc'):
-            win32gui.ReleaseDC(self.hwnd, self.hdc)
+            try:
+                win32gui.ReleaseDC(self.hwnd, self.hdc)
+            except Exception:
+                pass
+
         if hasattr(self, 'hwnd'):
-            win32gui.DestroyWindow(self.hwnd)
+            try:
+                win32gui.DestroyWindow(self.hwnd)
+            except Exception:
+                pass
 
     def get_font(self, size):
         if size not in self.font_cache:
             lf = win32gui.LOGFONT()
-            lf.lfHeight, lf.lfWeight, lf.lfFaceName = size, 700, "Segoe UI"
-            self.font_cache[size] = win32gui.CreateFontIndirect(lf)
+            lf.lfHeight = -int(size)  # negative for pixel size
+            lf.lfWeight = 700
+            lf.lfFaceName = "Segoe UI"
+            font = win32gui.CreateFontIndirect(lf)
+            self.font_cache[size] = font
         return self.font_cache[size]
 
     def get_pen(self, color):
         if color not in self.pen_cache:
-            self.pen_cache[color] = win32gui.CreatePen(win32con.PS_SOLID, 1, win32api.RGB(*color))
+            pen = win32gui.CreatePen(win32con.PS_SOLID, 1, win32api.RGB(*color))
+            self.pen_cache[color] = pen
         return self.pen_cache[color]
 
     def get_brush(self, color):
         if color not in self.brush_cache:
-            self.brush_cache[color] = win32gui.CreateSolidBrush(win32api.RGB(*color))
+            brush = win32gui.CreateSolidBrush(win32api.RGB(*color))
+            self.brush_cache[color] = brush
         return self.brush_cache[color]
 
-    def draw_circle(self, x, y, r, color):
-        hdc = self.memdc.GetSafeHdc()
-        r *= 0.8
-        pen = self.get_pen(color)
-        win32gui.SelectObject(hdc, pen)
-        win32gui.SelectObject(hdc, win32gui.GetStockObject(win32con.NULL_BRUSH))
-        win32gui.Ellipse(hdc, int(x - r), int(y - r), int(x + r), int(y + r))
+    def select_pen(self, color):
+        if self._current_pen != color:
+            pen = self.get_pen(color)
+            win32gui.SelectObject(self._hdc, pen)
+            self._current_pen = color
 
-    def draw_text(self, text, x, y, color=(255,255,255), size=14, centered=False):
-        hdc = self.memdc.GetSafeHdc()
-        font = self.get_font(size)
-        win32gui.SelectObject(hdc, font)
-        win32gui.SetTextColor(hdc, win32api.RGB(*color))
-        win32gui.SetBkMode(hdc, win32con.TRANSPARENT)
+    def select_brush(self, color):
+        if self._current_brush != color:
+            brush = self.get_brush(color)
+            win32gui.SelectObject(self._hdc, brush)
+            self._current_brush = color
+
+    def select_font(self, size):
+        if self._current_font != size:
+            font = self.get_font(size)
+            win32gui.SelectObject(self._hdc, font)
+            self._current_font = size
+
+    def draw_circle(self, x, y, r, color):
+        r = int(r * 0.8)
+        self.select_pen(color)
+        null_brush = win32gui.GetStockObject(win32con.NULL_BRUSH)
+        win32gui.SelectObject(self._hdc, null_brush)
+        win32gui.Ellipse(self._hdc, int(x - r), int(y - r), int(x + r), int(y + r))
+
+    def draw_text(self, text, x, y, color=(255, 255, 255), size=14, centered=False):
+        self.select_font(size)
+        win32gui.SetTextColor(self._hdc, win32api.RGB(*color))
+        win32gui.SetBkMode(self._hdc, win32con.TRANSPARENT)
         if centered:
-            w, h = win32gui.GetTextExtentPoint32(hdc, text)
+            w, h = win32gui.GetTextExtentPoint32(self._hdc, text)
             x -= w // 2
             y -= h // 2
         self.memdc.TextOut(int(x), int(y), text)
 
     def draw_box(self, x, y, w, h, color):
-        self._draw_shape(win32gui.Rectangle, x, y, x + w, y + h, color)
+        self.select_pen(color)
+        null_brush = win32gui.GetStockObject(win32con.NULL_BRUSH)
+        win32gui.SelectObject(self._hdc, null_brush)
+        win32gui.Rectangle(self._hdc, int(x), int(y), int(x + w), int(y + h))
 
     def draw_filled_rect(self, x, y, w, h, color):
-        win32gui.FillRect(self.memdc.GetSafeHdc(), (int(x), int(y), int(x + w), int(y + h)), self.get_brush(color))
+        rect = (int(x), int(y), int(x + w), int(y + h))
+        win32gui.FillRect(self._hdc, rect, self.get_brush(color))
 
     def draw_line(self, x1, y1, x2, y2, color):
-        hdc = self.memdc.GetSafeHdc()
-        pen = self.get_pen(color)
-        win32gui.SelectObject(hdc, pen)
-        win32gui.MoveToEx(hdc, int(x1), int(y1))
-        win32gui.LineTo(hdc, int(x2), int(y2))
-
-    def _draw_shape(self, func, x1, y1, x2, y2, color):
-        hdc = self.memdc.GetSafeHdc()
-        pen = self.get_pen(color)
-        win32gui.SelectObject(hdc, pen)
-        win32gui.SelectObject(hdc, win32gui.GetStockObject(win32con.NULL_BRUSH))
-        func(hdc, int(x1), int(y1), int(x2), int(y2))
+        self.select_pen(color)
+        win32gui.MoveToEx(self._hdc, int(x1), int(y1))
+        win32gui.LineTo(self._hdc, int(x2), int(y2))
 
     def check_and_update_obs_toggle(self):
-        from Process.config import Config
-        val = Config.obs_protection_enabled
-        if self._last_obs_value != val:
-            self._last_obs_value = val
-            self.update_obs_protection()
+        now = time.perf_counter()
+        if now - self._last_obs_check_time >= self._obs_check_interval:
+            from Process.config import Config
+            val = Config.obs_protection_enabled
+            if self._last_obs_value != val:
+                self._last_obs_value = val
+                self.update_obs_protection()
+            self._last_obs_check_time = now
 
     def begin_scene(self):
-        self.check_and_update_obs_toggle()
-        elapsed = time.perf_counter() - self._last_time
-        if elapsed < 1 / self.fps:
-            time.sleep((1 / self.fps) - elapsed)
-        self._last_time = time.perf_counter()
+        now = time.perf_counter()
+        delta = now - self._last_time
+        self._last_time = now
+        self._accumulator += delta
+
+        if self._accumulator < self._frame_time:
+            return False  # skip frame, too soon
+
+        self._accumulator -= self._frame_time
+
+        # Clear screen to black once per frame
         win32gui.FillRect(self.memdc.GetSafeHdc(), (0, 0, self.width, self.height), self.black_brush)
+        self.check_and_update_obs_toggle()
+
+        # Cache HDC and reset selected objects
+        self._hdc = self.memdc.GetSafeHdc()
+        self._current_pen = None
+        self._current_brush = None
+        self._current_font = None
+
         return True
 
     def end_scene(self):
+        self._frame_count += 1
+        now = time.perf_counter()
+        if now - self._fps_timer >= 1.0:
+            self.current_fps = self._frame_count
+            self._frame_count = 0
+            self._fps_timer = now
         self.hdc_obj.BitBlt((0, 0), (self.width, self.height), self.memdc, (0, 0), win32con.SRCCOPY)
 
     def update_obs_protection(self):
         from Process.config import Config
         if hasattr(self, 'hwnd'):
-            windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x11 if Config.obs_protection_enabled else 0x00)
+            affinity = 0x11 if Config.obs_protection_enabled else 0x00
+            windll.user32.SetWindowDisplayAffinity(self.hwnd, affinity)
 
     def init_window(self, title):
         wc = win32gui.WNDCLASS()
@@ -405,10 +530,26 @@ class Overlay:
         wc.hInstance = win32api.GetModuleHandle(None)
         class_atom = win32gui.RegisterClass(wc)
 
-        style = win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW
-        self.hwnd = win32gui.CreateWindowEx(style, class_atom, title, win32con.WS_POPUP,
-                                            0, 0, self.width, self.height,
-                                            None, None, wc.hInstance, None)
+        style = (
+            win32con.WS_EX_LAYERED
+            | win32con.WS_EX_TRANSPARENT
+            | win32con.WS_EX_TOPMOST
+            | win32con.WS_EX_TOOLWINDOW
+        )
+        self.hwnd = win32gui.CreateWindowEx(
+            style,
+            class_atom,
+            title,
+            win32con.WS_POPUP,
+            0,
+            0,
+            self.width,
+            self.height,
+            None,
+            None,
+            wc.hInstance,
+            None,
+        )
 
         self.update_obs_protection()
 
@@ -429,14 +570,20 @@ class Overlay:
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
     def get_module_base(self, pid, module_name):
-        snapshot = windll.kernel32.CreateToolhelp32Snapshot(0x8, pid)
+        snapshot = windll.kernel32.CreateToolhelp32Snapshot(0x8, pid)  # TH32CS_SNAPMODULE = 0x8
 
         class MODULEENTRY32(ctypes.Structure):
             _fields_ = [
-                ("dwSize", wintypes.DWORD), ("th32ModuleID", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
-                ("GlblcntUsage", wintypes.DWORD), ("ProccntUsage", wintypes.DWORD),
-                ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)), ("modBaseSize", wintypes.DWORD),
-                ("hModule", wintypes.HMODULE), ("szModule", ctypes.c_char * 256), ("szExePath", ctypes.c_char * 260)
+                ("dwSize", wintypes.DWORD),
+                ("th32ModuleID", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("GlblcntUsage", wintypes.DWORD),
+                ("ProccntUsage", wintypes.DWORD),
+                ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
+                ("modBaseSize", wintypes.DWORD),
+                ("hModule", wintypes.HMODULE),
+                ("szModule", ctypes.c_char * 256),
+                ("szExePath", ctypes.c_char * 260),
             ]
 
         entry = MODULEENTRY32()
@@ -452,7 +599,7 @@ class Overlay:
                     break
         windll.kernel32.CloseHandle(snapshot)
         return None
-
+        
 def RenderBoneESP(overlay, entity, matrix):
     # Cache settings for performance
     skeleton_enabled = Config.skeleton_esp_enabled
@@ -747,6 +894,10 @@ def main():
 
             matrix = read_matrix(handle, base + Offsets.dwViewMatrix)
             local_pos = get_local_player()
+
+            if getattr(cfg, "show_overlay_fps", False):
+                fps_text = f"FPS: {overlay.current_fps}"
+                overlay.draw_text(fps_text, overlay.width - 100, 20, (0, 255, 0), 16)
 
             if flags["watermark_enabled"]:
                 handle_watermark_drag()
