@@ -118,7 +118,7 @@ class Config:
     # ===========================
     grenade_prediction_enabled = False
     noflash_enabled = False
-
+    fov_info_overlay_enabled = False 
     # ===========================
     # GUI
     # ===========================

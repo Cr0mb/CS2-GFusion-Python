@@ -339,7 +339,7 @@ def get_entities(handle, base):
     return result
 
 
-class Overlay:
+class GDIRenderer:
     BONE_POSITIONS = {"head": 6, "chest": 15, "left_hand": 10, "right_hand": 2, "left_leg": 23, "right_leg": 26}
     BONE_CONNECTIONS = [
         (0, 2), (2, 4), (4, 5), (5, 6), (4, 8), (8, 9), (9, 10),
@@ -599,6 +599,206 @@ class Overlay:
                     break
         windll.kernel32.CloseHandle(snapshot)
         return None
+
+
+class DX11Renderer:
+    def __init__(self, title="GHax", fps=144):
+        # Fully GPU-based renderer: no GDI delegate.
+        # Create our own transparent, click-through overlay window and initialize DX11 on it.
+        self.width, self.height = win32api.GetSystemMetrics(0), win32api.GetSystemMetrics(1)
+        self.fps = fps
+        self.current_fps = 0
+        # Frame pacing (independent of vsync)
+        self._frame_time = 1.0 / max(1, int(fps))
+        self._accumulator = 0.0
+        self._last_time = time.perf_counter()
+        self._frame_count = 0
+        self._fps_timer = self._last_time
+
+        # Placeholders for future DX11/DirectComposition resources
+        self._dx_initialized = False
+        self._dx = None
+        self._dx_ctx = None
+        # self._d3d_device = None
+        # self._d3d_context = None
+        # self._dxgi_swapchain = None
+        # self._dcomp_device = None
+        # self._dcomp_target = None
+        # self._dcomp_visual = None
+
+        # Initialize window/resources (own Win32 window, no GDI rendering)
+        self.init_window(title)
+
+    def init_window(self, title):
+        # Create a transparent, click-through, topmost Win32 window for the overlay.
+        import ctypes
+        hInstance = win32api.GetModuleHandle(None)
+        class_name = "DX11OverlayWindow"
+
+        # Window proc: basic handling and default defwindowproc
+        def wndproc(hWnd, msg, wParam, lParam):
+            if msg == win32con.WM_DESTROY:
+                win32gui.PostQuitMessage(0)
+                return 0
+            return win32gui.DefWindowProc(hWnd, msg, wParam, lParam)
+
+        wndclass = win32gui.WNDCLASS()
+        wndclass.hInstance = hInstance
+        wndclass.lpszClassName = class_name
+        wndclass.lpfnWndProc = wndproc
+        wndclass.hCursor = win32gui.LoadCursor(0, win32con.IDC_ARROW)
+        wndclass.hbrBackground = win32con.COLOR_WINDOW
+        try:
+            win32gui.RegisterClass(wndclass)
+        except Exception:
+            pass  # Already registered
+
+        ex_style = (
+            win32con.WS_EX_TOPMOST
+            | win32con.WS_EX_LAYERED
+            | win32con.WS_EX_TRANSPARENT
+            | 0x08000000  # WS_EX_NOACTIVATE
+            | 0x00000080  # WS_EX_TOOLWINDOW
+        )
+        style = win32con.WS_POPUP
+
+        hwnd = win32gui.CreateWindowEx(
+            ex_style,
+            class_name,
+            title,
+            style,
+            0,
+            0,
+            self.width,
+            self.height,
+            0,
+            0,
+            hInstance,
+            None,
+        )
+        # Set transparency attributes (fully opaque alpha; actual transparency from premultiplied content)
+        LWA_ALPHA = 0x2
+        win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA)
+        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, win32con.SWP_NOSIZE | win32con.SWP_NOMOVE | win32con.SWP_NOACTIVATE)
+
+        self.hwnd = hwnd
+
+        # Initialize DX11 backend safely
+        try:
+            from render import dx11_backend as _dx
+            self._dx = _dx
+            self._dx_ctx = _dx.initialize(self.hwnd, self.width, self.height)
+            self._dx_initialized = self._dx_ctx is not None
+        except Exception:
+            self._dx_initialized = False
+            self._dx = None
+            self._dx_ctx = None
+        return True
+
+    def begin_scene(self):
+        # Frame pacing using high-resolution timer (no sleeps), similar to GDI renderer
+        now = time.perf_counter()
+        delta = now - self._last_time
+        self._last_time = now
+        self._accumulator += delta
+
+        if self._accumulator < self._frame_time:
+            return False  # skip this frame to maintain target FPS
+        self._accumulator -= self._frame_time
+
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.begin_scene(self._dx_ctx)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def end_scene(self):
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                ok = self._dx.end_scene(self._dx_ctx)
+                # Update FPS counter once per second
+                self._frame_count += 1
+                now = time.perf_counter()
+                if now - self._fps_timer >= 1.0:
+                    self.current_fps = self._frame_count
+                    self._frame_count = 0
+                    self._fps_timer = now
+                return ok
+            except Exception:
+                return False
+        return False
+
+    # --- Drawing API: enqueue to DX backend (and still delegate to GDI for now) ---
+    def draw_line(self, x1, y1, x2, y2, color):
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.queue_line(self._dx_ctx, float(x1), float(y1), float(x2), float(y2), color)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def draw_box(self, x, y, w, h, color):
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.queue_rect(self._dx_ctx, float(x), float(y), float(w), float(h), color, filled=False)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def draw_filled_rect(self, x, y, w, h, color):
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.queue_rect(self._dx_ctx, float(x), float(y), float(w), float(h), color, filled=True)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def draw_circle(self, x, y, r, color):
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.queue_circle(self._dx_ctx, float(x), float(y), float(r), color, filled=False)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def draw_text(self, text, x, y, color=(255,255,255), size=14, centered=False):
+        gpu_ready = self._dx_initialized and self._dx is not None and self._dx_ctx is not None and getattr(self._dx, 'pipeline_ready', None) and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.queue_text(self._dx_ctx, str(text), float(x), float(y), color, int(size), bool(centered))
+                return True
+            except Exception:
+                return False
+        return False
+
+    
+
+
+class Overlay:
+    def __init__(self, title="GHax", fps=144):
+        from Process.config import Config
+        if getattr(Config, "use_gpu_overlay", False):
+            self.renderer = DX11Renderer(title, fps)
+        else:
+            self.renderer = GDIRenderer(title, fps)
+
+    def __getattr__(self, name):
+        return getattr(self.renderer, name)
+
+
         
 def RenderBoneESP(overlay, entity, matrix):
     # Cache settings for performance
@@ -815,12 +1015,19 @@ def main():
 
 
 
-    while overlay.begin_scene():
+    while True:
         try:
+            # Windows message pump every tick
             msg = wintypes.MSG()
             while windll.user32.PeekMessageW(byref(msg), 0, 0, 0, win32con.PM_REMOVE):
                 windll.user32.TranslateMessage(byref(msg))
                 windll.user32.DispatchMessageW(byref(msg))
+
+            # Begin a new frame when the renderer's pacing allows it.
+            if not overlay.begin_scene():
+                # Not time to render yet; yield to avoid busy-wait and try again.
+                win32api.Sleep(0)
+                continue
 
             if not is_in_game(handle, base):
                 overlay.end_scene()
@@ -907,8 +1114,8 @@ def main():
                 overlay.draw_filled_rect(wm_x, wm_y + wm_h // 2, wm_w, wm_h // 2, (40, 40, 40))
                 overlay.draw_box(wm_x, wm_y, wm_w, wm_h, (70, 120, 255))
                 overlay.draw_box(wm_x + 1, wm_y + 1, wm_w - 2, wm_h - 2, (20, 20, 30))
-                overlay.draw_text("GFusion V2.4", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
-                overlay.draw_text("GFusion V2.4", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
+                overlay.draw_text("GFusion V2.5", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
+                overlay.draw_text("GFusion V2.5", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
                 overlay.draw_text("Made by Cr0mb", wm_x + wm_w // 2, wm_y + (wm_h * 2) // 3, (120, 120, 150), 12, centered=True)
                 overlay.draw_filled_rect(wm_x + wm_w // 4, wm_y + wm_h - 8, wm_w // 2, 2, (70, 120, 255))
 
@@ -1143,7 +1350,9 @@ def main():
             print("[!] ESP Error:", e)
 
         overlay.end_scene()
-        win32api.Sleep(1)
+        # Avoid capping framerate to ~60-65 FPS due to Windows default 15.6ms timer granularity.
+        # DX11Renderer already handles precise frame pacing; yield without enforcing a minimum sleep.
+        win32api.Sleep(0)
 
 if __name__ == "__main__":
     main()
