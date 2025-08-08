@@ -15,6 +15,34 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 [**GFusion V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
 [**GFusion V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
 [**GFusion V2.2**](https://www.youtube.com/watch?v=JXbsdEL282s)  
+[**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)
+[**GFusion V2.5**](https://www.youtube.com/watch?v=ZjwLNJX-leY)
+
+```markdown
+V2.2 8/4/2025
+- Added OBS Proof for Screen Capture
+```
+
+```markdown
+V2.3 8/4/2025
+- Made menu OBS Proof for Screen Capture
+```
+
+```markdown
+V2.4 8/6/2025
+- Added walkbot
+- Update offset_update.py to use https://www.unknowncheats.me/forum/counter-strike-2-a/711462-updated-cs2-dumper.html
+```
+
+```markdown
+V2.5 8/8/2025
+- Tried to make some performance improvements to ESP overlay
+- Tried to make some performance improvements to Aimbot
+- Added player info box (shows all players info in match)
+- Added show drawing FPS for overlay
+
+- Changed GDI Windows Overlay to be DirectX11 instead (Huge performance boost in visuals!)
+```
 
 
 # GFusion Feature List
