@@ -15,8 +15,9 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 [**GFusion V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
 [**GFusion V2.1**](https://www.youtube.com/watch?v=YCy9dLPZ3qg)  
 [**GFusion V2.2**](https://www.youtube.com/watch?v=JXbsdEL282s)  
-[**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)
+[**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)<br>
 [**GFusion V2.5**](https://www.youtube.com/watch?v=ZjwLNJX-leY)
+
 
 ```markdown
 V2.2 8/4/2025
