@@ -235,6 +235,8 @@ V2.5 8/8/2025
 
 ## Installation
 
+**How to Install:** https://www.youtube.com/watch?v=YJKS5BE3d5c
+
 1. Install required dependencies:
 ```
 pip install pyqt5 matplotlib pywin32 keyboard requests cryptography
