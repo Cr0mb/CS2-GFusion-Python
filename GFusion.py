@@ -1834,7 +1834,7 @@ def start_toggle_listener(main_window):
     def listen():
         while True:
             try:
-                if keyboard.is_pressed(Config.toggle_menu_key):
+                if keyboard.is_pressed(cfg.toggle_menu_key):
                     main_window.setVisible(not main_window.isVisible())
                     while keyboard.is_pressed(cfg.toggle_menu_key):
                         pass
