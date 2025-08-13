@@ -239,7 +239,7 @@ V2.5 8/8/2025
 
 1. Install required dependencies:
 ```
-pip install pyqt5 matplotlib pywin32 keyboard requests cryptography
+pip install pillow PyQt5 comtypes cryptography keyboard matplotlib psutil requests pywin32
 ````
 
 2. Run the launcher:
