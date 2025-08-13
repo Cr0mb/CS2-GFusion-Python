@@ -1532,6 +1532,22 @@ class AimbotTab(QWidget):
             self.ui_elements['line_edits'] = {}
         self.ui_elements['line_edits'][attr] = edit
 
+VK_CODES = {
+    "delete": 0x2E,
+    "f12": 0x7B,
+    "end": 0x23,
+    "insert": 0x2D,
+    # add more keys as needed
+}
+
+def key_to_vk(key_name):
+    return VK_CODES.get(key_name.lower(), 0x7B)  # default F12
+
+VK_NAME = {v: k.upper() for k, v in VK_CODES.items()}
+
+def vk_to_name(vk_code):
+    return VK_NAME.get(vk_code, "UNKNOWN")
+
 class ESPTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -1561,6 +1577,33 @@ class ESPTab(QWidget):
 
         layout.addLayout(filter_grid)
         layout.addWidget(create_section_separator())
+
+        layout.addWidget(self.section_title("Panic Settings:"))
+        panic_row = QHBoxLayout()
+
+        # Panic Mode toggle
+        self.add_checkbox(panic_row, "Enable Panic Mode", "panic_mode")
+
+        # Panic Key selector
+        panic_key_label = QLabel(f"Panic Key: {getattr(Config, 'panic_key', 'F12')}")
+        set_panic_key_btn = QPushButton("Set Panic Key")
+
+        def set_panic_key():
+            set_panic_key_btn.setText("Press any key...")
+            self.listener_thread = KeyListenerThread()
+            self.listener_thread.key_pressed.connect(lambda key: self.update_panic_key(key, panic_key_label, set_panic_key_btn))
+            self.listener_thread.start()
+
+        set_panic_key_btn.clicked.connect(set_panic_key)
+
+        panic_row.addWidget(panic_key_label)
+        panic_row.addWidget(set_panic_key_btn)
+        layout.addLayout(panic_row)
+
+        # Store reference for refresh
+        if 'labels' not in self.ui_elements:
+            self.ui_elements['labels'] = {}
+        self.ui_elements['labels']['panic_key'] = panic_key_label
 
         # --- Basic ESP Features ---
         layout.addWidget(self.section_title("Basic ESP Features:"))
@@ -1689,6 +1732,15 @@ class ESPTab(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
+        
+    def update_panic_key(self, key_name, label_widget, button_widget):
+        vk_code = key_to_vk(key_name)  # Returns int
+        setattr(Config, "panic_key", vk_code)
+        label_widget.setText(f"Panic Key: {key_name}")
+        button_widget.setText("Set Panic Key")
+        button_widget.setEnabled(True)
+
+
 
     def refresh_ui(self):
         """Refresh all UI elements with current config values"""
@@ -1713,6 +1765,11 @@ class ESPTab(QWidget):
         for attr, btn in self.ui_elements.get('color_buttons', {}).items():
             color = getattr(Config, attr, (255, 255, 255))
             btn.setStyleSheet(f"background-color: rgb{color}; border: 1px solid black;")
+
+        panic_label = self.ui_elements.get('labels', {}).get('panic_key', None)
+        if panic_label:
+            vk_code = getattr(Config, 'panic_key', 0x7B)
+            panic_label.setText(f"Panic Key: {vk_to_name(vk_code)}")
 
     def section_title(self, text):
         label = QLabel(text)

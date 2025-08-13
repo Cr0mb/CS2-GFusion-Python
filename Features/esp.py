@@ -1102,6 +1102,18 @@ def main():
             matrix = read_matrix(handle, base + Offsets.dwViewMatrix)
             local_pos = get_local_player()
 
+            if getattr(cfg, "panic_key_enabled", True):
+                if win32api.GetAsyncKeyState(int(cfg.panic_key)) & 0x1:
+                    cfg.panic_mode_active = not cfg.panic_mode_active
+                    print(f"[PANIC] Panic mode {'ENABLED' if cfg.panic_mode_active else 'DISABLED'}")
+
+
+
+            if cfg.panic_mode_active:
+                for key in flags.keys():
+                    if key.endswith("_enabled"):
+                        flags[key] = False
+                        
             if getattr(cfg, "show_overlay_fps", False):
                 fps_text = f"FPS: {overlay.current_fps}"
                 overlay.draw_text(fps_text, overlay.width - 100, 20, (0, 255, 0), 16)

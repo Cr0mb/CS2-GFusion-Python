@@ -1,5 +1,6 @@
 import json
 import os
+import win32con
 
 class Config:    
     # ===========================
@@ -21,6 +22,12 @@ class Config:
     # ===========================
     obs_protection_enabled = True
     show_overlay_fps = True
+
+    # Config defaults
+    panic_key_enabled = True
+    panic_key = 0x2E  # VK_DELETE
+    panic_mode_active = False
+
 
     show_box_esp = False
     healthbar_enabled = False
