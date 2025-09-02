@@ -23,7 +23,8 @@ WEAPON_NAMES = {
     48: "Incendiary", 49: "C4", 59: "Knife", 60: "M4A1-S", 61: "USP-S", 63: "CZ", 64: "R8"
 }
 
-PROCESS_ALL_ACCESS = 0x1F0FFF
+PROCESS_PERMISSIONS = 0x0010 | 0x0010 | 0x0008  # PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
+
 
 
 class Vec3(ctypes.Structure):
@@ -930,7 +931,7 @@ def main():
 
     pid = wintypes.DWORD()
     windll.user32.GetWindowThreadProcessId(hwnd, byref(pid))
-    handle = windll.kernel32.OpenProcess(PROCESS_ALL_ACCESS, False, pid.value)
+    handle = windll.kernel32.OpenProcess(PROCESS_PERMISSIONS, False, pid.value)
 
     overlay = Overlay("CS2 Box ESP")
     base = overlay.get_module_base(pid.value, "client.dll")
@@ -1126,8 +1127,8 @@ def main():
                 overlay.draw_filled_rect(wm_x, wm_y + wm_h // 2, wm_w, wm_h // 2, (40, 40, 40))
                 overlay.draw_box(wm_x, wm_y, wm_w, wm_h, (70, 120, 255))
                 overlay.draw_box(wm_x + 1, wm_y + 1, wm_w - 2, wm_h - 2, (20, 20, 30))
-                overlay.draw_text("GFusion V2.5", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
-                overlay.draw_text("GFusion V2.5", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
+                overlay.draw_text("GFusion", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
+                overlay.draw_text("GFusion", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
                 overlay.draw_text("Made by Cr0mb", wm_x + wm_w // 2, wm_y + (wm_h * 2) // 3, (120, 120, 150), 12, centered=True)
                 overlay.draw_filled_rect(wm_x + wm_w // 4, wm_y + wm_h - 8, wm_w // 2, 2, (70, 120, 255))
 
