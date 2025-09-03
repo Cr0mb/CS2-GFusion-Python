@@ -23,7 +23,7 @@ WEAPON_NAMES = {
     48: "Incendiary", 49: "C4", 59: "Knife", 60: "M4A1-S", 61: "USP-S", 63: "CZ", 64: "R8"
 }
 
-PROCESS_PERMISSIONS = 0x0010 | 0x0010 | 0x0008  # PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
+PROCESS_PERMISSIONS = 0x0010  # PROCESS_VM_READ
 
 
 
@@ -77,11 +77,27 @@ def estimate_grenade_velocity(view_angle, throw_strength=1.3, base_velocity=550.
 # --- Memory Reading Utilities ---
 
 def read_bytes(handle, addr, size):
-    if not addr or addr > 0x7FFFFFFFFFFF:
-        return b'\x00' * size
+    if not addr or addr > 0x7FFFFFFFFFFF:   # sanity check on pointer
+        return b"\x00" * size
+
     buf = ctypes.create_string_buffer(size)
-    windll.kernel32.ReadProcessMemory(handle, ctypes.c_void_p(addr), buf, size, None)
+    bytes_read = ctypes.c_size_t(0)
+
+    # Call RPM
+    ok = windll.kernel32.ReadProcessMemory(
+        handle,
+        ctypes.c_void_p(addr),
+        buf,
+        size,
+        ctypes.byref(bytes_read)
+    )
+
+    # If RPM fails, return zeros instead of crashing
+    if not ok or bytes_read.value != size:
+        return b"\x00" * size
+
     return buf.raw
+
 
 def unpack(fmt, data): return struct.unpack(fmt, data)[0]
 

@@ -6,13 +6,46 @@ import json
 import threading
 import ctypes
 import struct
-import requests
-from ctypes import windll, wintypes
+from ctypes import wintypes
 from collections import deque
 
 from Process.offsets import Offsets
 from Process.config import Config
 
+# -------------------------------
+# Define missing constants & structs
+# -------------------------------
+TH32CS_SNAPPROCESS = 0x00000002
+TH32CS_SNAPMODULE  = 0x00000008
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+class PROCESSENTRY32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", ctypes.c_char * 260),
+    ]
+
+class MODULEENTRY32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("th32ModuleID", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("GlblcntUsage", wintypes.DWORD),
+        ("ProccntUsage", wintypes.DWORD),
+        ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
+        ("modBaseSize", wintypes.DWORD),
+        ("hModule", wintypes.HMODULE),
+        ("szModule", ctypes.c_char * 256),
+        ("szExePath", ctypes.c_char * 260),
+    ]
 
 VIRTUAL_KEYS = {
     "mouse1": 0x01,
@@ -29,46 +62,58 @@ VIRTUAL_KEYS = {
 def get_vk_code(key_name):
     return VIRTUAL_KEYS.get(key_name.lower(), None)
 
-
+# -----------------------------
+# NT ReadProcessMemory Setup
+# -----------------------------
 PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_VM_READ = 0x0010
-PROCESS_VM_WRITE = 0x0020
-PROCESS_VM_OPERATION = 0x0008
-PROCESS_PERMISSIONS = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
-
-TH32CS_SNAPPROCESS = 0x00000002
-TH32CS_SNAPMODULE = 0x00000008 | 0x00000010
-INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+PROCESS_PERMISSIONS = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+ntdll = ctypes.WinDLL("ntdll")
+NtReadVirtualMemory = ntdll.NtReadVirtualMemory
+NtReadVirtualMemory.argtypes = [
+    wintypes.HANDLE,
+    wintypes.LPVOID,
+    wintypes.LPVOID,
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_size_t)
+]
+NtReadVirtualMemory.restype = ctypes.c_ulong
 
-class PROCESSENTRY32(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wintypes.DWORD),
-        ("cntUsage", wintypes.DWORD),
-        ("th32ProcessID", wintypes.DWORD),
-        ("th32DefaultHeapID", ctypes.c_void_p),
-        ("th32ModuleID", wintypes.DWORD),
-        ("cntThreads", wintypes.DWORD),
-        ("th32ParentProcessID", wintypes.DWORD),
-        ("pcPriClassBase", ctypes.c_long),
-        ("dwFlags", wintypes.DWORD),
-        ("szExeFile", ctypes.c_char * wintypes.MAX_PATH)
-    ]
+def nt_read_memory(process_handle, address, size):
+    buffer = (ctypes.c_ubyte * size)()
+    bytes_read = ctypes.c_size_t()
+    status = NtReadVirtualMemory(
+        process_handle,
+        ctypes.c_void_p(address),
+        ctypes.byref(buffer),
+        size,
+        ctypes.byref(bytes_read)
+    )
+    if status != 0 or bytes_read.value != size:
+        return None
+    return bytes(buffer)
 
-class MODULEENTRY32(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wintypes.DWORD),
-        ("th32ModuleID", wintypes.DWORD),
-        ("th32ProcessID", wintypes.DWORD),
-        ("GlblcntUsage", wintypes.DWORD),
-        ("ProccntUsage", wintypes.DWORD),
-        ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
-        ("modBaseSize", wintypes.DWORD),
-        ("hModule", wintypes.HMODULE),
-        ("szModule", ctypes.c_char * 256),
-        ("szExePath", ctypes.c_char * wintypes.MAX_PATH)
-    ]
+    buffer = (ctypes.c_ubyte * size)()
+    bytes_read = ctypes.c_size_t()
+    status = NtReadVirtualMemory(process_handle,
+                                 ctypes.c_void_p(address),
+                                 ctypes.byref(buffer),
+                                 size,
+                                 ctypes.byref(bytes_read))
+    if status != 0 or bytes_read.value != size:
+        return None
+    return bytes(buffer)
+
+def bytes_to_int(buffer, signed=True):
+    return int.from_bytes(buffer, byteorder='little', signed=signed)
+
+def bytes_to_float(buffer):
+    return struct.unpack("f", buffer)[0]
+
+def bytes_to_vec3(buffer):
+    return struct.unpack("fff", buffer)
 
 class CS2Process:
     def __init__(self, proc_name="cs2.exe", mod_name="client.dll", timeout=30):
@@ -140,7 +185,9 @@ class CS2Process:
     def __repr__(self):
         return f"<CS2Process pid={self.process_id} module_base=0x{self.module_base:x}>" if self.module_base else "<CS2Process not ready>"
 
-# === SendInput setup for external mouse movement ===
+# -----------------------------
+# Mouse Movement
+# -----------------------------
 INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE = 0x0001
 
@@ -163,7 +210,35 @@ def move_mouse(dx, dy):
     mi = MOUSEINPUT(dx=dx, dy=dy, mouseData=0, dwFlags=MOUSEEVENTF_MOVE, time=0, dwExtraInfo=None)
     inp = INPUT(type=INPUT_MOUSE, ii=INPUT._INPUT(mi=mi))
     SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
-    
+
+
+class MemoryReader:
+    def __init__(self, process_handle):
+        self.process_handle = process_handle
+
+    def read(self, address, t="int"):
+        size_map = {"int": 4, "long": 8, "float": 4, "ushort": 2}
+        size = size_map.get(t, 4)
+        raw = nt_read_memory(self.process_handle, address, size)
+        if not raw:
+            return 0.0 if t == "float" else 0
+        if t == "int":
+            return bytes_to_int(raw)
+        elif t == "long":
+            return bytes_to_int(raw, signed=False)
+        elif t == "float":
+            return bytes_to_float(raw)
+        elif t == "ushort":
+            return bytes_to_int(raw, signed=False)
+        return 0
+
+    def read_vec3(self, address):
+        raw = nt_read_memory(self.process_handle, address, 12)
+        if raw:
+            return list(bytes_to_vec3(raw))
+        return [0.0, 0.0, 0.0]
+
+
 class CS2WeaponTracker:
     INVALID_WEAPON_IDS = {
         41, 42, 59, 80, 500, 505, 506, 507, 508, 509, 512, 514, 515, 516, 519, 520, 522, 523,
@@ -172,55 +247,33 @@ class CS2WeaponTracker:
 
     def __init__(self):
         self.cs2process = CS2Process()
-        self.cs2process.initialize()  # waits and attaches to process, sets module_base
+        self.cs2process.wait_for_process()
+        self.cs2process.get_module_base()
         self.process_handle = self.cs2process.process_handle
         self.client = self.cs2process.module_base
+        self.reader = MemoryReader(self.process_handle)
 
-    def read_memory(self, address, size):
-        try:
-            buffer = (ctypes.c_byte * size)()
-            bytesRead = ctypes.c_size_t()
-            if not kernel32.ReadProcessMemory(self.process_handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(bytesRead)):
-                return None
-            return bytes(buffer)
-        except:
-            return None
 
     def read_longlong(self, address):
-        data = self.read_memory(address, 8)
-        if data is None:
-            return 0
-        return int.from_bytes(data, byteorder='little')
+        return self.reader.read(address, "long")
 
     def read_int(self, address):
-        data = self.read_memory(address, 4)
-        if data is None:
-            return 0
-        return int.from_bytes(data, byteorder='little')
+        return self.reader.read(address, "int")
 
     def get_current_weapon_id(self):
-        try:
-            time.sleep(random.uniform(0.01, 0.03))
-            local_player_ptr = self.read_longlong(self.client + Offsets.dwLocalPlayerPawn)
-            if not local_player_ptr:
-                return None
-
-            weapon_ptr = self.read_longlong(local_player_ptr + Offsets.m_pClippingWeapon)
-            if not weapon_ptr:
-                return None
-
-            # Read weapon ID directly as in the first version
-            weapon_id = self.read_int(
-                weapon_ptr + Offsets.m_AttributeManager + Offsets.m_Item + Offsets.m_iItemDefinitionIndex
-            )
-            return weapon_id
-        except Exception:
+        local_player = self.read_longlong(self.client + Offsets.dwLocalPlayerPawn)
+        if not local_player:
             return None
+        weapon_ptr = self.read_longlong(local_player + Offsets.m_pClippingWeapon)
+        if not weapon_ptr:
+            return None
+        item_idx_addr = weapon_ptr + Offsets.m_AttributeManager + Offsets.m_Item + Offsets.m_iItemDefinitionIndex
+        return self.reader.read(item_idx_addr, "ushort")
 
     def is_weapon_valid_for_aim(self):
         weapon_id = self.get_current_weapon_id()
         if weapon_id is None:
-            return True  # Unknown weapons are allowed
+            return True
         return weapon_id not in self.INVALID_WEAPON_IDS
 
 class AimbotRCS:
@@ -236,6 +289,7 @@ class AimbotRCS:
         self.cs2.initialize()
         self.base = self.cs2.module_base
         self.process_handle = self.cs2.process_handle
+        self.reader = MemoryReader(self.process_handle)
         self.local_player_controller = self.base + self.o.dwLocalPlayerController  # cached address
 
         self.bone_indices = {"head": 6, "chest": 18}
@@ -389,15 +443,10 @@ class AimbotRCS:
         return ctrl if ctrl and ctrl != local_ctrl else 0
 
     def read_vec3(self, addr):
-        r = self.read
-        return [r(addr + i * 4, "float") for i in range(3)]
+        return self.reader.read_vec3(addr)
 
-    def read_weapon_id(self, pawn):
-        w = self.read(pawn + self.o.m_pClippingWeapon, "long")
-        if not w:
-            return 0
-        item_idx_addr = w + self.o.m_AttributeManager + self.o.m_Item + self.o.m_iItemDefinitionIndex
-        return self.read(item_idx_addr, "ushort")
+    def read(self, addr, t="int"):
+        return self.reader.read(addr, t)
 
     def read_bone_pos(self, pawn, idx):
         scene = self.read(pawn + self.o.m_pGameSceneNode, "long")
@@ -407,6 +456,12 @@ class AimbotRCS:
         if not bones:
             return None
         return self.read_vec3(bones + idx * 32)
+
+    def read_weapon_id(self, pawn):
+        w = self.read(pawn + self.o.m_pClippingWeapon, "long")
+        if not w:
+            return 0
+        return self.read(w + self.o.m_AttributeManager + self.o.m_Item + self.o.m_iItemDefinitionIndex, "ushort")
 
     def calc_angle(self, src, dst):
         dx = dst[0] - src[0]
