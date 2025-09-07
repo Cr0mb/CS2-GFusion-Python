@@ -184,7 +184,7 @@ class Config:
     closest_to_crosshair = False
     max_entities = 64
     FOV = 3.0
-    max_delta_angle = 60
+    max_delta_angle = 40
     target_switch_delay = 0
     aim_start_delay = 0
     downward_offset = 62
@@ -205,7 +205,7 @@ class Config:
     smooth_var = 0.00
     sensitivity = 0.022
     invert_y = -1
-    max_mouse_move = 50
+    max_mouse_move = 3
 
     # ===========================
     # Recoil Control System (RCS)
