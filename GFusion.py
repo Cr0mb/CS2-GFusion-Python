@@ -53,6 +53,17 @@ walkbot_thread = None
 def run_walkbot():
     from Features.walk_bot import walk_in_circle
     import threading
+import hashlib
+from PyQt5.QtCore import QTimer, QElapsedTimer
+from PyQt5.QtWidgets import QApplication
+try:
+    import numpy as np  # optional: speeds up vector math if available
+except Exception:
+    np = None
+
+
+
+
 
     # Set both loops running in parallel
     def walk_loop():
@@ -189,78 +200,76 @@ class CheatCheckBox(QCheckBox):
         super().__init__(label, parent)
         self.setStyleSheet("""
             QCheckBox {
-                color: #b9b9b9;
-                font-size: 11pt;
-                font-weight: 600;
-                padding-left: 4px;
-                spacing: 10px;
+                color: #d0d0d0;                  /* light gray text */
+                font-size: 10pt;
+                font-family: "Consolas", "Lucida Console", monospace;
+                padding-left: 6px;
             }
 
             QCheckBox::indicator {
                 width: 14px;
                 height: 14px;
-                border-radius: 3px;
-                border: 2px solid #2c2c2c;
-                background-color: #121217;
+                border-radius: 2px;
+                border: 2px solid #808080;       /* medium gray border */
+                background-color: #1e1e1e;       /* dark gray background */
             }
 
             QCheckBox::indicator:hover {
-                border: 2px solid #00d2ff;
-                background-color: #1a1a27;
+                background-color: #2a2a2a;       /* slightly lighter gray on hover */
             }
 
             QCheckBox::indicator:checked {
-                background-color: #ff4c4c;
-                border: 2px solid #ff4c4c;
+                background-color: #808080;       /* checked = medium gray */
+                border: 2px solid #d0d0d0;      /* lighter border on check */
             }
 
             QCheckBox::indicator:checked:hover {
-                background-color: #ff6666;
-                border: 2px solid #00d2ff;  /* Still cyan border on hover */
+                background-color: #a0a0a0;       /* hover over checked = lighter gray */
+                border: 2px solid #d0d0d0;
             }
         """)
 
 
 class CheatComboBox(QComboBox):
-    def __init__(self, items=None, width=70, parent=None):
+    def __init__(self, items=None, width=90, parent=None):
         super().__init__(parent)
         if items:
             self.addItems(items)
         self.setFixedWidth(width)
         self.setStyleSheet("""
             QComboBox {
-                background-color: #1e1e2f;
-                border: 2px solid #44475a;
-                border-radius: 8px;
-                padding: 5px 10px 5px 10px;
-                color: #f8f8f2;
-                font-weight: bold;
+                background-color: #1e1e1e;        /* dark gray */
+                border: 1px solid #808080;        /* medium gray border */
+                border-radius: 2px;
+                padding: 4px 8px;
+                color: #d0d0d0;                   /* light gray text */
+                font-family: "Consolas", "Lucida Console", monospace;
                 font-size: 10pt;
             }
             QComboBox:hover {
-                border-color: #6272a4;
+                border-color: #a0a0a0;           /* lighter gray on hover */
             }
             QComboBox:focus {
-                border-color: #8be9fd;
+                border-color: #a0a0a0;
                 outline: none;
             }
             QComboBox::drop-down {
                 border: none;
             }
             QComboBox::down-arrow {
-                image: url(data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjZmZmIiBoZWlnaHQ9IjEyIiB2aWV3Qm94PSIwIDAgMTIgMTIiIHdpZHRoPSIxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNSA3bDMtMyAzIDMiLz48L3N2Zz4=);
-                width: 10px;
-                height: 10px;
-                margin-right: 6px;
+                image: none;
             }
             QComboBox QAbstractItemView {
-                background-color: #282a36;
-                border: 1px solid #44475a;
-                selection-background-color: #6272a4;
-                color: #f8f8f2;
+                background-color: #1e1e1e;
+                border: 1px solid #808080;
+                selection-background-color: #555555;  /* selected item dark gray */
+                selection-color: #d0d0d0;
+                color: #d0d0d0;
+                font-family: "Consolas", "Lucida Console", monospace;
             }
         """)
         self.wheelEvent = lambda event: None  # disable scroll
+
 
 class NoScrollSlider(QSlider):
     def __init__(self, orientation, parent=None):
@@ -268,35 +277,36 @@ class NoScrollSlider(QSlider):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setStyleSheet("""
             QSlider::groove:horizontal {
-                height: 6px;
-                background: #121217;
-                border-radius: 3px;
-                margin: 6px 0;
+                height: 4px;
+                background: #2a2a2a;           /* dark gray groove */
+                border-radius: 2px;
+                margin: 3px 0;
             }
             QSlider::handle:horizontal {
-                background-color: #2c2c2c;
-                border: 2px solid #2c2c2c;
+                background-color: #808080;     /* medium gray handle */
+                border: 1px solid #a0a0a0;    /* slightly lighter border */
                 width: 12px;
-                height: 18px;
-                margin: -7px 0;
-                border-radius: 4px;
+                height: 12px;
+                margin: -4px 0;
+                border-radius: 2px;
             }
             QSlider::handle:horizontal:hover {
-                background-color: #00d2ff;
-                border: 2px solid #00d2ff;
+                background-color: #a0a0a0;     /* lighter gray on hover */
+                border: 1px solid #c0c0c0;
             }
             QSlider::sub-page:horizontal {
-                background: qlineargradient(x1:0, x2:1, stop:0 #00d2ff, stop:1 #004f9f);
-                border-radius: 3px;
+                background: #555555;           /* darker gray for filled part */
+                border-radius: 2px;
             }
             QSlider::add-page:horizontal {
-                background: #1a1a27;
-                border-radius: 3px;
+                background: #2a2a2a;           /* dark gray unfilled part */
+                border-radius: 2px;
             }
         """)
 
     def wheelEvent(self, event):
         pass  # disable scroll wheel changes
+
 
 
 class KeyListenerThread(QThread):
@@ -315,8 +325,23 @@ def create_section_separator():
     return line
 
 class ConfigTab(QWidget):
+    def _tick(self):
+            """Centralized per-frame updates. Move lightweight periodic checks here.
+            Avoid heavy blocking and defer I/O to worker threads if needed.
+            """
+            # Example: refresh UI at ~15 FPS to reduce redraws
+            if hasattr(self, 'refresh_ui'):
+                # throttle refresh to ~15 FPS
+                if not hasattr(self, '_last_refresh_ms'):
+                    self._last_refresh_ms = 0
+                now = self._elapsed.elapsed()
+                if now - getattr(self, '_last_refresh_ms', 0) > 66:
+                    try:
+                        self.refresh_ui()
+                    finally:
+                        self._last_refresh_ms = now
     config_loaded = pyqtSignal()  # Signal to notify when config is loaded
-    
+
     def __init__(self):
         super().__init__()
 
@@ -418,6 +443,7 @@ class RecoilViewer(QWidget):
 
         self.weapon_ids = []
         self.all_data = {}
+        self._last_aimbot_plot_hash = None  # ✅ initialize before first use
 
         self.init_ui()
         self.scan_aimbot_data()  # Initial scan
@@ -492,8 +518,21 @@ class RecoilViewer(QWidget):
             self.all_data = {}
             self.dropdown.clear()
             self.ax.clear()
+            data_blob = repr(locals()).encode('utf-8', errors='ignore')
+        else:
+            # Create a blob even if the dir exists, so we don't crash
+            state = {
+                "weapon_ids": self.weapon_ids,
+                "all_data": self.all_data
+            }
+            data_blob = json.dumps(state, default=str).encode("utf-8", errors="ignore")
+
+        h = hashlib.sha1(data_blob).hexdigest()
+        if h != self._last_aimbot_plot_hash:
+            self._last_aimbot_plot_hash = h
             self.canvas.draw()
             return
+
 
         new_weapon_ids = [f[:-5] for f in os.listdir(LEARN_DIR) if f.endswith(".json")]
         if set(new_weapon_ids) != set(self.weapon_ids):
@@ -559,7 +598,7 @@ class RecoilViewer(QWidget):
         """
         label.setStyleSheet(style)
         self.legend_layout.addWidget(label)
-        
+
 class TriggerBotTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -589,11 +628,11 @@ class TriggerBotTab(QWidget):
         # Trigger Key Section
         key_section = QVBoxLayout()
         key_section.setSpacing(5)
-        
+
         key_label = QLabel("Key Settings:")
         key_label.setStyleSheet("font-weight: bold;")
         key_section.addWidget(key_label)
-        
+
         self.trigger_key_label = QLabel(f"Trigger Key: {cfg.trigger_key}")
         self.set_key_btn = QPushButton("Set Trigger Key")
         self.set_key_btn.clicked.connect(self.set_trigger_key)
@@ -603,14 +642,14 @@ class TriggerBotTab(QWidget):
         key_layout.addWidget(self.trigger_key_label)
         key_layout.addWidget(self.set_key_btn)
         key_section.addLayout(key_layout)
-        
+
         layout.addLayout(key_section)
         layout.addWidget(create_section_separator())
 
         # Settings Section
         settings_section = QVBoxLayout()
         settings_section.setSpacing(8)
-        
+
         settings_label = QLabel("Behavior Settings:")
         settings_label.setStyleSheet("font-weight: bold;")
         settings_section.addWidget(settings_label)
@@ -636,7 +675,7 @@ class TriggerBotTab(QWidget):
         # TriggerBot Cooldown Slider and label
         cooldown_layout = QVBoxLayout()
         cooldown_layout.setSpacing(5)
-        
+
         cooldown_title = QLabel("Cooldown Settings:")
         cooldown_title.setStyleSheet("font-weight: bold; font-size: 10pt;")
         cooldown_layout.addWidget(cooldown_title)
@@ -667,7 +706,7 @@ class TriggerBotTab(QWidget):
 
         cooldown_layout.addLayout(cooldown_controls)
         settings_section.addLayout(cooldown_layout)
-        
+
         layout.addLayout(settings_section)
         layout.addStretch()
 
@@ -680,14 +719,19 @@ class TriggerBotTab(QWidget):
         self.setLayout(main_layout)
 
     def refresh_ui(self):
-        """Refresh all UI elements with current config values"""
-        self.trigger_checkbox.setChecked(getattr(cfg, "triggerbot_enabled", False))
-        self.trigger_key_label.setText(f"Trigger Key: {cfg.trigger_key}")
-        self.shoot_teammates_cb.setChecked(getattr(cfg, "shoot_teammates", False))
-        self.always_on_cb.setChecked(getattr(cfg, "triggerbot_always_on", False))  # ← Added this
-        self.cooldown_slider.setValue(int(cfg.triggerbot_cooldown * 10))
-        self.cooldown_value.setText(f"{cfg.triggerbot_cooldown:.2f}s")
-
+        try:
+            self.setUpdatesEnabled(False)
+            """Refresh all UI elements with current config values"""
+            self.trigger_checkbox.setChecked(getattr(cfg, "triggerbot_enabled", False))
+            self.trigger_key_label.setText(f"Trigger Key: {cfg.trigger_key}")
+            self.shoot_teammates_cb.setChecked(getattr(cfg, "shoot_teammates", False))
+            self.always_on_cb.setChecked(getattr(cfg, "triggerbot_always_on", False))  # ← Added this
+            self.cooldown_slider.setValue(int(cfg.triggerbot_cooldown * 10))
+            self.cooldown_value.setText(f"{cfg.triggerbot_cooldown:.2f}s")
+        finally:
+            self.setUpdatesEnabled(True)
+    
+    
     def toggle_triggerbot(self, state):
         if state == Qt.Checked:
             start_triggerbot_thread()
@@ -707,7 +751,7 @@ class TriggerBotTab(QWidget):
         self.trigger_key_label.setText(f"Trigger Key: {cfg.trigger_key}")
         self.set_key_btn.setText("Set Trigger Key")
         self.set_key_btn.setEnabled(True)
-   
+
 class MiscTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -1032,23 +1076,23 @@ class MiscTab(QWidget):
         self.fov_checkbox.setChecked(getattr(cfg, "fov_changer_enabled", True))
         self.fov_slider.setValue(cfg.game_fov)
         self.fov_label.setText(f"Game FOV: {cfg.game_fov}")
-        
+
         self.glow_checkbox.setChecked(getattr(Config, "glow", False))
         self.glow_show_enemies_cb.setChecked(getattr(Config, "glow_show_enemies", True))
         self.glow_show_team_cb.setChecked(getattr(Config, "glow_show_team", True))
-        
+
         self.bhop_checkbox.setChecked(getattr(Config, "bhop_enabled", False))
         self.local_info_box_cb.setChecked(getattr(Config, "show_local_info_box", True))
-        
+
         self.walkbot_cb.setChecked(getattr(Config, "walkbot_enabled", False))
-        
+
         self.grenade_pred_cb.setChecked(getattr(Config, "grenade_prediction_enabled", False))
         self.noflash_cb.setChecked(getattr(Config, "noflash_enabled", False))
         self.spectator_list_cb.setChecked(getattr(Config, "spectator_list_enabled", False))
         self.watermark_cb.setChecked(getattr(Config, "watermark_enabled", True))
-        
+
         self.toggle_key_label.setText(f"Toggle Menu Key: {cfg.toggle_menu_key}")
-        
+
         # Update button colors
         for key, btn in self.ui_elements.get("color_buttons", {}).items():
             rgb = getattr(Config, key, (255, 255, 255))
@@ -1069,298 +1113,177 @@ class AimbotTab(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        # Create scroll area
+        # Scrollable container
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         content_widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(12)
+        layout = QVBoxLayout(content_widget)
+        layout.setSpacing(15)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # Store references to UI elements for refresh
-        self.ui_elements = {}
+        self.ui_elements = {}  # store references for refresh
 
-        # --- Main Controls ---
-        main_section = QVBoxLayout()
-        main_section.setSpacing(6)
-        main_section.addWidget(self.section_title("Main Controls:"))
+        # --- Main Aimbot Controls ---
+        main_group = QVBoxLayout()
+        main_group.addWidget(self.section_title("Main Controls"))
 
         row = QHBoxLayout()
         self.add_checkbox(row, "Enable Aimbot", "enabled")
-        self.add_checkbox(row, "Enable DeathMatch Mode", "DeathMatch")
-        main_section.addLayout(row)
+        self.add_checkbox(row, "DeathMatch Mode", "DeathMatch")
+        main_group.addLayout(row)
 
-        layout.addLayout(main_section)
-        layout.addWidget(create_section_separator())
-
-        # Auto Pistol Checkbox
         self.auto_pistol_cb = CheatCheckBox("Enable Auto Pistol")
         self.auto_pistol_cb.setChecked(Config.auto_pistol_enabled)
-        self.auto_pistol_cb.stateChanged.connect(
-            lambda state: self.toggle_auto_pistol(state)
-        )
-        main_section.addWidget(self.auto_pistol_cb)
+        self.auto_pistol_cb.stateChanged.connect(lambda state: self.toggle_auto_pistol(state))
+        main_group.addWidget(self.auto_pistol_cb)
 
-        # Activation Key
+        # Auto Pistol Key
         key_layout = QHBoxLayout()
-        key_layout.setContentsMargins(0, 5, 0, 5)
-        key_layout.setSpacing(8)
-
         key_label = QLabel("Auto Pistol Key:")
-        key_label.setStyleSheet("""
-            color: #c5c8c6;
-            font-weight: 600;
-            font-size: 11pt;
-        """)
-        key_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
-
+        key_label.setStyleSheet("color: #c5c8c6; font-weight: 600; font-size: 10pt;")
         key_combo = CheatComboBox(
-            items=["mouse2", "mouse3", "mouse4", "mouse5", "alt", "ctrl", "shift", "space"],
-            width=70
+            items=["mouse2","mouse3","mouse4","mouse5","alt","ctrl","shift","space"], width=70
         )
         key_combo.setCurrentText(Config.activation_key.lower())
         key_combo.currentTextChanged.connect(lambda val: setattr(Config, "activation_key", val))
-
         key_layout.addWidget(key_label)
         key_layout.addWidget(key_combo)
-        main_section.addLayout(key_layout)
+        main_group.addLayout(key_layout)
 
-        # Fire Rate Slider
-        rate_layout = QVBoxLayout()
-        self.fire_rate_label = QLabel(f"Fire Rate: {Config.fire_rate:.2f}s")
-        self.fire_rate_slider = NoScrollSlider(Qt.Horizontal)
-        self.fire_rate_slider.setMinimum(1)
-        self.fire_rate_slider.setMaximum(50)
-        self.fire_rate_slider.setValue(int(Config.fire_rate * 100))
-
-        def update_fire_rate(value):
-            real_rate = value / 100
-            Config.fire_rate = real_rate
-            self.fire_rate_label.setText(f"Fire Rate: {real_rate:.2f}s")
-
-        self.fire_rate_slider.valueChanged.connect(update_fire_rate)
-        rate_layout.addWidget(self.fire_rate_label)
-        rate_layout.addWidget(self.fire_rate_slider)
-        main_section.addLayout(rate_layout)
-
+        layout.addLayout(main_group)
+        layout.addWidget(create_section_separator())
 
         # --- Advanced Features ---
-        advanced_section = QVBoxLayout()
-        advanced_section.setSpacing(6)
-        advanced_section.addWidget(self.section_title("Advanced Features:"))
+        adv_group = QVBoxLayout()
+        adv_group.addWidget(self.section_title("Advanced Features"))
 
         row1 = QHBoxLayout()
         self.add_checkbox(row1, "Enable Learning", "enable_learning")
-        self.add_checkbox(row1, "Enable Velocity Prediction", "enable_velocity_prediction")
+        self.add_checkbox(row1, "Velocity Prediction", "enable_velocity_prediction")
+        adv_group.addLayout(row1)
 
         row2 = QHBoxLayout()
-        self.add_checkbox(row2, "Closest to Crosshair Targeting", "closest_to_crosshair")
+        self.add_checkbox(row2, "Closest to Crosshair", "closest_to_crosshair")
         self.add_checkbox(row2, "Enable RCS", "rcs_enabled")
+        adv_group.addLayout(row2)
 
-        advanced_section.addLayout(row1)
-        advanced_section.addLayout(row2)
-
-        layout.addLayout(advanced_section)
+        layout.addLayout(adv_group)
         layout.addWidget(create_section_separator())
 
-        # --- Aimbot FOV Overlay Settings ---
-        fov_overlay_section = QVBoxLayout()
-        fov_overlay_section.setSpacing(6)
-        fov_overlay_section.addWidget(self.section_title("Aimbot FOV Overlay Settings:"))
+        # --- Aimbot FOV Overlay ---
+        fov_group = QVBoxLayout()
+        fov_group.addWidget(self.section_title("FOV Overlay Settings"))
 
-        # Add checkbox for showing the FOV circle
         row = QHBoxLayout()
-        self.add_checkbox(row, "Show Aimbot FOV Circle", "fov_circle_enabled")
-        fov_overlay_section.addLayout(row)
+        self.add_checkbox(row, "Show FOV Circle", "fov_circle_enabled")
+        fov_group.addLayout(row)
 
-        # Add color picker for FOV circle color — updated for ESPTab style
         color_row = QHBoxLayout()
         color_label = QLabel("FOV Circle Color:")
         color_label.setStyleSheet("color: #c5c8c6; font-weight: 600; font-size: 10pt;")
-        color_row.addWidget(color_label)
-
-        current_color = getattr(Config, "fov_overlay_color", (255, 255, 255))
-        initial_color = QColor(*current_color)
-
         color_picker = QPushButton()
         color_picker.setFixedSize(40, 20)
-        color_picker.setStyleSheet(f"background-color: rgb{current_color}; border: 1px solid black;")
-        color_row.addWidget(color_picker)
-
+        color_picker.setStyleSheet(f"background-color: rgb{getattr(Config,'fov_overlay_color',(255,255,255))}; border: 1px solid black;")
+        
         def choose_color():
-            nonlocal initial_color
-            new_color = QColorDialog.getColor(initial_color, self, "Select FOV Circle Color")
+            new_color = QColorDialog.getColor(QColor(*getattr(Config,'fov_overlay_color',(255,255,255))))
             if new_color.isValid():
                 rgb = (new_color.red(), new_color.green(), new_color.blue())
                 setattr(Config, "fov_overlay_color", rgb)
-                initial_color = new_color
                 color_picker.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid black;")
-
         color_picker.clicked.connect(choose_color)
-        fov_overlay_section.addLayout(color_row)
 
-        # Store color picker reference for refresh
-        if 'color_buttons' not in self.ui_elements:
-            self.ui_elements['color_buttons'] = {}
-        self.ui_elements['color_buttons']["fov_overlay_color"] = color_picker
+        color_row.addWidget(color_label)
+        color_row.addWidget(color_picker)
+        fov_group.addLayout(color_row)
 
-        layout.addLayout(fov_overlay_section)
-
-
-        # --- Precision Settings (Float Sliders) - Use 3 columns instead of 2 ---
-        float_section = QGridLayout()
-        float_section.setHorizontalSpacing(20)
-        float_section.setVerticalSpacing(15)
-
-        float_labels = self.section_title("Precision Settings:")
-        layout.addWidget(float_labels)
-
-        self.add_float_slider_to_grid(float_section, 0, 0, "FOV", "FOV", 0.1, 30.0, 0.1, 10)
-        self.add_float_slider_to_grid(float_section, 0, 1, "Aim Start Delay (s)", "aim_start_delay", 0.0, 1.0, 0.01, 100)
-        self.add_float_slider_to_grid(float_section, 0, 2, "RCS Scale", "rcs_scale", 0.0, 5.0, 0.1, 10)
-        self.add_float_slider_to_grid(float_section, 1, 0, "Smoothing Base", "smooth_base", 0.0, 1.0, 0.01, 100)
-        self.add_float_slider_to_grid(float_section, 1, 1, "Smoothing Variance", "smooth_var", 0.0, 1.0, 0.01, 100)
-        self.add_float_slider_to_grid(float_section, 2, 1, "RCS Smooth Base", "rcs_smooth_base", 0.0, 1.0, 0.01, 100)
-        self.add_float_slider_to_grid(float_section, 2, 2, "RCS Smooth Variance", "rcs_smooth_var", 0.0, 1.0, 0.01, 100)
-        self.add_float_slider_to_grid(float_section, 1, 2, "Velocity Prediction Factor", "velocity_prediction_factor", 0.0, 1.0, 0.01, 100)
-        self.add_float_slider_to_grid(float_section, 2, 0, "Target Switch Delay", "target_switch_delay", 0.0, 1.0, 0.01, 100)
-
-
-        layout.addLayout(float_section)
+        layout.addLayout(fov_group)
         layout.addWidget(create_section_separator())
 
-        # --- Numeric Settings (Int Sliders) - Use 3 columns ---
-        int_section = QGridLayout()
-        int_section.setHorizontalSpacing(20)
-        int_section.setVerticalSpacing(15)
+        # --- Precision Settings (Float Sliders, 3 columns) ---
+        float_grid = QGridLayout()
+        float_grid.setHorizontalSpacing(20)
+        float_grid.setVerticalSpacing(15)
+        layout.addWidget(self.section_title("Precision Settings"))
 
-        layout.addWidget(self.section_title("Numeric Settings:"))
+        self.add_float_slider_to_grid(float_grid, 0, 0, "FOV", "FOV", 0.1, 30.0, 0.1, 10)
+        self.add_float_slider_to_grid(float_grid, 0, 1, "Aim Start Delay", "aim_start_delay", 0.0, 1.0, 0.01, 100)
+        self.add_float_slider_to_grid(float_grid, 0, 2, "RCS Scale", "rcs_scale", 0.0, 5.0, 0.1, 10)
+        self.add_float_slider_to_grid(float_grid, 1, 0, "Smoothing Base", "smooth_base", 0.0, 1.0, 0.01, 100)
+        self.add_float_slider_to_grid(float_grid, 1, 1, "Smoothing Variance", "smooth_var", 0.0, 1.0, 0.01, 100)
+        self.add_float_slider_to_grid(float_grid, 1, 2, "Velocity Prediction Factor", "velocity_prediction_factor", 0.0, 1.0, 0.01, 100)
+        self.add_float_slider_to_grid(float_grid, 2, 0, "Target Switch Delay", "target_switch_delay", 0.0, 1.0, 0.01, 100)
+        self.add_float_slider_to_grid(float_grid, 2, 1, "RCS Smooth Base", "rcs_smooth_base", 0.0, 1.0, 0.01, 100)
+        self.add_float_slider_to_grid(float_grid, 2, 2, "RCS Smooth Variance", "rcs_smooth_var", 0.0, 1.0, 0.01, 100)
 
-        self.add_int_slider_to_grid(int_section, 0, 0, "Downward Offset", "downward_offset", 0, 100)
-        self.add_int_slider_to_grid(int_section, 0, 1, "Max Entities", "max_entities", 1, 128)
-        self.add_int_slider_to_grid(int_section, 0, 2, "Max Mouse Move", "max_mouse_move", 1, 50)
-        self.add_int_slider_to_grid(int_section, 1, 0, "Max Delta Angle", "max_delta_angle", 1, 180)
+        layout.addLayout(float_grid)
+        layout.addWidget(create_section_separator())
 
-        layout.addLayout(int_section)
+        # --- Numeric Settings (Int Sliders, 3 columns) ---
+        int_grid = QGridLayout()
+        int_grid.setHorizontalSpacing(20)
+        int_grid.setVerticalSpacing(15)
+        layout.addWidget(self.section_title("Numeric Settings"))
+
+        self.add_int_slider_to_grid(int_grid, 0, 0, "Downward Offset", "downward_offset", 0, 100)
+        self.add_int_slider_to_grid(int_grid, 0, 1, "Max Entities", "max_entities", 1, 128)
+        self.add_int_slider_to_grid(int_grid, 0, 2, "Max Mouse Move", "max_mouse_move", 1, 50)
+        self.add_int_slider_to_grid(int_grid, 1, 0, "Max Delta Angle", "max_delta_angle", 1, 180)
+
+        layout.addLayout(int_grid)
         layout.addWidget(create_section_separator())
 
         # --- Input Settings ---
-        input_section = QGridLayout()
-        input_section.setHorizontalSpacing(20)
-        input_section.setVerticalSpacing(10)
+        input_group = QVBoxLayout()
+        input_group.addWidget(self.section_title("Input Settings"))
 
-        layout.addWidget(self.section_title("Input Settings:"))
-
-        # Aim Key Selector
-        aim_key_label = QLabel("Aim Activation Key:")
-        aim_key_label.setStyleSheet("""
-            color: #c5c8c6;
-            font-weight: 600;
-            font-size: 11pt;
-        """)
-        aim_key_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
-
-        self.aim_key_combo = CheatComboBox(
-            items=[
-                "mouse1", "mouse2", "mouse3", "mouse4", "mouse5",
-                "left_shift", "right_shift", "left_ctrl", "right_ctrl", "left_alt", "right_alt", "space"
-            ],
-            width=90  # slightly wider if you expect longer strings like "right_ctrl"
-        )
+        # Aim Key
+        key_vbox = QVBoxLayout()
+        aim_label = QLabel("Aim Activation Key:")
+        aim_label.setStyleSheet("color: #c5c8c6; font-weight: 600; font-size: 10pt;")
+        key_vbox.addWidget(aim_label)
+        self.aim_key_combo = CheatComboBox(items=["mouse1","mouse2","mouse3","mouse4","mouse5","left_shift","right_shift","left_ctrl","right_ctrl","left_alt","right_alt","space"], width=90)
         self.aim_key_combo.setCurrentText(Config.aim_key)
-        self.aim_key_combo.currentTextChanged.connect(lambda val: setattr(Config, "aim_key", val))
+        self.aim_key_combo.currentTextChanged.connect(lambda val: setattr(Config,"aim_key",val))
+        key_vbox.addWidget(self.aim_key_combo)
+        input_group.addLayout(key_vbox)
 
-        vbox = QVBoxLayout()
-        vbox.addWidget(aim_key_label)
-        vbox.addWidget(self.aim_key_combo)
-
-        container = QWidget()
-        container.setLayout(vbox)
-        input_section.addWidget(container, 1, 0, 1, 2)  # Span two columns
-
-
-        # Sensitivity Slider (inverted)
+        # Sensitivity & Invert Y
+        sens_layout = QHBoxLayout()
         self.sens_label = QLabel(f"Sensitivity: {Config.sensitivity:.3f}")
         self.sens_slider = NoScrollSlider(Qt.Horizontal)
-        self.sens_slider.setMinimum(8)       # corresponds to 0.008
-        self.sens_slider.setMaximum(1000)    # corresponds to 1.0
-
-        # Inverted: max slider position = min sensitivity, min slider position = max sensitivity
-        initial_slider_val = 1000 - int(Config.sensitivity * 1000) + 8
-        self.sens_slider.setValue(initial_slider_val)
-
-        def update_sensitivity(value):
-            real_val = (1000 - value + 8) / 1000
-            real_val = max(0.008, min(1.0, real_val))  # clamp just in case
-            setattr(Config, "sensitivity", real_val)
-            self.sens_label.setText(f"Sensitivity: {real_val:.3f}")
-
-        self.sens_slider.valueChanged.connect(update_sensitivity)
-
-
-        sens_layout = QVBoxLayout()
         sens_layout.addWidget(self.sens_label)
         sens_layout.addWidget(self.sens_slider)
 
-
-        sens_container = QWidget()
-        sens_container.setLayout(sens_layout)
-        input_section.addWidget(sens_container, 0, 0, 1, 2)  # span two columns
-
-        # Invert Y Checkbox
         self.invert_y_cb = CheatCheckBox("Invert Y")
         self.invert_y_cb.setChecked(Config.invert_y == -1)
+        self.invert_y_cb.stateChanged.connect(lambda state: setattr(Config,"invert_y",-1 if state==Qt.Checked else 1))
+        sens_layout.addWidget(self.invert_y_cb)
 
-        def toggle_invert_y(state):
-            setattr(Config, "invert_y", -1 if state == Qt.Checked else 1)
-
-        self.invert_y_cb.stateChanged.connect(toggle_invert_y)
-        input_section.addWidget(self.invert_y_cb, 0, 2)  # Adjust column as desired
-
-
-        layout.addLayout(input_section)
-
-        # --- Target Settings ---
-        target_section = QVBoxLayout()
-        layout.addWidget(self.section_title("Target Settings:"))
-
-        # Styled label
-        target_label = QLabel("Target Bone:")
-        target_label.setStyleSheet("""
-            color: #c5c8c6;
-            font-weight: 600;
-            font-size: 11pt;
-        """)
-        target_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        target_section.addWidget(target_label)
-
-        # Styled combo box
-        self.bone_select = CheatComboBox(
-            items=["head", "chest"],
-            width=80
-        )
-        self.bone_select.setCurrentText(Config.target_bone_name)
-        self.bone_select.currentTextChanged.connect(lambda val: setattr(Config, "target_bone_name", val))
-
-        target_section.addWidget(self.bone_select)
-
-
-        target_section.addSpacing(5)
-        self.learn_dir_label = QLabel(f"Learning Dir: {Config.learn_dir}")
-        target_section.addWidget(self.learn_dir_label)
-
-        layout.addLayout(target_section)
+        input_group.addLayout(sens_layout)
+        layout.addLayout(input_group)
         layout.addWidget(create_section_separator())
 
-        
-        content_widget.setLayout(layout)
-        scroll.setWidget(content_widget)
+        # --- Target Settings ---
+        target_group = QVBoxLayout()
+        target_group.addWidget(self.section_title("Target Settings"))
 
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        self.bone_select = CheatComboBox(items=["head","chest"], width=80)
+        self.bone_select.setCurrentText(Config.target_bone_name)
+        self.bone_select.currentTextChanged.connect(lambda val: setattr(Config,"target_bone_name",val))
+        target_group.addWidget(self.bone_select)
+
+        self.learn_dir_label = QLabel(f"Learning Dir: {Config.learn_dir}")
+        target_group.addWidget(self.learn_dir_label)
+
+        layout.addLayout(target_group)
+
+        # Final setup
+        scroll.setWidget(content_widget)
+        main_layout = QVBoxLayout(self)
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
 
@@ -1440,7 +1363,7 @@ class AimbotTab(QWidget):
         cb.setChecked(getattr(Config, attr))
         cb.stateChanged.connect(lambda state: setattr(Config, attr, state == Qt.Checked))
         layout.addWidget(cb)
-        
+
         # Store reference for refresh
         if 'checkboxes' not in self.ui_elements:
             self.ui_elements['checkboxes'] = {}
@@ -1468,7 +1391,7 @@ class AimbotTab(QWidget):
         container = QWidget()
         container.setLayout(vbox)
         grid.addWidget(container, row, col)
-        
+
         # Store reference for refresh
         if 'float_sliders' not in self.ui_elements:
             self.ui_elements['float_sliders'] = {}
@@ -1495,7 +1418,7 @@ class AimbotTab(QWidget):
         container = QWidget()
         container.setLayout(vbox)
         grid.addWidget(container, row, col)
-        
+
         # Store reference for refresh
         if 'int_sliders' not in self.ui_elements:
             self.ui_elements['int_sliders'] = {}
@@ -1505,7 +1428,7 @@ class AimbotTab(QWidget):
         val = getattr(Config, attr)
         label_widget = QLabel(f"{label_text}:")
         edit = QLineEdit(str(val))
-        
+
         def update_cfg_value():
             try:
                 new_val = typ(edit.text())
@@ -1526,7 +1449,7 @@ class AimbotTab(QWidget):
         container = QWidget()
         container.setLayout(vbox)
         grid.addWidget(container, row, col)
-        
+
         # Store reference for refresh
         if 'line_edits' not in self.ui_elements:
             self.ui_elements['line_edits'] = {}
@@ -1724,7 +1647,7 @@ class ESPTab(QWidget):
 
         layout.addLayout(color_grid)
         layout.addStretch()
-        
+
         content_widget.setLayout(layout)
         scroll.setWidget(content_widget)
 
@@ -1732,7 +1655,7 @@ class ESPTab(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
         self.setLayout(main_layout)
-        
+
     def update_panic_key(self, key_name, label_widget, button_widget):
         vk_code = key_to_vk(key_name)  # Returns int
         setattr(Config, "panic_key", vk_code)
@@ -1747,20 +1670,20 @@ class ESPTab(QWidget):
         # Update checkboxes
         for attr, checkbox in self.ui_elements.get('checkboxes', {}).items():
             checkbox.setChecked(getattr(Config, attr, False))
-        
+
         # Update sliders
         for attr, (slider, label) in self.ui_elements.get('sliders', {}).items():
             val = getattr(Config, attr, 1)
             slider.setValue(val)
             label.setText(f"{attr.replace('_', ' ').title()}: {val}")
-        
+
         # Update comboboxes
         for attr, combo in self.ui_elements.get('comboboxes', {}).items():
             current_value = getattr(Config, attr, "").lower()
             index = combo.findText(current_value)
             if index >= 0:
                 combo.setCurrentIndex(index)
-        
+
         # Update color buttons
         for attr, btn in self.ui_elements.get('color_buttons', {}).items():
             color = getattr(Config, attr, (255, 255, 255))
@@ -1800,7 +1723,7 @@ class ESPTab(QWidget):
         cb.setChecked(getattr(Config, config_attr, False))
         cb.stateChanged.connect(lambda state: setattr(Config, config_attr, state == Qt.Checked))
         layout.addWidget(cb)
-        
+
         # Store reference for refresh
         if 'checkboxes' not in self.ui_elements:
             self.ui_elements['checkboxes'] = {}
@@ -1829,7 +1752,7 @@ class ESPTab(QWidget):
             layout.addWidget(container, row, col)
         else:
             layout.addWidget(container)
-        
+
         # Store reference for refresh
         if 'comboboxes' not in self.ui_elements:
             self.ui_elements['comboboxes'] = {}
@@ -1850,7 +1773,7 @@ class ESPTab(QWidget):
         slider.valueChanged.connect(on_value_changed)
         layout.addWidget(label_widget)
         layout.addWidget(slider)
-        
+
         # Store reference for refresh
         if 'sliders' not in self.ui_elements:
             self.ui_elements['sliders'] = {}
@@ -1881,7 +1804,7 @@ class ESPTab(QWidget):
         container = QWidget()
         container.setLayout(h_layout)
         grid.addWidget(container, row, col)
-        
+
         # Store reference for refresh
         if 'color_buttons' not in self.ui_elements:
             self.ui_elements['color_buttons'] = {}
@@ -1895,7 +1818,7 @@ def start_toggle_listener(main_window):
                     main_window.setVisible(not main_window.isVisible())
                     while keyboard.is_pressed(cfg.toggle_menu_key):
                         pass
-                time.sleep(0.1)
+                time.sleep(0.016)
             except Exception as e:
                 print(f"[Toggle Listener] Exception occurred: {e}")
                 break
@@ -1930,57 +1853,74 @@ class MainWindow(QWidget):
 
         # Styling
         self.setStyleSheet("""
-            QWidget {
-                background-color: #181818;
-                color: #e0e0e0;
-                font-family: "Consolas", monospace;
-                font-size: 10pt;
-            }
-            QTabWidget::pane {
-                border: 1px solid #3a3a3a;
-                background-color: #222222;
-                border-radius: 6px 6px 0 0;
-            }
-            QTabBar::tab {
-                background: #222222;
-                color: #c8c8c8;
-                padding: 7px 22px;
-                border: 1px solid #3a3a3a;
-                border-bottom: none;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                margin-right: 4px;
-                min-width: 80px;
-            }
-            QTabBar::tab:hover {
-                background: #2e2e2e;
-                color: #ffffff;
-            }
-            QTabBar::tab:selected {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                            stop:0 #4a90e2, stop:1 #3171c6);
-                border-color: #3a3a3a;
-                color: #ffffff;
-                font-weight: 600;
-                padding-bottom: 8px;
-            }
-            QPushButton {
-                background-color: #2b2b2b;
-                border: 1px solid #444444;
-                border-radius: 4px;
-                padding: 6px 12px;
-                color: #d0d0d0;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #3d3d3d;
-                border-color: #4a90e2;
-                color: #ffffff;
-            }
-            QPushButton:pressed {
-                background-color: #1f1f1f;
-                border-color: #255fad;
-            }
+        QWidget {
+            background-color: #1e1e1e;          /* lighter gray background */
+            color: #d0d0d0;                     /* light gray text */
+            font-family: "Consolas", "Lucida Console", monospace;
+            font-size: 10pt;
+        }
+
+        QTabWidget::pane {
+            border: none;
+            background-color: #1e1e1e;
+        }
+
+        QTabBar::tab {
+            background: none;
+            color: #d0d0d0;
+            padding: 5px 10px;
+            border: none;
+            min-width: 70px;
+            font-weight: normal;
+        }
+
+        QTabBar::tab:selected {
+            color: #ffffff;                      /* bright gray when selected */
+            font-weight: bold;
+        }
+
+        QTabBar::tab:hover {
+            color: #a0a0a0;                      /* lighter gray on hover */
+        }
+
+        QPushButton {
+            background: none;
+            color: #d0d0d0;
+            border: 1px solid #808080;           /* medium gray border */
+            padding: 3px 6px;
+            font-weight: normal;
+            border-radius: 0px;                  /* square corners */
+        }
+
+        QPushButton:hover {
+            background-color: #2a2a2a;           /* subtle darker gray hover */
+            color: #ffffff;
+        }
+
+        QPushButton:pressed {
+            background-color: #3a3a3a;           /* even darker gray when pressed */
+        }
+
+        QScrollBar:vertical {
+            background: #1e1e1e;
+            width: 8px;
+            border: none;
+        }
+
+        QScrollBar::handle:vertical {
+            background: #808080;                  /* medium gray handle */
+            min-height: 18px;
+            border-radius: 0px;
+        }
+
+        QScrollBar::handle:vertical:hover {
+            background: #a0a0a0;                  /* lighter gray on hover */
+        }
+
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0px;
+            subcontrol-origin: margin;
+        }
         """)
 
         # Drag movement setup
@@ -2074,9 +2014,22 @@ class MainWindow(QWidget):
         stop_triggerbot_thread()
         QApplication.quit()
 
+def _apply_global_qss(app):
+    """Apply a single, lightweight global stylesheet to avoid repeated per-widget setStyleSheet() calls."""
+    qss = """
+    QWidget { font-size: 12px; }
+    QPushButton { border-radius: 8px; padding: 6px 10px; }
+    QCheckBox, QRadioButton { padding: 2px; }
+    """
+    app.setStyleSheet(qss)
+
+
 def run():
     print("Made by GitHub.com/Cr0mb/")
     app = QApplication(sys.argv)
+
+    # Apply global stylesheet
+    _apply_global_qss(app)
 
     win = MainWindow()
     win.show()
@@ -2091,6 +2044,7 @@ def run():
     start_toggle_listener(win)
 
     app.exec_()  # <--- REQUIRED!
+
 
 if __name__ == "__main__":
     run()
