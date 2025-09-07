@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QFont
 
-MAIN_SCRIPT = "GFusion_optimized.py"
+MAIN_SCRIPT = "GFusion.py"
 LAUNCHER_FILE = "launcher.py"
 FOLDERS_TO_OBFUSCATE = ["Features", "Process"]
 FERNET_KEY = Fernet.generate_key()
@@ -248,3 +248,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
