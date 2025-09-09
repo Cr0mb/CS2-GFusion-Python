@@ -12,17 +12,6 @@ import win32ui
 from Process.offsets import Offsets
 from Process.config import Config
 
-
-# === Weapon ID to Name Mapping ===
-WEAPON_NAMES = {
-    1: "Deagle", 2: "Dualies", 3: "5-7", 4: "Glock", 7: "AK", 8: "AUG", 9: "AWP",
-    10: "FAMAS", 11: "G3SG1", 14: "M249", 16: "M4A4", 17: "MAC-10", 19: "P90", 23: "MP5",
-    24: "UMP", 25: "XM1014", 26: "Bizon", 27: "MAG-7", 28: "Negev", 29: "Sawed-Off", 30: "Tec-9",
-    31: "Taser", 32: "P2000", 33: "MP7", 34: "MP9", 35: "Nova", 36: "P250", 38: "SCAR", 39: "SG553",
-    40: "SSG08", 42: "Knife", 43: "Galil", 44: "HE", 45: "Smoke", 46: "Molotov", 47: "Decoy",
-    48: "Incendiary", 49: "C4", 59: "Knife", 60: "M4A1-S", 61: "USP-S", 63: "CZ", 64: "R8"
-}
-
 PROCESS_PERMISSIONS = 0x0010  # PROCESS_VM_READ
 
 
@@ -354,7 +343,6 @@ def get_entities(handle, base):
             continue
 
     return result
-
 
 class GDIRenderer:
     BONE_POSITIONS = {"head": 6, "chest": 15, "left_hand": 10, "right_hand": 2, "left_leg": 23, "right_leg": 26}
@@ -940,6 +928,35 @@ local_info_box_pos = [100, 400]
 local_info_drag_offset = [0, 0]
 local_info_dragging = False
 
+def esp_weapon(handle, pawn_addr):
+    try:
+        weapon_pointer = safe_read_uint64(handle, pawn_addr + Offsets.m_pClippingWeapon)
+        if not weapon_pointer:
+            return None
+        weapon_index = read_int(handle, weapon_pointer + Offsets.m_AttributeManager + Offsets.m_Item + Offsets.m_iItemDefinitionIndex)
+        return get_weapon_name(weapon_index)
+    except Exception as e:
+        print(f"[esp_weapon] Error: {e}")
+        return None
+
+def get_weapon_name(weapon_id):
+    if weapon_id > 262100:
+        weapon_id = weapon_id - 262144
+    weapon_name = {
+        1: 'deagle', 2: 'elite', 3: 'fiveseven', 4: 'glock', 7: 'ak47', 8: 'aug', 9: 'awp',
+        10: 'famas', 11: 'g3sg1', 13: 'galil', 14: 'm249', 16: 'm4a1', 17: 'mac10', 19: 'p90',
+        23: 'ump45', 24: 'ump45', 25: 'xm1014', 26: 'bizon', 27: 'mag7', 28: 'negev', 29: 'sawedoff',
+        30: 'tec9', 31: 'taser', 32: 'hkp2000', 33: 'mp7', 34: 'mp9', 35: 'nova', 36: 'p250',
+        38: 'scar20', 39: 'sg556', 40: 'ssg08', 42: 'knife_ct', 43: 'flashbang', 44: 'hegrenade',
+        45: 'smokegrenade', 46: 'molotov', 47: 'decoy', 48: 'incgrenade', 49: 'c4', 57: 'deagle',
+        59: 'knife_t', 60: 'm4a1_silencer', 61: 'usp_silencer', 63: 'cz75a', 64: 'revolver',
+        500: 'bayonet', 505: 'knife_flip', 506: 'knife_gut', 507: 'knife_karambit',
+        508: 'knife_m9_bayonet', 509: 'knife_tactical', 512: 'knife_falchion',
+        514: 'knife_survival_bowie', 515: 'knife_butterfly', 516: 'knife_push', 526: 'knife_kukri'
+    }
+    return weapon_name.get(weapon_id, f"Weapon ID: {weapon_id}")
+
+
 def main():
     hwnd = windll.user32.FindWindowW(None, "Counter-Strike 2")
     if not hwnd:
@@ -1286,13 +1303,10 @@ def main():
                         print(f"[Velocity/Speed ESP Error] {e}")
 
                 if flags["weapon_esp_enabled"]:
-                    try:
-                        weapon = read_uint64(handle, ent.pawn + Offsets.m_pClippingWeapon)
-                        idx = read_int(handle, weapon + Offsets.m_AttributeManager + Offsets.m_Item + Offsets.m_iItemDefinitionIndex)
-                        weapon_name = WEAPON_NAMES.get(idx, f"Weapon ID: {idx}")
+                    weapon_name = esp_weapon(handle, ent.pawn)
+                    if weapon_name:
                         overlay.draw_text(weapon_name, x + w/2, y + h + 4, cfg.color_weapon_text, font_size, centered=True)
-                    except Exception as e:
-                        print(f"[Weapon ESP Error] {e}")
+
 
                 if flags["line_esp_enabled"]:
                     start_x = overlay.width // 2
