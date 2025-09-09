@@ -81,40 +81,139 @@ NtReadVirtualMemory.argtypes = [
 ]
 NtReadVirtualMemory.restype = ctypes.c_ulong
 
-def nt_read_memory(process_handle, address, size):
-    buffer = (ctypes.c_ubyte * size)()
-    bytes_read = ctypes.c_size_t()
-    status = NtReadVirtualMemory(
-        process_handle,
-        ctypes.c_void_p(address),
-        ctypes.byref(buffer),
-        size,
-        ctypes.byref(bytes_read)
-    )
-    if status != 0 or bytes_read.value != size:
-        return None
-    return bytes(buffer)
+# -----------------------------
+# Mouse Movement
+# -----------------------------
+INPUT_MOUSE = 0
+MOUSEEVENTF_MOVE = 0x0001
 
-    buffer = (ctypes.c_ubyte * size)()
-    bytes_read = ctypes.c_size_t()
-    status = NtReadVirtualMemory(process_handle,
-                                 ctypes.c_void_p(address),
-                                 ctypes.byref(buffer),
-                                 size,
-                                 ctypes.byref(bytes_read))
-    if status != 0 or bytes_read.value != size:
-        return None
-    return bytes(buffer)
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", ctypes.c_long),
+                ("dy", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
 
-def bytes_to_int(buffer, signed=True):
-    return int.from_bytes(buffer, byteorder='little', signed=signed)
+class INPUT(ctypes.Structure):
+    class _INPUT(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT)]
+    _fields_ = [("type", ctypes.c_ulong), ("ii", _INPUT)]
 
-def bytes_to_float(buffer):
-    return struct.unpack("f", buffer)[0]
+SendInput = ctypes.windll.user32.SendInput
 
-def bytes_to_vec3(buffer):
-    return struct.unpack("fff", buffer)
+def move_mouse(dx, dy):
+    mi = MOUSEINPUT(dx=dx, dy=dy, mouseData=0, dwFlags=MOUSEEVENTF_MOVE, time=0, dwExtraInfo=None)
+    inp = INPUT(type=INPUT_MOUSE, ii=INPUT._INPUT(mi=mi))
+    SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
 
+# -----------------------------
+# Memory Readers
+# -----------------------------
+class IMemoryReader:
+    def read(self, address: int, t: str = "int"):
+        raise NotImplementedError
+
+    def read_vec3(self, address: int):
+        raise NotImplementedError
+
+class RPMReader(IMemoryReader):
+    """Read memory using kernel32.ReadProcessMemory"""
+    def __init__(self, process_handle):
+        self.process_handle = process_handle
+
+    def read(self, addr, t="int"):
+        size_map = {"int": 4, "long": 8, "float": 4, "ushort": 2}
+        size = size_map.get(t, 4)
+        buffer = (ctypes.c_ubyte * size)()
+        bytes_read = ctypes.c_size_t()
+
+        success = kernel32.ReadProcessMemory(
+            self.process_handle,
+            ctypes.c_void_p(addr),
+            ctypes.byref(buffer),
+            size,
+            ctypes.byref(bytes_read)
+        )
+        if not success or bytes_read.value != size:
+            return 0.0 if t == "float" else 0
+
+        raw = bytes(buffer[:size])
+        if t == "int":
+            return int.from_bytes(raw, "little", signed=True)
+        elif t == "long":
+            return int.from_bytes(raw, "little", signed=False)
+        elif t == "float":
+            return struct.unpack("f", raw)[0]
+        elif t == "ushort":
+            return int.from_bytes(raw, "little", signed=False)
+        return 0
+
+    def read_vec3(self, address):
+        raw = self.read_bytes(address, 12)
+        if raw:
+            return list(struct.unpack("fff", raw))
+        return [0.0, 0.0, 0.0]
+
+    def read_bytes(self, addr, size):
+        buffer = (ctypes.c_ubyte * size)()
+        bytes_read = ctypes.c_size_t()
+        success = kernel32.ReadProcessMemory(
+            self.process_handle,
+            ctypes.c_void_p(addr),
+            ctypes.byref(buffer),
+            size,
+            ctypes.byref(bytes_read)
+        )
+        if not success or bytes_read.value != size:
+            return None
+        return bytes(buffer[:bytes_read.value])
+
+class NtVMReader(IMemoryReader):
+    """Read memory using ntdll.NtReadVirtualMemory"""
+    def __init__(self, process_handle):
+        self.process_handle = process_handle
+
+    def read(self, addr, t="int"):
+        size_map = {"int": 4, "long": 8, "float": 4, "ushort": 2}
+        size = size_map.get(t, 4)
+        raw = self.read_bytes(addr, size)
+        if not raw:
+            return 0.0 if t == "float" else 0
+
+        if t == "int":
+            return int.from_bytes(raw, "little", signed=True)
+        elif t == "long":
+            return int.from_bytes(raw, "little", signed=False)
+        elif t == "float":
+            return struct.unpack("f", raw)[0]
+        elif t == "ushort":
+            return int.from_bytes(raw, "little", signed=False)
+        return 0
+
+    def read_vec3(self, address):
+        raw = self.read_bytes(address, 12)
+        if raw:
+            return list(struct.unpack("fff", raw))
+        return [0.0, 0.0, 0.0]
+
+    def read_bytes(self, addr, size):
+        buffer = (ctypes.c_ubyte * size)()
+        bytes_read = ctypes.c_size_t()
+        status = NtReadVirtualMemory(
+            self.process_handle,
+            ctypes.c_void_p(addr),
+            ctypes.byref(buffer),
+            size,
+            ctypes.byref(bytes_read)
+        )
+        if status != 0 or bytes_read.value != size:
+            return None
+        return bytes(buffer[:bytes_read.value])
+
+# -----------------------------
+# Process Handling
+# -----------------------------
 class CS2Process:
     def __init__(self, proc_name="cs2.exe", mod_name="client.dll", timeout=30):
         self.process_name = proc_name.encode()
@@ -239,6 +338,9 @@ class MemoryReader:
         return [0.0, 0.0, 0.0]
 
 
+# -----------------------------
+# Weapon Tracking
+# -----------------------------
 class CS2WeaponTracker:
     INVALID_WEAPON_IDS = {
         41, 42, 59, 80, 500, 505, 506, 507, 508, 509, 512, 514, 515, 516, 519, 520, 522, 523,
@@ -251,8 +353,8 @@ class CS2WeaponTracker:
         self.cs2process.get_module_base()
         self.process_handle = self.cs2process.process_handle
         self.client = self.cs2process.module_base
-        self.reader = MemoryReader(self.process_handle)
-
+        # Use unified reader here
+        self.reader = RPMReader(self.process_handle)
 
     def read_longlong(self, address):
         return self.reader.read(address, "long")
@@ -275,7 +377,10 @@ class CS2WeaponTracker:
         if weapon_id is None:
             return True
         return weapon_id not in self.INVALID_WEAPON_IDS
-
+        
+# -----------------------------
+# Aimbot + RCS
+# -----------------------------
 class AimbotRCS:
     MAX_DELTA_ANGLE = 60
     SENSITIVITY = None
@@ -289,7 +394,8 @@ class AimbotRCS:
         self.cs2.initialize()
         self.base = self.cs2.module_base
         self.process_handle = self.cs2.process_handle
-        self.reader = MemoryReader(self.process_handle)
+        # Use unified reader
+        self.reader = RPMReader(self.process_handle)
         self.local_player_controller = self.base + self.o.dwLocalPlayerController  # cached address
 
         self.bone_indices = {"head": 6, "chest": 18}
@@ -313,6 +419,13 @@ class AimbotRCS:
         self._hypot = math.hypot
         self._atan2 = math.atan2
         self._degrees = math.degrees
+
+    # All "self.read" calls now redirect to self.reader.read
+    def read_vec3(self, addr):
+        return self.reader.read_vec3(addr)
+
+    def read(self, addr, t="int"):
+        return self.reader.read(addr, t)
 
 
     def is_cs2_focused(self):
@@ -395,44 +508,6 @@ class AimbotRCS:
 
     kernel32 = ctypes.windll.kernel32
 
-    def read(self, addr, t="int"):
-        # Handle bad input early
-        if not isinstance(addr, int) or addr <= 0:
-            print(f"[!] Invalid address passed to read(): {addr}")
-            return 0.0 if t == "float" else 0
-
-        size = {"int": 4, "long": 8, "float": 4, "ushort": 2}.get(t, 4)
-        buffer = (ctypes.c_ubyte * size)()
-        bytesRead = ctypes.c_size_t()
-
-        try:
-            success = kernel32.ReadProcessMemory(
-                self.process_handle,
-                ctypes.c_void_p(addr),                # <-- FIXED
-                ctypes.byref(buffer),
-                size,
-                ctypes.byref(bytesRead)
-            )
-        except Exception as e:
-            print(f"[!] ReadProcessMemory threw exception: {e}")
-            return 0.0 if t == "float" else 0
-
-        if not success or bytesRead.value != size:
-            error_code = kernel32.GetLastError()
-            print(f"[!] Failed to read memory at {hex(addr)} (size={size}), Error={error_code}")
-            return 0.0 if t == "float" else 0
-
-        raw = bytes(buffer[:size])
-        if t == "int":
-            return int.from_bytes(raw, "little", signed=True)
-        elif t == "long":
-            return int.from_bytes(raw, "little", signed=False)
-        elif t == "float":
-            return struct.unpack("f", raw)[0]
-        elif t == "ushort":
-            return int.from_bytes(raw, "little", signed=False)
-        return 0
-    
     def get_entity(self, base, idx):
         array_idx = (idx & 0x7FFF) >> 9
         entity_addr = self.read(base + 8 * array_idx + 16, "long")
@@ -441,12 +516,6 @@ class AimbotRCS:
         ctrl = self.read(entity_addr + 0x78 * (idx & 0x1FF), "long")
         local_ctrl = self.read(self.local_player_controller, "long")  # cached addr
         return ctrl if ctrl and ctrl != local_ctrl else 0
-
-    def read_vec3(self, addr):
-        return self.reader.read_vec3(addr)
-
-    def read(self, addr, t="int"):
-        return self.reader.read(addr, t)
 
     def read_bone_pos(self, pawn, idx):
         scene = self.read(pawn + self.o.m_pGameSceneNode, "long")
