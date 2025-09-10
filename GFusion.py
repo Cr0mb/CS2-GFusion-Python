@@ -8,7 +8,10 @@ import datetime
 import platform
 import requests
 import keyboard
-
+import ctypes
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget, QApplication
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QWindow
 from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QEasingCurve, QPropertyAnimation
 from PyQt5.QtGui import QColor, QFont, QPalette
 from PyQt5.QtWidgets import (
@@ -195,120 +198,6 @@ def start_esp_thread():
     esp_thread = threading.Thread(target=run_esp, daemon=True)
     esp_thread.start()
 
-class CheatCheckBox(QCheckBox):
-    def __init__(self, label="", parent=None):
-        super().__init__(label, parent)
-        self.setStyleSheet("""
-            QCheckBox {
-                color: #d0d0d0;                  /* light gray text */
-                font-size: 10pt;
-                font-family: "Consolas", "Lucida Console", monospace;
-                padding-left: 6px;
-            }
-
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-                border-radius: 2px;
-                border: 2px solid #808080;       /* medium gray border */
-                background-color: #1e1e1e;       /* dark gray background */
-            }
-
-            QCheckBox::indicator:hover {
-                background-color: #2a2a2a;       /* slightly lighter gray on hover */
-            }
-
-            QCheckBox::indicator:checked {
-                background-color: #808080;       /* checked = medium gray */
-                border: 2px solid #d0d0d0;      /* lighter border on check */
-            }
-
-            QCheckBox::indicator:checked:hover {
-                background-color: #a0a0a0;       /* hover over checked = lighter gray */
-                border: 2px solid #d0d0d0;
-            }
-        """)
-
-
-class CheatComboBox(QComboBox):
-    def __init__(self, items=None, width=90, parent=None):
-        super().__init__(parent)
-        if items:
-            self.addItems(items)
-        self.setFixedWidth(width)
-        self.setStyleSheet("""
-            QComboBox {
-                background-color: #1e1e1e;        /* dark gray */
-                border: 1px solid #808080;        /* medium gray border */
-                border-radius: 2px;
-                padding: 4px 8px;
-                color: #d0d0d0;                   /* light gray text */
-                font-family: "Consolas", "Lucida Console", monospace;
-                font-size: 10pt;
-            }
-            QComboBox:hover {
-                border-color: #a0a0a0;           /* lighter gray on hover */
-            }
-            QComboBox:focus {
-                border-color: #a0a0a0;
-                outline: none;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox::down-arrow {
-                image: none;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #1e1e1e;
-                border: 1px solid #808080;
-                selection-background-color: #555555;  /* selected item dark gray */
-                selection-color: #d0d0d0;
-                color: #d0d0d0;
-                font-family: "Consolas", "Lucida Console", monospace;
-            }
-        """)
-        self.wheelEvent = lambda event: None  # disable scroll
-
-
-class NoScrollSlider(QSlider):
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self.setFocusPolicy(Qt.StrongFocus)
-        self.setStyleSheet("""
-            QSlider::groove:horizontal {
-                height: 4px;
-                background: #2a2a2a;           /* dark gray groove */
-                border-radius: 2px;
-                margin: 3px 0;
-            }
-            QSlider::handle:horizontal {
-                background-color: #808080;     /* medium gray handle */
-                border: 1px solid #a0a0a0;    /* slightly lighter border */
-                width: 12px;
-                height: 12px;
-                margin: -4px 0;
-                border-radius: 2px;
-            }
-            QSlider::handle:horizontal:hover {
-                background-color: #a0a0a0;     /* lighter gray on hover */
-                border: 1px solid #c0c0c0;
-            }
-            QSlider::sub-page:horizontal {
-                background: #555555;           /* darker gray for filled part */
-                border-radius: 2px;
-            }
-            QSlider::add-page:horizontal {
-                background: #2a2a2a;           /* dark gray unfilled part */
-                border-radius: 2px;
-            }
-        """)
-
-    def wheelEvent(self, event):
-        pass  # disable scroll wheel changes
-
-
-
 class KeyListenerThread(QThread):
     key_pressed = pyqtSignal(str)
 
@@ -427,177 +316,6 @@ class DataWatcher(QThread):
     def stop(self):
         self.running = False
         self.wait()
-
-LEARN_DIR = "aimbot_data"
-
-class RecoilViewer(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setMinimumSize(850, 550)
-        self.setStyleSheet("""
-            background-color: #111;
-            border-radius: 10px;
-            border: 2px solid #00ffff;
-        """)
-
-        self.weapon_ids = []
-        self.all_data = {}
-        self._last_aimbot_plot_hash = None  # ✅ initialize before first use
-
-        self.init_ui()
-        self.scan_aimbot_data()  # Initial scan
-
-        # Watcher: rescan every 2 seconds
-        self.watcher_thread = DataWatcher()
-        self.watcher_thread.data_updated.connect(self.scan_aimbot_data)
-        self.watcher_thread.start()
-
-    def init_ui(self):
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(10, 10, 10, 10)
-
-        header = QHBoxLayout()
-        header_label = QLabel("GFusion Recoil Analyzer")
-        header_label.setStyleSheet("color: #00ffff; font-size: 14px; font-weight: bold;")
-        header.addWidget(header_label)
-        header.addStretch()
-        self.layout.addLayout(header)
-
-        selector = QHBoxLayout()
-        label = QLabel("Weapon:")
-        label.setStyleSheet("color: white; font-size: 12px;")
-        self.dropdown = QComboBox()
-        self.dropdown.currentTextChanged.connect(self.update_plot)
-        self.dropdown.setStyleSheet("""
-            QComboBox {
-                background-color: #1e1e1e; color: white;
-                border: 1px solid #00ffff; padding: 2px; font-size: 12px;
-                border-radius: 5px;
-            }
-            QComboBox::drop-down { border: none; background: #1e1e1e; }
-            QComboBox QAbstractItemView {
-                background-color: #1e1e1e; color: white;
-                selection-background-color: #00ffff; selection-color: black;
-                border: 1px solid #00ffff; outline: 0;
-            }
-        """)
-        selector.addWidget(label)
-        selector.addWidget(self.dropdown)
-        self.layout.addLayout(selector)
-
-        content = QHBoxLayout()
-        self.canvas = FigureCanvas(Figure(facecolor='#1e1e1e'))
-        self.ax = self.canvas.figure.add_subplot(111)
-        self.ax.set_facecolor('#1e1e1e')
-        self.ax.set_aspect('equal')
-        content.addWidget(self.canvas, 4)
-
-        self.legend_scroll = QScrollArea()
-        self.legend_scroll.setMinimumWidth(200)
-        self.legend_scroll.setStyleSheet("""
-            QScrollArea {
-                background: #111;
-                border: 1px solid #444;
-                border-radius: 5px;
-            }
-        """)
-        self.legend_widget = QWidget()
-        self.legend_layout = QVBoxLayout(self.legend_widget)
-        self.legend_layout.setContentsMargins(6, 6, 6, 6)
-        self.legend_scroll.setWidgetResizable(True)
-        self.legend_scroll.setWidget(self.legend_widget)
-        content.addWidget(self.legend_scroll, 1)
-
-        self.layout.addLayout(content)
-
-    def scan_aimbot_data(self):
-        """Periodically scans the directory and updates the dropdown and data if needed."""
-        if not os.path.exists(LEARN_DIR):
-            self.weapon_ids = []
-            self.all_data = {}
-            self.dropdown.clear()
-            self.ax.clear()
-            data_blob = repr(locals()).encode('utf-8', errors='ignore')
-        else:
-            # Create a blob even if the dir exists, so we don't crash
-            state = {
-                "weapon_ids": self.weapon_ids,
-                "all_data": self.all_data
-            }
-            data_blob = json.dumps(state, default=str).encode("utf-8", errors="ignore")
-
-        h = hashlib.sha1(data_blob).hexdigest()
-        if h != self._last_aimbot_plot_hash:
-            self._last_aimbot_plot_hash = h
-            self.canvas.draw()
-            return
-
-
-        new_weapon_ids = [f[:-5] for f in os.listdir(LEARN_DIR) if f.endswith(".json")]
-        if set(new_weapon_ids) != set(self.weapon_ids):
-            self.weapon_ids = new_weapon_ids
-            self.all_data = {}
-            self.dropdown.clear()
-            for wid in self.weapon_ids:
-                try:
-                    with open(os.path.join(LEARN_DIR, f"{wid}.json")) as f:
-                        self.all_data[wid] = json.load(f)
-                        self.dropdown.addItem(wid)
-                except Exception as e:
-                    print(f"Error loading {wid}.json: {e}")
-
-            # Auto-select first if available
-            if self.weapon_ids:
-                self.dropdown.setCurrentText(self.weapon_ids[0])
-                self.update_plot(self.weapon_ids[0])
-
-    def update_plot(self, weapon_id):
-        self.ax.clear()
-        self.ax.set_title(f"Recoil & Compensate: {weapon_id}", color='white', fontsize=10)
-        self.ax.set_xlabel("Yaw", color='white', fontsize=9)
-        self.ax.set_ylabel("Pitch", color='white', fontsize=9)
-        self.ax.tick_params(axis='x', colors='white', labelsize=8)
-        self.ax.tick_params(axis='y', colors='white', labelsize=8)
-
-        while self.legend_layout.count():
-            item = self.legend_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        data = self.all_data.get(weapon_id, {})
-        for idx, (key, vectors) in enumerate(data.items()):
-            x, y = [0], [0]
-            inv_x, inv_y = [0], [0]
-            for dx, dy in vectors:
-                x.append(x[-1] + dy)
-                y.append(y[-1] + dx)
-                inv_x.append(inv_x[-1] - dy)
-                inv_y.append(inv_y[-1] - dx)
-
-            color = f"C{idx % 10}"
-            self.ax.plot(x, y, marker='o', color=color, linewidth=2, label=f"Recoil {key}")
-            self.ax.plot(inv_x, inv_y, marker='x', linestyle='--', color=color, alpha=0.6, linewidth=2, label=f"Compensate {key}")
-            self.add_legend_item(f"Recoil {key}", color)
-            self.add_legend_item(f"Compensate {key}", color, dashed=True)
-
-        self.ax.plot(0, 0, 'bo', markersize=8, markeredgecolor='black', zorder=10)
-        self.add_legend_item("Center (0,0)", "#00ffff", bold=True)
-        self.ax.grid(True, linestyle='--', alpha=0.3)
-        self.canvas.draw()
-
-    def add_legend_item(self, text, color, dashed=False, bold=False):
-        label = QLabel(text)
-        style = f"""
-            color: {'#00ffff' if bold else 'white'};
-            border-left: 8px {'dashed' if dashed else 'solid'} {color};
-            padding: 2px;
-            margin-bottom: 2px;
-            font-weight: {'bold' if bold else 'normal'};
-            font-size: 11px;
-        """
-        label.setStyleSheet(style)
-        self.legend_layout.addWidget(label)
 
 class TriggerBotTab(QWidget):
     def __init__(self):
@@ -1255,8 +973,25 @@ class AimbotTab(QWidget):
         sens_layout = QHBoxLayout()
         self.sens_label = QLabel(f"Sensitivity: {Config.sensitivity:.3f}")
         self.sens_slider = NoScrollSlider(Qt.Horizontal)
+        self.sens_slider.setMinimum(8)       # matches your refresh_ui scaling
+        self.sens_slider.setMaximum(1000)
+
+        # Set initial value from Config
+        sens_val = max(0.008, min(1.0, getattr(Config, "sensitivity", 0.1)))
+        slider_val = 1000 - int(sens_val * 1000) + 8
+        self.sens_slider.setValue(slider_val)
+
+        def update_sensitivity(val):
+            real = (1000 - val + 8) / 1000.0
+            real = max(0.008, min(1.0, real))
+            setattr(Config, "sensitivity", real)
+            self.sens_label.setText(f"Sensitivity: {real:.3f}")
+
+        self.sens_slider.valueChanged.connect(update_sensitivity)
+
         sens_layout.addWidget(self.sens_label)
         sens_layout.addWidget(self.sens_slider)
+
 
         self.invert_y_cb = CheatCheckBox("Invert Y")
         self.invert_y_cb.setChecked(Config.invert_y == -1)
@@ -1503,9 +1238,6 @@ class ESPTab(QWidget):
 
         layout.addWidget(self.section_title("Panic Settings:"))
         panic_row = QHBoxLayout()
-
-        # Panic Mode toggle
-        self.add_checkbox(panic_row, "Enable Panic Mode", "panic_mode")
 
         # Panic Key selector
         panic_key_label = QLabel(f"Panic Key: {getattr(Config, 'panic_key', 'F12')}")
@@ -1826,10 +1558,176 @@ def start_toggle_listener(main_window):
     t = threading.Thread(target=listen, daemon=True)
     t.start()
 
-import ctypes
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget, QApplication
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QWindow
+LEARN_DIR = "aimbot_data"
+
+class RecoilViewer(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setMinimumSize(850, 550)
+        self.setStyleSheet("""
+            background-color: #111;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+        """)
+
+        self.weapon_ids = []
+        self.all_data = {}
+        self._last_aimbot_plot_hash = None  # ✅ initialize before first use
+
+        self.init_ui()
+        self.scan_aimbot_data()  # Initial scan
+
+        # Watcher: rescan every 2 seconds
+        self.watcher_thread = DataWatcher()
+        self.watcher_thread.data_updated.connect(self.scan_aimbot_data)
+        self.watcher_thread.start()
+
+    def init_ui(self):
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+
+        header = QHBoxLayout()
+        header_label = QLabel("GFusion Recoil Analyzer")
+        header_label.setStyleSheet("color: #00ffff; font-size: 14px; font-weight: bold;")
+        header.addWidget(header_label)
+        header.addStretch()
+        self.layout.addLayout(header)
+
+        selector = QHBoxLayout()
+        label = QLabel("Weapon:")
+        label.setStyleSheet("color: white; font-size: 12px;")
+        self.dropdown = QComboBox()
+        self.dropdown.currentTextChanged.connect(self.update_plot)
+        self.dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #1e1e1e; color: white;
+                border: 1px solid #00ffff; padding: 2px; font-size: 12px;
+                border-radius: 5px;
+            }
+            QComboBox::drop-down { border: none; background: #1e1e1e; }
+            QComboBox QAbstractItemView {
+                background-color: #1e1e1e; color: white;
+                selection-background-color: #00ffff; selection-color: black;
+                border: 1px solid #00ffff; outline: 0;
+            }
+        """)
+        selector.addWidget(label)
+        selector.addWidget(self.dropdown)
+        self.layout.addLayout(selector)
+
+        content = QHBoxLayout()
+        self.canvas = FigureCanvas(Figure(facecolor='#1e1e1e'))
+        self.ax = self.canvas.figure.add_subplot(111)
+        self.ax.set_facecolor('#1e1e1e')
+        self.ax.set_aspect('equal')
+        content.addWidget(self.canvas, 4)
+
+        self.legend_scroll = QScrollArea()
+        self.legend_scroll.setMinimumWidth(200)
+        self.legend_scroll.setStyleSheet("""
+            QScrollArea {
+                background: #111;
+                border: 1px solid #444;
+                border-radius: 5px;
+            }
+        """)
+        self.legend_widget = QWidget()
+        self.legend_layout = QVBoxLayout(self.legend_widget)
+        self.legend_layout.setContentsMargins(6, 6, 6, 6)
+        self.legend_scroll.setWidgetResizable(True)
+        self.legend_scroll.setWidget(self.legend_widget)
+        content.addWidget(self.legend_scroll, 1)
+
+        self.layout.addLayout(content)
+
+    def scan_aimbot_data(self):
+        """Periodically scans the directory and updates the dropdown and data if needed."""
+        if not os.path.exists(LEARN_DIR):
+            self.weapon_ids = []
+            self.all_data = {}
+            self.dropdown.clear()
+            self.ax.clear()
+            data_blob = repr(locals()).encode('utf-8', errors='ignore')
+        else:
+            # Create a blob even if the dir exists, so we don't crash
+            state = {
+                "weapon_ids": self.weapon_ids,
+                "all_data": self.all_data
+            }
+            data_blob = json.dumps(state, default=str).encode("utf-8", errors="ignore")
+
+        h = hashlib.sha1(data_blob).hexdigest()
+        if h != self._last_aimbot_plot_hash:
+            self._last_aimbot_plot_hash = h
+            self.canvas.draw()
+            return
+
+
+        new_weapon_ids = [f[:-5] for f in os.listdir(LEARN_DIR) if f.endswith(".json")]
+        if set(new_weapon_ids) != set(self.weapon_ids):
+            self.weapon_ids = new_weapon_ids
+            self.all_data = {}
+            self.dropdown.clear()
+            for wid in self.weapon_ids:
+                try:
+                    with open(os.path.join(LEARN_DIR, f"{wid}.json")) as f:
+                        self.all_data[wid] = json.load(f)
+                        self.dropdown.addItem(wid)
+                except Exception as e:
+                    print(f"Error loading {wid}.json: {e}")
+
+            # Auto-select first if available
+            if self.weapon_ids:
+                self.dropdown.setCurrentText(self.weapon_ids[0])
+                self.update_plot(self.weapon_ids[0])
+
+    def update_plot(self, weapon_id):
+        self.ax.clear()
+        self.ax.set_title(f"Recoil & Compensate: {weapon_id}", color='white', fontsize=10)
+        self.ax.set_xlabel("Yaw", color='white', fontsize=9)
+        self.ax.set_ylabel("Pitch", color='white', fontsize=9)
+        self.ax.tick_params(axis='x', colors='white', labelsize=8)
+        self.ax.tick_params(axis='y', colors='white', labelsize=8)
+
+        while self.legend_layout.count():
+            item = self.legend_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        data = self.all_data.get(weapon_id, {})
+        for idx, (key, vectors) in enumerate(data.items()):
+            x, y = [0], [0]
+            inv_x, inv_y = [0], [0]
+            for dx, dy in vectors:
+                x.append(x[-1] + dy)
+                y.append(y[-1] + dx)
+                inv_x.append(inv_x[-1] - dy)
+                inv_y.append(inv_y[-1] - dx)
+
+            color = f"C{idx % 10}"
+            self.ax.plot(x, y, marker='o', color=color, linewidth=2, label=f"Recoil {key}")
+            self.ax.plot(inv_x, inv_y, marker='x', linestyle='--', color=color, alpha=0.6, linewidth=2, label=f"Compensate {key}")
+            self.add_legend_item(f"Recoil {key}", color)
+            self.add_legend_item(f"Compensate {key}", color, dashed=True)
+
+        self.ax.plot(0, 0, 'bo', markersize=8, markeredgecolor='black', zorder=10)
+        self.add_legend_item("Center (0,0)", "#00ffff", bold=True)
+        self.ax.grid(True, linestyle='--', alpha=0.3)
+        self.canvas.draw()
+
+    def add_legend_item(self, text, color, dashed=False, bold=False):
+        label = QLabel(text)
+        style = f"""
+            color: {'#00ffff' if bold else 'white'};
+            border-left: 8px {'dashed' if dashed else 'solid'} {color};
+            padding: 2px;
+            margin-bottom: 2px;
+            font-weight: {'bold' if bold else 'normal'};
+            font-size: 11px;
+        """
+        label.setStyleSheet(style)
+        self.legend_layout.addWidget(label)
 
 # WinAPI constant for display affinity
 WDA_EXCLUDEFROMCAPTURE = 0x11
@@ -1840,111 +1738,220 @@ SetWindowDisplayAffinity = user32.SetWindowDisplayAffinity
 SetWindowDisplayAffinity.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
 SetWindowDisplayAffinity.restype = ctypes.wintypes.BOOL
 
+class CheatCheckBox(QCheckBox):
+    def __init__(self, label="", parent=None):
+        super().__init__(label, parent)
+        self.setStyleSheet("""
+            QCheckBox {
+                color: black;
+                font-size: 10pt;
+                font-family: "Arial", "Comic Sans MS", sans-serif;
+                padding-left: 6px;
+            }
+
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 2px solid black;
+                background-color: #f0f0f0; /* classic Paint box */
+            }
+
+            QCheckBox::indicator:hover {
+                background-color: #e0e0e0;
+            }
+
+            QCheckBox::indicator:checked {
+                background-color: #ff0000; /* red check */
+                border: 2px solid black;
+            }
+
+            QCheckBox::indicator:checked:hover {
+                background-color: #ff5555;
+            }
+        """)
+
+
+class CheatComboBox(QComboBox):
+    def __init__(self, items=None, width=100, parent=None):
+        super().__init__(parent)
+        if items:
+            self.addItems(items)
+        self.setFixedWidth(width)
+        self.setStyleSheet("""
+            QComboBox {
+                background-color: #f0f0f0;
+                border: 2px solid black;
+                border-radius: 0px;
+                padding: 4px 8px;
+                color: black;
+                font-family: "Arial", "Comic Sans MS", sans-serif;
+                font-size: 10pt;
+            }
+            QComboBox:hover {
+                background-color: #e0e0e0;
+            }
+            QComboBox::drop-down {
+                border-left: 2px solid black;
+            }
+            QComboBox::down-arrow {
+                image: url("icons/arrow.png");  /* path to your arrow image */
+                width: 12px;
+                height: 12px;
+            }
+
+            QComboBox QAbstractItemView {
+                background-color: #f0f0f0;
+                border: 2px solid black;
+                selection-background-color: #ff0000;
+                selection-color: black;
+                font-family: "Arial", "Comic Sans MS", sans-serif;
+            }
+        """)
+        self.wheelEvent = lambda event: None  # disable scroll
+
+
+class NoScrollSlider(QSlider):
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: #f0f0f0;
+                border: 2px solid black;
+            }
+            QSlider::handle:horizontal {
+                background-color: #0000ff;  /* blue handle */
+                border: 2px solid black;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+            }
+            QSlider::handle:horizontal:hover {
+                background-color: #5555ff;
+            }
+            QSlider::sub-page:horizontal {
+                background: #00ff00;  /* green filled part */
+                border: 2px solid black;
+            }
+            QSlider::add-page:horizontal {
+                background: #f0f0f0;
+                border: 2px solid black;
+            }
+        """)
+
+    def wheelEvent(self, event):
+        pass  # disable scroll wheel changes
+
+
+import ctypes
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget, QApplication
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QIcon
+
+# --- WinAPI setup for capture protection ---
+import ctypes.wintypes
+user32 = ctypes.windll.user32
+SetWindowDisplayAffinity = user32.SetWindowDisplayAffinity
+SetWindowDisplayAffinity.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
+SetWindowDisplayAffinity.restype = ctypes.wintypes.BOOL
+
+# Constant: exclude from capture (OBS, Snipping Tool, Teams, etc.)
+WDA_EXCLUDEFROMCAPTURE = 0x11
+
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GFusion V1")
+        self.setWindowTitle("GFusion V1 - Paint Edition")
         self.setGeometry(100, 100, 950, 700)
         self.setMinimumSize(900, 650)
 
-        # Frameless, transparent, always on top
+        # Frameless, always on top
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # Styling
+        # Paint-style styling
         self.setStyleSheet("""
         QWidget {
-            background-color: #1e1e1e;          /* lighter gray background */
-            color: #d0d0d0;                     /* light gray text */
-            font-family: "Consolas", "Lucida Console", monospace;
+            background-color: #f0f0f0;
+            color: black;
+            font-family: "Arial", "Comic Sans MS", sans-serif;
             font-size: 10pt;
         }
-
         QTabWidget::pane {
-            border: none;
-            background-color: #1e1e1e;
+            border: 2px solid black;
+            background-color: #f0f0f0;
         }
-
         QTabBar::tab {
-            background: none;
-            color: #d0d0d0;
-            padding: 5px 10px;
-            border: none;
-            min-width: 70px;
-            font-weight: normal;
+            width: 80px;
+            height: 80px;
+            padding: 0px;
+            margin: 0px;
+            border: 2px solid black;
+            background-color: #ffcc00;
         }
-
         QTabBar::tab:selected {
-            color: #ffffff;                      /* bright gray when selected */
-            font-weight: bold;
+            background-color: #00ccff;
         }
-
         QTabBar::tab:hover {
-            color: #a0a0a0;                      /* lighter gray on hover */
+            background-color: #99ff99;
         }
-
         QPushButton {
-            background: none;
-            color: #d0d0d0;
-            border: 1px solid #808080;           /* medium gray border */
-            padding: 3px 6px;
-            font-weight: normal;
-            border-radius: 0px;                  /* square corners */
-        }
-
-        QPushButton:hover {
-            background-color: #2a2a2a;           /* subtle darker gray hover */
-            color: #ffffff;
-        }
-
-        QPushButton:pressed {
-            background-color: #3a3a3a;           /* even darker gray when pressed */
-        }
-
-        QScrollBar:vertical {
-            background: #1e1e1e;
-            width: 8px;
-            border: none;
-        }
-
-        QScrollBar::handle:vertical {
-            background: #808080;                  /* medium gray handle */
-            min-height: 18px;
+            background-color: #ff0000;
+            color: black;
+            border: 2px solid black;
+            padding: 4px 8px;
+            font-weight: bold;
             border-radius: 0px;
         }
-
-        QScrollBar::handle:vertical:hover {
-            background: #a0a0a0;                  /* lighter gray on hover */
+        QPushButton:hover {
+            background-color: #ff5555;
         }
-
+        QPushButton:pressed {
+            background-color: #aa0000;
+        }
+        QScrollBar:vertical {
+            background: #f0f0f0;
+            width: 12px;
+            border: 2px solid black;
+        }
+        QScrollBar::handle:vertical {
+            background: #0000ff;
+            min-height: 18px;
+            border: 2px solid black;
+        }
+        QScrollBar::handle:vertical:hover {
+            background: #5555ff;
+        }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
             height: 0px;
-            subcontrol-origin: margin;
         }
         """)
 
-        # Drag movement setup
+        # Drag movement
         self._drag_active = False
         self._drag_start_pos = None
 
-        # Tabs
+        # Tabs setup
         self.tabs = QTabWidget()
         self.aimbot_tab = AimbotTab()
         self.esp_tab = ESPTab()
         self.esp_tab.main_window = self
+
         self.triggerbot_tab = TriggerBotTab()
         self.misc_tab = MiscTab()
         self.config_tab = ConfigTab()
         self.recoil_viewer_tab = RecoilViewer()
 
-        self.tabs.addTab(self.aimbot_tab, "Aimbot")
-        self.tabs.addTab(self.esp_tab, "ESP")
-        self.tabs.addTab(self.triggerbot_tab, "TriggerBot")
-        self.tabs.addTab(self.misc_tab, "Misc")
-        self.tabs.addTab(self.recoil_viewer_tab, "Aim Visualization")
-        self.tabs.addTab(self.config_tab, "Config")
-
-        self.config_tab.config_loaded.connect(self.refresh_all_tabs)
+        from PyQt5.QtCore import QSize
+        self.tabs.setIconSize(QSize(64, 64))
+        self.tabs.addTab(self.aimbot_tab, QIcon("icons/aimbot.png"), "")
+        self.tabs.addTab(self.esp_tab, QIcon("icons/esp.png"), "")
+        self.tabs.addTab(self.triggerbot_tab, QIcon("icons/triggerbot.png"), "")
+        self.tabs.addTab(self.misc_tab, QIcon("icons/misc.png"), "")
+        self.tabs.addTab(self.recoil_viewer_tab, QIcon("icons/aim_learning.png"), "")
+        self.tabs.addTab(self.config_tab, QIcon("icons/config.png"), "")
 
         # Layout
         layout = QVBoxLayout()
@@ -1952,57 +1959,48 @@ class MainWindow(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.addWidget(self.tabs)
 
-        # Exit Button
+        # Exit button
         exit_btn = QPushButton("Exit")
         exit_btn.clicked.connect(self.exit_app)
         layout.addWidget(exit_btn)
-
         self.setLayout(layout)
 
-        # Delay OBS cloak activation until window is shown
-        QTimer.singleShot(100, self.make_obs_proof)
-
+        # --- OBS protection init ---
         if getattr(Config, "obs_protection_enabled", False):
-            self.set_obs_protection(True)
+            QTimer.singleShot(100, lambda: self.set_obs_protection(True))
+        else:
+            QTimer.singleShot(100, lambda: self.set_obs_protection(False))
 
-    def set_obs_protection(self, enabled):
-        hwnd = int(self.winId())
+
+    # --- OBS / screen capture protection ---
+    def set_obs_protection(self, enabled: bool):
+        hwnd = int(self.winId())  # get native HWND for this Qt window
         if enabled:
+            # Hide from capture
             SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
         else:
+            # Reset to normal
             SetWindowDisplayAffinity(hwnd, 0)
 
     def make_obs_proof(self):
-        hwnd = self.winId().__int__()
+        hwnd = int(self.winId())
         success = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
         if not success:
-            print("[!] Failed to cloak window from OBS.")
-        else:
-            print("")
+            print("[!] Failed to cloak window from screen capture.")
 
-    def refresh_all_tabs(self):
-        try:
-            self.aimbot_tab.refresh_ui()
-            self.esp_tab.refresh_ui()
-            self.triggerbot_tab.refresh_ui()
-            self.misc_tab.refresh_ui()
-            print("All tabs refreshed successfully")
-        except Exception as e:
-            print(f"Error refreshing tabs: {e}")
-
-    def mousePressEvent(self, event) -> None:
+    # Drag events
+    def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._drag_active = True
             self._drag_start_pos = event.globalPos()
 
-    def mouseMoveEvent(self, event) -> None:
+    def mouseMoveEvent(self, event):
         if self._drag_active and self._drag_start_pos is not None:
-            current_pos = event.globalPos()
-            delta = current_pos - self._drag_start_pos
+            delta = event.globalPos() - self._drag_start_pos
             self.move(self.x() + delta.x(), self.y() + delta.y())
-            self._drag_start_pos = current_pos
+            self._drag_start_pos = event.globalPos()
 
-    def mouseReleaseEvent(self, event) -> None:
+    def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._drag_active = False
             self._drag_start_pos = None

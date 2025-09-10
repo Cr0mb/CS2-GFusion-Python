@@ -1,4 +1,5 @@
 import time
+import random
 import ctypes
 import ctypes.wintypes as wintypes
 import win32gui
@@ -8,9 +9,9 @@ import keyboard
 from Process.offsets import Offsets
 from Process.config import Config
 
-
 # Constants
-PROCESS_ALL_ACCESS = 0x1F0FFF
+PROCESS_VM_READ = 0x0010
+PROCESS_QUERY_INFORMATION = 0x0400
 TH32CS_SNAPPROCESS = 0x00000002
 TH32CS_SNAPMODULE = 0x00000008
 TH32CS_SNAPMODULE32 = 0x00000010
@@ -25,7 +26,6 @@ Module32Next = ctypes.windll.kernel32.Module32Next
 OpenProcess = ctypes.windll.kernel32.OpenProcess
 CloseHandle = ctypes.windll.kernel32.CloseHandle
 ReadProcessMemory = ctypes.windll.kernel32.ReadProcessMemory
-GetLastError = ctypes.windll.kernel32.GetLastError
 QueryFullProcessImageName = ctypes.windll.kernel32.QueryFullProcessImageNameW
 
 # Structures
@@ -105,7 +105,8 @@ class CS2Process:
     def wait_for_process(self):
         if not self._wait_for_process():
             raise RuntimeError(f"{self.process_name} not running after {self.wait_timeout} seconds")
-        self.handle = OpenProcess(PROCESS_ALL_ACCESS, False, self.pid)
+        # Open with minimal permissions
+        self.handle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, False, self.pid)
         if not self.handle:
             raise RuntimeError(f"Failed to open process {self.process_name} (PID: {self.pid})")
 
@@ -196,23 +197,22 @@ class BHopProcess:
             return None
         return get_process_name(pid)
 
-    def read_memory(self, address, size):
+    def safe_read(self, address, size, default=None):
         buffer = (ctypes.c_byte * size)()
         bytesRead = ctypes.c_size_t()
-        if not ReadProcessMemory(self.handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(bytesRead)):
-            raise ctypes.WinError()
-        return bytes(buffer)
+        if ReadProcessMemory(self.handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(bytesRead)):
+            return bytes(buffer)
+        return default
 
-    def read_int(self, address):
-        data = self.read_memory(address, 4)
-        return int.from_bytes(data, byteorder='little')
+    def read_int(self, address, default=0):
+        data = self.safe_read(address, 4)
+        return int.from_bytes(data, "little") if data else default
 
-    def read_longlong(self, address):
-        data = self.read_memory(address, 8)
-        return int.from_bytes(data, byteorder='little')
+    def read_longlong(self, address, default=0):
+        data = self.safe_read(address, 8)
+        return int.from_bytes(data, "little") if data else default
 
     def run(self):
-        # Boost script priority
         kernel32 = ctypes.windll.kernel32
         PROCESS_PRIORITY_CLASS = 0x00000080  # HIGH_PRIORITY_CLASS
         kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), PROCESS_PRIORITY_CLASS)
@@ -254,7 +254,8 @@ class BHopProcess:
                         self.press_spacebar()
                         self.last_jump_time = now
 
-                time.sleep(0.0005)  # Tighten loop without waste
+                # jitter to break read pattern
+                time.sleep(0.0004 + random.uniform(0.0001, 0.0003))
 
             except KeyboardInterrupt:
                 print("\n[BHop] Interrupted by user, stopping...")

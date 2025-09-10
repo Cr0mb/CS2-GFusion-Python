@@ -608,7 +608,7 @@ class AimbotRCS:
         sf_bin = shots_fired
         return (pitch_q, yaw_q, sf_bin)
 
-    def get_current_bone_index(self, pawn=None, my_pos=None, pitch=None, yaw=None):
+    def get_current_bone_index(self, pawn=None, my_pos=None, pitch=None, yaw=None, frame_time=1.0/60):
         if not self.cfg.closest_to_crosshair:
             return self.bone_indices.get(self.cfg.target_bone_name, 6)
 
@@ -626,13 +626,12 @@ class AimbotRCS:
         cfg_bones = self.cfg.bone_indices_to_try
         enable_velocity_prediction = self.cfg.enable_velocity_prediction
         downward_offset = self.cfg.downward_offset
-        smoothing = getattr(self.cfg, 'velocity_prediction_factor', 0.1)
+
+        # velocity_prediction_factor in cfg is now a multiplier (tunable). We scale it by frame_time
+        vp_factor = getattr(self.cfg, 'velocity_prediction_factor', 1.0)
+        smoothing = vp_factor * frame_time
 
         vel = None
-        if enable_velocity_prediction:
-            vel = read_vec = read(pawn + self.o.m_vecVelocity, "float")  # This needs 3 floats: fix below
-
-        # Read velocity vector fully once outside loop if enabled
         if enable_velocity_prediction:
             vel = self.read_vec3(pawn + self.o.m_vecVelocity)
 
@@ -656,7 +655,7 @@ class AimbotRCS:
                 best_index = idx
 
         return best_index if best_index is not None else self.bone_indices.get("head", 6)
-        
+
     def run(self):
         from ctypes import windll
         GetAsyncKeyState = windll.user32.GetAsyncKeyState
@@ -761,10 +760,11 @@ class AimbotRCS:
                 # ================
                 if self.target_id in entity_cache:
                     _, t_pawn = entity_cache[self.target_id]
-                    bone_idx = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw)
+                    bone_idx = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw, frame_time=frame_time)
                     pos = self.read_bone_pos(t_pawn, bone_idx) or self.read_vec3(t_pawn + o.m_vOldOrigin)
                     vel = self.read_vec3(t_pawn + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
-                    predicted = [pos[i] + vel[i] * 0.1 for i in range(3)]
+                    prediction_dt = frame_time * getattr(self.cfg, "velocity_prediction_factor", 1.0)
+                    predicted = [pos[i] + vel[i] * prediction_dt for i in range(3)]
                     predicted[2] -= self.cfg.downward_offset
                     tp, ty = self.calc_angle(my_pos, predicted)
                     if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
@@ -781,10 +781,11 @@ class AimbotRCS:
                         continue
                     min_dist = float("inf")
                     for i, (_, pawn_ent) in entity_cache.items():
-                        bone_idx = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw)
+                        bone_idx = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw, frame_time=frame_time)
                         pos = self.read_bone_pos(pawn_ent, bone_idx) or self.read_vec3(pawn_ent + o.m_vOldOrigin)
                         vel = self.read_vec3(pawn_ent + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
-                        predicted = [pos[j] + vel[j] * 0.1 for j in range(3)]
+                        prediction_dt = frame_time * getattr(self.cfg, "velocity_prediction_factor", 1.0)
+                        predicted = [pos[j] + vel[j] * prediction_dt for j in range(3)]
                         predicted[2] -= self.cfg.downward_offset
                         tp, ty = self.calc_angle(my_pos, predicted)
                         if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):

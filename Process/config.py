@@ -20,8 +20,8 @@ class Config:
     # ===========================
     # ESP Toggles
     # ===========================
-    obs_protection_enabled = True
-    show_overlay_fps = True
+    obs_protection_enabled = False
+    show_overlay_fps = False
 
     # Config defaults
     panic_key_enabled = True
@@ -57,7 +57,7 @@ class Config:
     
     trace_esp_enabled = False
     trace_esp_max_points = 150
-
+    
     show_local_info_box = False
     color_local_box_background = (30, 30, 30)
     color_local_box_border = (100, 100, 100)
@@ -184,7 +184,7 @@ class Config:
     closest_to_crosshair = False
     max_entities = 64
     FOV = 3.0
-    max_delta_angle = 40
+    max_delta_angle = 60
     target_switch_delay = 0
     aim_start_delay = 0
     downward_offset = 62
@@ -205,7 +205,7 @@ class Config:
     smooth_var = 0.00
     sensitivity = 0.022
     invert_y = -1
-    max_mouse_move = 3
+    max_mouse_move = 5
 
     # ===========================
     # Recoil Control System (RCS)
