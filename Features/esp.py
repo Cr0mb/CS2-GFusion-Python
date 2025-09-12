@@ -408,6 +408,17 @@ class GDIRenderer:
             except Exception:
                 pass
 
+    def draw_rounded_box(self, x, y, w, h, radius, color):
+        self.select_pen(color)
+        null_brush = win32gui.GetStockObject(win32con.NULL_BRUSH)
+        win32gui.SelectObject(self._hdc, null_brush)
+        # Use Windows GDI RoundRect function
+        win32gui.RoundRect(
+            self._hdc,
+            int(x), int(y), int(x + w), int(y + h),
+            int(radius), int(radius)
+        )
+
     def get_font(self, size):
         if size not in self.font_cache:
             lf = win32gui.LOGFONT()
@@ -734,6 +745,16 @@ class DX11Renderer:
                     self._frame_count = 0
                     self._fps_timer = now
                 return ok
+            except Exception:
+                return False
+        return False
+
+    def draw_rounded_box(self, x, y, w, h, radius, color):
+        gpu_ready = self._dx_initialized and self._dx and self._dx_ctx and self._dx.pipeline_ready(self._dx_ctx)
+        if gpu_ready:
+            try:
+                self._dx.queue_rect(self._dx_ctx, float(x), float(y), float(w), float(h), color, filled=False, radius=float(radius))
+                return True
             except Exception:
                 return False
         return False
@@ -1260,7 +1281,11 @@ def main():
 
                 if flags["box_esp_enabled"]:
                     color = flags["color_box_t"] if ent.team == 2 else flags["color_box_ct"]
-                    overlay.draw_box(x, y, w, h, color)
+                    radius = 8  # adjust radius size as you like
+                    if hasattr(overlay, "draw_rounded_box"):
+                        overlay.draw_rounded_box(x, y, w, h, radius, color)
+                    else:
+                        overlay.draw_box(x, y, w, h, color)
 
                 if flags["trace_esp_enabled"]:
                     try:

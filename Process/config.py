@@ -28,7 +28,7 @@ class Config:
     panic_key = 0x2E  # VK_DELETE
     panic_mode_active = False
 
-
+    draw_rounded_box = True
     show_box_esp = False
     healthbar_enabled = False
     armorbar_enabled = False

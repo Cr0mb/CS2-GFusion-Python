@@ -1,3 +1,4 @@
+# (Full file - updated with continuous mouse recording + blending learning)
 import os
 import time
 import math
@@ -82,7 +83,7 @@ NtReadVirtualMemory.argtypes = [
 NtReadVirtualMemory.restype = ctypes.c_ulong
 
 # -----------------------------
-# Mouse Movement
+# Mouse Movement (SendInput)
 # -----------------------------
 INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE = 0x0001
@@ -169,48 +170,6 @@ class RPMReader(IMemoryReader):
             return None
         return bytes(buffer[:bytes_read.value])
 
-class NtVMReader(IMemoryReader):
-    """Read memory using ntdll.NtReadVirtualMemory"""
-    def __init__(self, process_handle):
-        self.process_handle = process_handle
-
-    def read(self, addr, t="int"):
-        size_map = {"int": 4, "long": 8, "float": 4, "ushort": 2}
-        size = size_map.get(t, 4)
-        raw = self.read_bytes(addr, size)
-        if not raw:
-            return 0.0 if t == "float" else 0
-
-        if t == "int":
-            return int.from_bytes(raw, "little", signed=True)
-        elif t == "long":
-            return int.from_bytes(raw, "little", signed=False)
-        elif t == "float":
-            return struct.unpack("f", raw)[0]
-        elif t == "ushort":
-            return int.from_bytes(raw, "little", signed=False)
-        return 0
-
-    def read_vec3(self, address):
-        raw = self.read_bytes(address, 12)
-        if raw:
-            return list(struct.unpack("fff", raw))
-        return [0.0, 0.0, 0.0]
-
-    def read_bytes(self, addr, size):
-        buffer = (ctypes.c_ubyte * size)()
-        bytes_read = ctypes.c_size_t()
-        status = NtReadVirtualMemory(
-            self.process_handle,
-            ctypes.c_void_p(addr),
-            ctypes.byref(buffer),
-            size,
-            ctypes.byref(bytes_read)
-        )
-        if status != 0 or bytes_read.value != size:
-            return None
-        return bytes(buffer[:bytes_read.value])
-
 # -----------------------------
 # Process Handling
 # -----------------------------
@@ -285,7 +244,7 @@ class CS2Process:
         return f"<CS2Process pid={self.process_id} module_base=0x{self.module_base:x}>" if self.module_base else "<CS2Process not ready>"
 
 # -----------------------------
-# Mouse Movement
+# Mouse Movement (SendInput) - duplicate kept for file compatibility
 # -----------------------------
 INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE = 0x0001
@@ -379,7 +338,7 @@ class CS2WeaponTracker:
         return weapon_id not in self.INVALID_WEAPON_IDS
         
 # -----------------------------
-# Aimbot + RCS
+# Aimbot + RCS + Mouse Recording
 # -----------------------------
 class AimbotRCS:
     MAX_DELTA_ANGLE = 60
@@ -410,10 +369,18 @@ class AimbotRCS:
 
         self.weapon_tracker = CS2WeaponTracker()  # already uses CS2Process internally
 
+        # learning structures (existing)
         self.learning_data = {}
         self.learning_dirty = False
 
+        # continuous raw mouse recording buffer (stores recent raw dx,dy samples)
+        self.mouse_buffer = deque(maxlen=1000)  # store recent deltas
+        self.raw_recordings_dirty = False
+
+        # start background tasks
         threading.Thread(target=self.periodic_save, daemon=True).start()
+        if getattr(self.cfg, 'enable_mouse_recording', True):
+            threading.Thread(target=self.mouse_recorder_thread, daemon=True).start()
 
         self._isnan = math.isnan
         self._hypot = math.hypot
@@ -463,11 +430,18 @@ class AimbotRCS:
             kernel32.CloseHandle(hProcess)
             
     def periodic_save(self):
+        last_raw_save = time.time()
+        raw_save_every = getattr(self.cfg, 'raw_save_every', 30)
         while not self.cfg.aim_stop:
             time.sleep(30)
             if self.cfg.enable_learning and self.learning_dirty:
                 self.save_learning()
                 self.learning_dirty = False
+            # save raw recordings occasionally
+            if getattr(self.cfg, 'enable_mouse_recording', True) and (time.time() - last_raw_save) > raw_save_every:
+                self.save_raw_recordings()
+                last_raw_save = time.time()
+                self.raw_recordings_dirty = False
 
     def load_learning(self):
         self.learning_data = {}
@@ -482,6 +456,7 @@ class AimbotRCS:
         try:
             with open(filepath, "r") as f:
                 data = json.load(f)
+            # existing format: keys are "pitch,yaw" -> list of tuples
             self.learning_data = {
                 tuple(map(float, k.split(','))): deque([tuple(x) for x in v], maxlen=50)
                 for k, v in data.items()
@@ -505,6 +480,39 @@ class AimbotRCS:
         except Exception as e:
             print(f"[!] Failed saving learning data for weapon {weapon_id}: {e}")
 
+    def save_raw_recordings(self):
+        """Persist a small summary of raw mouse deltas per current weapon."""
+        if not getattr(self.cfg, 'enable_mouse_recording', True):
+            return
+        weapon_id = self.weapon_tracker.get_current_weapon_id() or 0
+        if not os.path.exists(self.cfg.learn_dir):
+            os.makedirs(self.cfg.learn_dir)
+        filepath = os.path.join(self.cfg.learn_dir, f"raw_mouse_{weapon_id}.json")
+        # Save last N samples (downsampled) to limit size
+        with self.lock:
+            samples = list(self.mouse_buffer)
+
+        try:
+            # CHANGED: filter out pure-zero samples before writing to disk
+            filtered = [ [int(s[0]), int(s[1])] for s in samples if not ( (s[0] == 0 and s[1] == 0) or (s == [0,0]) ) ]
+            if not filtered:
+                # Nothing meaningful to write — do not overwrite existing file with zeros.
+                # If you prefer to write an empty file instead, change this behavior.
+                # We still mark dirty False to avoid repeated attempts.
+                # print("[*] No non-zero mouse samples to save; skipping write.")
+                return
+
+            # limit saved samples to 1000 and downsample if needed
+            if len(filtered) > 1000:
+                step = max(1, len(filtered) // 1000)
+                trimmed = filtered[::step]
+            else:
+                trimmed = filtered
+
+            with open(filepath, "w") as f:
+                json.dump(trimmed, f)
+        except Exception as e:
+            print(f"[!] Failed saving raw mouse recordings: {e}")
 
     kernel32 = ctypes.windll.kernel32
 
@@ -656,6 +664,135 @@ class AimbotRCS:
 
         return best_index if best_index is not None else self.bone_indices.get("head", 6)
 
+    # -----------------------------
+    # Mouse recorder thread
+    # -----------------------------
+    def mouse_recorder_thread(self):
+        """Continuously record raw mouse deltas (GetCursorPos) into mouse_buffer."""
+        user32 = ctypes.windll.user32
+        GetCursorPos = user32.GetCursorPos
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+        prev_pt = POINT()
+        # initialize
+        if not GetCursorPos(ctypes.byref(prev_pt)):
+            prev_pt.x, prev_pt.y = 0, 0
+        rate = getattr(self.cfg, 'mouse_record_rate', 125)  # Hz
+        sleep_t = max(0.001, 1.0 / float(rate))
+        while not self.cfg.aim_stop:
+            pt = POINT()
+            if GetCursorPos(ctypes.byref(pt)):
+                dx = int(pt.x - prev_pt.x)
+                dy = int(pt.y - prev_pt.y)
+                prev_pt.x, prev_pt.y = pt.x, pt.y
+                # store tuple
+                with self.lock:
+                    self.mouse_buffer.append((dx, dy))
+                    self.raw_recordings_dirty = True
+            time.sleep(sleep_t)
+
+    def dynamic_human_blend(self):
+        bursts = self.compute_burst_corrections()
+        if not bursts:
+            return 0.1  # mostly idle
+        # compute burst strength = mean of burst magnitudes
+        strengths = [math.hypot(dp, dy) for dp, dy, _ in bursts]
+        avg_strength = sum(strengths) / len(strengths)
+        # scale to blend factor
+        max_blend = getattr(self.cfg, 'human_blend_max', 0.7)
+        min_blend = getattr(self.cfg, 'human_blend_min', 0.05)
+        blend = min(max_blend, max(min_blend, avg_strength * 5))  # factor adjustable
+        return blend
+
+    def compute_burst_corrections(self):
+        """Return a list of per-burst angle corrections."""
+        with self.lock:
+            samples = list(self.mouse_buffer)
+        bursts = []
+        current_burst = []
+
+        for dx, dy in samples:
+            if dx == 0 and dy == 0:
+                if current_burst:
+                    bursts.append(current_burst)
+                    current_burst = []
+            else:
+                current_burst.append((dx, dy))
+        if current_burst:
+            bursts.append(current_burst)
+
+        # Compute median correction per burst
+        corrections = []
+        for burst in bursts[-10:]:  # last 10 bursts
+            dxs, dys = zip(*burst)
+            median_dx = sorted(dxs)[len(dxs)//2]
+            median_dy = sorted(dys)[len(dys)//2]
+            sensitivity = getattr(self.cfg, 'sensitivity', 0.022)
+            invert_y = getattr(self.cfg, 'invert_y', -1)
+            dp = -median_dy * sensitivity * invert_y
+            dy = -median_dx * sensitivity
+            corrections.append((dp, dy, len(burst)))
+        return corrections
+
+    def filter_outliers(self, samples, threshold=None):
+        """Reject deltas exceeding threshold (in pixels)."""
+        if threshold is None:
+            threshold = getattr(self.cfg, 'human_outlier_threshold', 50)  # default 50 pixels
+        filtered = [s for s in samples if abs(s[0]) <= threshold and abs(s[1]) <= threshold]
+        return filtered
+
+    def preprocess_raw_file(self, filepath, downsample_factor=5):
+        """Load existing raw mouse file, remove zeros, downsample, return stats."""
+        try:
+            with open(filepath, "r") as f:
+                samples = json.load(f)
+            # normalize (ensure list of tuples)
+            norm = []
+            for s in samples:
+                if isinstance(s, list) and len(s) >= 2:
+                    dx, dy = int(s[0]), int(s[1])
+                elif isinstance(s, tuple) and len(s) >= 2:
+                    dx, dy = int(s[0]), int(s[1])
+                else:
+                    continue
+                # remove zeros
+                if dx == 0 and dy == 0:
+                    continue
+                norm.append((dx, dy))
+
+            # downsample
+            if not norm:
+                return [], 0, 0, 0, 0
+
+            ds = norm[::downsample_factor]
+            dxs, dys = zip(*ds)
+            avg_dx, avg_dy = sum(dxs)/len(dxs), sum(dys)/len(dys)
+            max_dx, max_dy = max(dxs), max(dys)
+            # return as list of lists for consistency
+            return [ [int(x), int(y)] for x, y in ds ], avg_dx, avg_dy, max_dx, max_dy
+        except Exception:
+            return [], 0, 0, 0, 0
+
+    # utility to convert recent mouse deltas to angle corrections (pitch, yaw)
+    def sample_recent_human_correction(self, sample_count=6):
+        """Take the last N samples and convert to angle-space correction."""
+        with self.lock:
+            samples = [s for s in list(self.mouse_buffer)[-sample_count:] if not (s[0] == 0 and s[1] == 0)]
+        if not samples:
+            return 0.0, 0.0
+
+        sum_dx = sum(s[0] for s in samples)
+        sum_dy = sum(s[1] for s in samples)
+        avg_dx = sum_dx / len(samples)
+        avg_dy = sum_dy / len(samples)
+
+        sensitivity = getattr(self.cfg, 'sensitivity', 0.022)
+        invert_y = getattr(self.cfg, 'invert_y', -1)
+
+        dp = -avg_dy * sensitivity * invert_y
+        dy = -avg_dx * sensitivity
+        return dp, dy
+
     def run(self):
         from ctypes import windll
         GetAsyncKeyState = windll.user32.GetAsyncKeyState
@@ -701,12 +838,13 @@ class AimbotRCS:
                     continue
 
                 self.left_down = GetAsyncKeyState(aim_vk) & 0x8000 != 0
-
                 if not self.cfg.enabled:
                     time.sleep(0.01)
                     continue
 
-                # Read once per frame
+                # --------------------
+                # Memory Reads (once)
+                # --------------------
                 base = self.base
                 o = self.o
                 pawn = self.read(base + o.dwLocalPlayerPawn, "long")
@@ -718,7 +856,8 @@ class AimbotRCS:
                     self.load_learning()
                     prev_weapon_id = weapon_id
 
-                if self.read(pawn + o.m_iHealth) <= 0:
+                health = self.read(pawn + o.m_iHealth)
+                if health <= 0:
                     continue
 
                 if not self.weapon_tracker.is_weapon_valid_for_aim():
@@ -727,20 +866,17 @@ class AimbotRCS:
                 ctrl = self.read(base + o.dwLocalPlayerController, "long")
                 my_team = self.read(pawn + o.m_iTeamNum)
                 my_pos = self.read_vec3(pawn + o.m_vOldOrigin)
-
-                view_angles_addr = base + o.dwViewAngles
-                pitch = self.read(view_angles_addr, "float")
-                yaw = self.read(view_angles_addr + 4, "float")
+                pitch = self.read(base + o.dwViewAngles, "float")
+                yaw = self.read(base + o.dwViewAngles + 4, "float")
                 recoil_pitch = self.read(pawn + o.m_aimPunchAngle, "float")
                 recoil_yaw = self.read(pawn + o.m_aimPunchAngle + 4, "float")
-
                 entity_list = self.read(base + o.dwEntityList, "long")
                 if not entity_list:
                     continue
 
-                # =========================
+                # --------------------
                 # Entity Cache Refresh
-                # =========================
+                # --------------------
                 if time.time() - last_cache_time > cache_refresh_rate:
                     entity_cache.clear()
                     for i in range(self.cfg.max_entities):
@@ -755,16 +891,15 @@ class AimbotRCS:
 
                 target, target_pos = None, None
 
-                # ================
+                # --------------------
                 # Track Target
-                # ================
+                # --------------------
                 if self.target_id in entity_cache:
                     _, t_pawn = entity_cache[self.target_id]
                     bone_idx = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw, frame_time=frame_time)
                     pos = self.read_bone_pos(t_pawn, bone_idx) or self.read_vec3(t_pawn + o.m_vOldOrigin)
                     vel = self.read_vec3(t_pawn + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
-                    prediction_dt = frame_time * getattr(self.cfg, "velocity_prediction_factor", 1.0)
-                    predicted = [pos[i] + vel[i] * prediction_dt for i in range(3)]
+                    predicted = [pos[i] + vel[i] * frame_time * getattr(self.cfg, "velocity_prediction_factor", 1.0) for i in range(3)]
                     predicted[2] -= self.cfg.downward_offset
                     tp, ty = self.calc_angle(my_pos, predicted)
                     if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
@@ -773,9 +908,9 @@ class AimbotRCS:
                     else:
                         target, target_pos = t_pawn, predicted
 
-                # =====================
+                # --------------------
                 # Acquire New Target
-                # =====================
+                # --------------------
                 if target is None:
                     if self.last_target_lost_time and (time.time() - self.last_target_lost_time) < self.cfg.target_switch_delay:
                         continue
@@ -784,8 +919,7 @@ class AimbotRCS:
                         bone_idx = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw, frame_time=frame_time)
                         pos = self.read_bone_pos(pawn_ent, bone_idx) or self.read_vec3(pawn_ent + o.m_vOldOrigin)
                         vel = self.read_vec3(pawn_ent + o.m_vecVelocity) if self.cfg.enable_velocity_prediction else [0, 0, 0]
-                        prediction_dt = frame_time * getattr(self.cfg, "velocity_prediction_factor", 1.0)
-                        predicted = [pos[j] + vel[j] * prediction_dt for j in range(3)]
+                        predicted = [pos[j] + vel[j] * frame_time * getattr(self.cfg, "velocity_prediction_factor", 1.0) for j in range(3)]
                         predicted[2] -= self.cfg.downward_offset
                         tp, ty = self.calc_angle(my_pos, predicted)
                         if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
@@ -795,81 +929,112 @@ class AimbotRCS:
                             min_dist = dist
                             target, target_pos, self.target_id = pawn_ent, predicted, i
 
-                # ================
+                # --------------------
                 # Aimbot Logic
-                # ================
-                if self.left_down:
+                # --------------------
+                mouse_dx, mouse_dy = 0, 0
+                if self.left_down and target and target_pos:
                     self.shots_fired += 1
                     if self.aim_start_time and time.time() - self.aim_start_time < self.cfg.aim_start_delay:
                         continue
-                    if target and target_pos:
-                        tp, ty = self.calc_angle(my_pos, target_pos)
-                        if abs(self.angle_diff(ty, yaw)) > 90:
-                            continue
 
-                        scale = self.cfg.rcs_scale * min(self.shots_fired / 2, 1.0)
-                        if self.cfg.rcs_enabled:
-                            compensated_pitch = self.clamp_angle_diff(pitch, tp - recoil_pitch * scale)
-                            compensated_yaw = self.clamp_angle_diff(yaw, ty - recoil_yaw * scale)
-                        else:
-                            compensated_pitch = self.clamp_angle_diff(pitch, tp)
-                            compensated_yaw = self.clamp_angle_diff(yaw, ty)
+                    tp, ty = self.calc_angle(my_pos, target_pos)
+                    if abs(self.angle_diff(ty, yaw)) > 90:
+                        continue
 
-                        smooth = max(0.01, min(self.cfg.smooth_base + random.uniform(-self.cfg.smooth_var, self.cfg.smooth_var), 0.25))
-                        key = self.quantize_angle(compensated_pitch, compensated_yaw, self.shots_fired)
-                        dp, dy = self.get_learned_correction(key)
-                        compensated_pitch += dp
-                        compensated_yaw += dy
-
-                        interp_pitch = pitch + (compensated_pitch - pitch) * smooth
-                        interp_yaw = yaw + (compensated_yaw - yaw) * smooth
-
-                        sp = self.add_noise(interp_pitch, 0.03)
-                        sy = self.add_noise(interp_yaw, 0.03)
-                        sp, sy = self.normalize(sp, sy)
-
-                        delta_pitch = normalize_angle_delta(sp - pitch)
-                        delta_yaw = normalize_angle_delta(sy - yaw)
-
-                        delta_pitch = max(min(delta_pitch, self.cfg.max_delta_angle), -self.cfg.max_delta_angle)
-                        delta_yaw = max(min(delta_yaw, self.cfg.max_delta_angle), -self.cfg.max_delta_angle)
-
-                        mouse_dx = int(-delta_yaw / self.cfg.sensitivity)
-                        mouse_dy = int(-delta_pitch / self.cfg.sensitivity) * self.cfg.invert_y
-
-                        mouse_dx = max(min(mouse_dx, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
-                        mouse_dy = max(min(mouse_dy, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
-
-                        move_mouse(mouse_dx, mouse_dy)
-
-                        if self.last_aim_angle:
-                            lp, ly = self.last_aim_angle
-                            if abs(self.angle_diff(sp, lp)) > 0.002 or abs(self.angle_diff(sy, ly)) > 0.002:
-                                dp_learn = max(min(sp - pitch, 1.0), -1.0)
-                                dy_learn = max(min(sy - yaw, 1.0), -1.0)
-                                if abs(dp_learn) > 0.05 or abs(dy_learn) > 0.05:
-                                    self.update_learning(key, dp_learn, dy_learn)
-
-                        self.last_aim_angle = (sp, sy)
+                    scale = self.cfg.rcs_scale * min(self.shots_fired / 2, 1.0)
+                    if self.cfg.rcs_enabled:
+                        compensated_pitch = self.clamp_angle_diff(pitch, tp - recoil_pitch * scale)
+                        compensated_yaw = self.clamp_angle_diff(yaw, ty - recoil_yaw * scale)
                     else:
-                        self.last_aim_angle = None
+                        compensated_pitch = self.clamp_angle_diff(pitch, tp)
+                        compensated_yaw = self.clamp_angle_diff(yaw, ty)
+
+                    smooth = max(0.01, min(self.cfg.smooth_base + random.uniform(-self.cfg.smooth_var, self.cfg.smooth_var), 0.25))
+                    key = self.quantize_angle(compensated_pitch, compensated_yaw, self.shots_fired)
+                    dp, dy = self.get_learned_correction(key)
+
+                    # If we have raw mouse recordings, sample a recent human correction and integrate it
+                    if getattr(self.cfg, 'enable_mouse_recording', True):
+                        human_dp, human_dy = self.sample_recent_human_correction(sample_count=6)
+                        human_blend = getattr(self.cfg, 'human_blend', 0.35)
+                        # Blend the stored learned correction and the sampled human correction
+                        dp = (1.0 - human_blend) * dp + human_blend * human_dp
+                        dy = (1.0 - human_blend) * dy + human_blend * human_dy
+
+                    compensated_pitch += dp
+                    compensated_yaw += dy
+
+                    interp_pitch = pitch + (compensated_pitch - pitch) * smooth
+                    interp_yaw = yaw + (compensated_yaw - yaw) * smooth
+                    sp = self.add_noise(interp_pitch, 0.03)
+                    sy = self.add_noise(interp_yaw, 0.03)
+                    sp, sy = self.normalize(sp, sy)
+
+                    delta_pitch = normalize_angle_delta(sp - pitch)
+                    delta_yaw = normalize_angle_delta(sy - yaw)
+
+                    delta_pitch = max(min(delta_pitch, self.cfg.max_delta_angle), -self.cfg.max_delta_angle)
+                    delta_yaw = max(min(delta_yaw, self.cfg.max_delta_angle), -self.cfg.max_delta_angle)
+
+                    # convert to mouse pixels using your existing sensitivity mapping
+                    mouse_dx = int(-delta_yaw / self.cfg.sensitivity)
+                    mouse_dy = int(-delta_pitch / self.cfg.sensitivity) * self.cfg.invert_y
+
+                    mouse_dx = max(min(mouse_dx, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
+                    mouse_dy = max(min(mouse_dy, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
+
+                    # Update learning: leverage both aimbot-calculated correction and recent human deltas
+                    if self.last_aim_angle:
+                        lp, ly = self.last_aim_angle
+                        if abs(self.angle_diff(sp, lp)) > 0.002 or abs(self.angle_diff(sy, ly)) > 0.002:
+                            dp_learn = max(min(sp - pitch, 1.0), -1.0)
+                            dy_learn = max(min(sy - yaw, 1.0), -1.0)
+                            # also compute human-derived corrections to reinforce learning
+                            if getattr(self.cfg, 'enable_mouse_recording', True):
+                                human_dp, human_dy = self.sample_recent_human_correction(sample_count=8)
+                            else:
+                                human_dp, human_dy = 0.0, 0.0
+
+                            # prefer human-derived corrections when they are significant
+                            combined_dp = dp_learn
+                            combined_dy = dy_learn
+                            if abs(human_dp) > 0.01 or abs(human_dy) > 0.01:
+                                # incorporate human corrections (small alpha)
+                                combined_dp = 0.5 * dp_learn + 0.5 * human_dp
+                                combined_dy = 0.5 * dy_learn + 0.5 * human_dy
+
+                            if abs(combined_dp) > 0.05 or abs(combined_dy) > 0.05:
+                                burst_strength = max(1.0, len(self.mouse_buffer))  # or use median magnitude
+                                self.update_learning(key, combined_dp * burst_strength, combined_dy * burst_strength)
+                    self.last_aim_angle = (sp, sy)
+
                 else:
                     self.shots_fired = 0
                     self.last_aim_angle = None
+
+                # --------------------
+                # Single Mouse Move
+                # --------------------
+                if mouse_dx != 0 or mouse_dy != 0:
+                    move_mouse(mouse_dx, mouse_dy)
 
             except Exception as e:
                 print(f"[!] AimbotRCS error: {e}")
                 time.sleep(0.3)
 
-            # =====================
+            # --------------------
             # Frame Limiting
-            # =====================
+            # --------------------
             elapsed = time.perf_counter() - start_time
             sleep_time = max(0.0, frame_time - elapsed)
             time.sleep(sleep_time)
 
         if self.cfg.enable_learning:
             self.save_learning()
+        # also save raw recordings on exit
+        if getattr(self.cfg, 'enable_mouse_recording', True):
+            self.save_raw_recordings()
         print("[AimbotRCS] Stopped.")
 
 def start_aim_rcs(cfg):

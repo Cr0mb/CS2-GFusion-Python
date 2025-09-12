@@ -20,6 +20,8 @@ from PyQt5.QtWidgets import (
     QGridLayout, QFrame, QScrollArea, QTextEdit, QMessageBox
 )
 
+import hashlib
+
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -63,10 +65,6 @@ try:
     import numpy as np  # optional: speeds up vector math if available
 except Exception:
     np = None
-
-
-
-
 
     # Set both loops running in parallel
     def walk_loop():
@@ -1268,6 +1266,7 @@ class ESPTab(QWidget):
         basic_features = [
             ("Hide from Screen Capture", "obs_protection_enabled"),
             ("Show Box ESP", "show_box_esp"),
+            ("Rounded Boxes", "draw_rounded_box"),
             ("Health Bar", "healthbar_enabled"),
             ("Armor Bar", "armorbar_enabled"),
             ("Health Text", "health_esp_enabled"),
