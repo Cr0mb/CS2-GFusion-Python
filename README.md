@@ -46,7 +46,6 @@ V2.5 8/8/2025
 - Changed GDI Windows Overlay to be DirectX11 instead (Huge performance boost in visuals!)
 ```
 
-
 # GFusion Feature List
 
 <details>
@@ -231,8 +230,15 @@ V2.5 8/8/2025
 
 
 
+## How does Aimbot Learning work?
 
+It records recent raw mouse deltas into a rolling buffer and converts short windows of those deltas into short-term human “corrections.” 
 
+For each aim state (quantized pitch, yaw, and shots-fired) it keeps a small deque of learned correction vectors per weapon and uses their average when aiming. 
+
+At aim time the code blends the learned correction with the recent human correction, applies smoothing/noise, and converts that to mouse movement. 
+
+When the aimbot’s applied aim differs enough from the previous aim and the human signal is meaningful, it updates the learned deque (and periodically saves per-weapon data to disk).
 
 ## Installation
 
