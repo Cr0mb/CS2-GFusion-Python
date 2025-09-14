@@ -408,6 +408,36 @@ class GDIRenderer:
             except Exception:
                 pass
 
+    def draw_corner_box(self, x, y, w, h, color, line_len=6):
+        # Draws only the corners of the box
+        self.select_pen(color)
+        null_brush = win32gui.GetStockObject(win32con.NULL_BRUSH)
+        win32gui.SelectObject(self._hdc, null_brush)
+
+        # Top left
+        win32gui.MoveToEx(self._hdc, int(x), int(y))
+        win32gui.LineTo(self._hdc, int(x + line_len), int(y))
+        win32gui.MoveToEx(self._hdc, int(x), int(y))
+        win32gui.LineTo(self._hdc, int(x), int(y + line_len))
+
+        # Top right
+        win32gui.MoveToEx(self._hdc, int(x + w), int(y))
+        win32gui.LineTo(self._hdc, int(x + w - line_len), int(y))
+        win32gui.MoveToEx(self._hdc, int(x + w), int(y))
+        win32gui.LineTo(self._hdc, int(x + w), int(y + line_len))
+
+        # Bottom left
+        win32gui.MoveToEx(self._hdc, int(x), int(y + h))
+        win32gui.LineTo(self._hdc, int(x), int(y + h - line_len))
+        win32gui.MoveToEx(self._hdc, int(x), int(y + h))
+        win32gui.LineTo(self._hdc, int(x + line_len), int(y + h))
+
+        # Bottom right
+        win32gui.MoveToEx(self._hdc, int(x + w), int(y + h))
+        win32gui.LineTo(self._hdc, int(x + w - line_len), int(y + h))
+        win32gui.MoveToEx(self._hdc, int(x + w), int(y + h))
+        win32gui.LineTo(self._hdc, int(x + w), int(y + h - line_len))
+
     def draw_rounded_box(self, x, y, w, h, radius, color):
         self.select_pen(color)
         null_brush = win32gui.GetStockObject(win32con.NULL_BRUSH)
@@ -749,6 +779,26 @@ class DX11Renderer:
                 return False
         return False
 
+    def draw_corner_box(self, x, y, w, h, color, line_len=6):
+        if not (self._dx_initialized and self._dx and self._dx_ctx and self._dx.pipeline_ready(self._dx_ctx)):
+            return False
+        try:
+            # Top left
+            self._dx.queue_line(self._dx_ctx, x, y, x + line_len, y, color)
+            self._dx.queue_line(self._dx_ctx, x, y, x, y + line_len, color)
+            # Top right
+            self._dx.queue_line(self._dx_ctx, x + w, y, x + w - line_len, y, color)
+            self._dx.queue_line(self._dx_ctx, x + w, y, x + w, y + line_len, color)
+            # Bottom left
+            self._dx.queue_line(self._dx_ctx, x, y + h, x + line_len, y + h, color)
+            self._dx.queue_line(self._dx_ctx, x, y + h, x, y + h - line_len, color)
+            # Bottom right
+            self._dx.queue_line(self._dx_ctx, x + w, y + h, x + w - line_len, y + h, color)
+            self._dx.queue_line(self._dx_ctx, x + w, y + h, x + w, y + h - line_len, color)
+            return True
+        except Exception:
+            return False
+
     def draw_rounded_box(self, x, y, w, h, radius, color):
         gpu_ready = self._dx_initialized and self._dx and self._dx_ctx and self._dx.pipeline_ready(self._dx_ctx)
         if gpu_ready:
@@ -987,7 +1037,7 @@ def main():
     windll.user32.GetWindowThreadProcessId(hwnd, byref(pid))
     handle = windll.kernel32.OpenProcess(PROCESS_PERMISSIONS, False, pid.value)
 
-    overlay = Overlay("CS2 Box ESP")
+    overlay = Overlay("GFusion")
     base = overlay.get_module_base(pid.value, "client.dll")
     spectator_list = SpectatorList(handle, base)
     bomb_status = BombStatus(handle, base)
@@ -1176,15 +1226,31 @@ def main():
             if flags["watermark_enabled"]:
                 handle_watermark_drag()
                 wm_x, wm_y = watermark_pos
+                
+                # MSPaint-style dimensions
                 wm_w, wm_h = 140, 36
-                overlay.draw_filled_rect(wm_x, wm_y, wm_w, wm_h // 2, (30, 30, 30))
-                overlay.draw_filled_rect(wm_x, wm_y + wm_h // 2, wm_w, wm_h // 2, (40, 40, 40))
-                overlay.draw_box(wm_x, wm_y, wm_w, wm_h, (70, 120, 255))
-                overlay.draw_box(wm_x + 1, wm_y + 1, wm_w - 2, wm_h - 2, (20, 20, 30))
-                overlay.draw_text("GFusion", wm_x + wm_w // 2 + 1, wm_y + wm_h // 3 + 2, (10, 10, 30), 18, centered=True)
-                overlay.draw_text("GFusion", wm_x + wm_w // 2, wm_y + wm_h // 3, (180, 200, 255), 18, centered=True)
-                overlay.draw_text("Made by Cr0mb", wm_x + wm_w // 2, wm_y + (wm_h * 2) // 3, (120, 120, 150), 12, centered=True)
-                overlay.draw_filled_rect(wm_x + wm_w // 4, wm_y + wm_h - 8, wm_w // 2, 2, (70, 120, 255))
+                
+                # Background: flat, simple, two-tone like MSPaint toolbars
+                overlay.draw_filled_rect(wm_x, wm_y, wm_w, wm_h // 2, (220, 220, 220))  # top light gray
+                overlay.draw_filled_rect(wm_x, wm_y + wm_h // 2, wm_w, wm_h // 2, (180, 180, 180))  # bottom darker gray
+                overlay.draw_box(wm_x, wm_y, wm_w, wm_h, (0, 0, 0))  # clean black border
+                
+                # Main text "GFusion" with subtle shadow
+                text_main = "GFusion"
+                text_x = wm_x + wm_w // 2
+                text_y = wm_y + wm_h // 3
+                overlay.draw_text(text_main, text_x + 1, text_y + 1, (0, 0, 0), 18, centered=True)  # shadow
+                overlay.draw_text(text_main, text_x, text_y, (0, 0, 255), 18, centered=True)  # main text blue
+                
+                # Author text "Made by Cr0mb" spaced nicely below
+                text_author = "Made by Cr0mb"
+                author_y = wm_y + (wm_h * 2) // 3
+                overlay.draw_text(text_author, text_x, author_y, (0, 0, 0), 12, centered=True)  # black text
+                
+                # Optional: small underline for MSPaint flair (under author)
+                # overlay.draw_filled_rect(wm_x + wm_w // 4, author_y + 8, wm_w // 2, 2, (0, 0, 255))
+
+
 
             if flags.get("show_local_info_box", True) and local_pos:
                 handle_local_info_drag()
@@ -1281,11 +1347,16 @@ def main():
 
                 if flags["box_esp_enabled"]:
                     color = flags["color_box_t"] if ent.team == 2 else flags["color_box_ct"]
-                    radius = 8  # adjust radius size as you like
-                    if hasattr(overlay, "draw_rounded_box"):
+                    radius = 8
+                    style = getattr(cfg, "box_esp_style", "normal")
+
+                    if style == "corner" and hasattr(overlay, "draw_corner_box"):
+                        overlay.draw_corner_box(x, y, w, h, color, getattr(cfg, "corner_box_len", 8))
+                    elif style == "rounded" and hasattr(overlay, "draw_rounded_box"):
                         overlay.draw_rounded_box(x, y, w, h, radius, color)
                     else:
                         overlay.draw_box(x, y, w, h, color)
+
 
                 if flags["trace_esp_enabled"]:
                     try:

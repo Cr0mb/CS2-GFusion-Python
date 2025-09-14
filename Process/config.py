@@ -28,8 +28,11 @@ class Config:
     panic_key = 0x2E  # VK_DELETE
     panic_mode_active = False
 
-    draw_rounded_box = True
-    show_box_esp = False
+    show_box_esp = True
+    box_esp_style = "normal"   # options: normal, rounded, corner
+
+
+
     healthbar_enabled = False
     armorbar_enabled = False
     health_esp_enabled = False

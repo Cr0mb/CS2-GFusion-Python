@@ -1263,10 +1263,11 @@ class ESPTab(QWidget):
         basic_grid = QGridLayout()
         basic_grid.setHorizontalSpacing(15)
         basic_grid.setVerticalSpacing(8)
+
+        # Add checkboxes first
         basic_features = [
             ("Hide from Screen Capture", "obs_protection_enabled"),
             ("Show Box ESP", "show_box_esp"),
-            ("Rounded Boxes", "draw_rounded_box"),
             ("Health Bar", "healthbar_enabled"),
             ("Armor Bar", "armorbar_enabled"),
             ("Health Text", "health_esp_enabled"),
@@ -1275,8 +1276,37 @@ class ESPTab(QWidget):
             ("Name ESP", "name_esp_enabled"),
             ("Weapon ESP", "weapon_esp_enabled"),
         ]
+
         for i, (label, attr) in enumerate(basic_features):
             self.add_checkbox_to_grid(basic_grid, i // 3, i % 3, label, attr)
+
+        # --- Instead of adding the dropdown to the grid, nest it next to Show Box ESP ---
+        show_box_esp_cb = self.ui_elements['checkboxes'].get("show_box_esp")
+        if show_box_esp_cb:
+            dropdown_layout = QHBoxLayout()
+            dropdown_layout.setSpacing(5)
+            dropdown_layout.addWidget(QLabel("Box ESP Style:"))
+
+            combo = QComboBox()
+            combo.addItems(["normal", "rounded", "corner"])
+            current_value = getattr(Config, "box_esp_style", "normal").lower()
+            index = combo.findText(current_value)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            combo.currentTextChanged.connect(lambda val: setattr(Config, "box_esp_style", val.lower()))
+            dropdown_layout.addWidget(combo)
+
+            # store reference for refresh
+            if 'comboboxes' not in self.ui_elements:
+                self.ui_elements['comboboxes'] = {}
+            self.ui_elements['comboboxes']['box_esp_style'] = combo
+
+            # Put the dropdown below the Show Box ESP checkbox
+            container = QWidget()
+            container.setLayout(dropdown_layout)
+            basic_grid.addWidget(container, 1, 1)  # adjust row/col as needed
+
+            
         layout.addLayout(basic_grid)
         layout.addWidget(create_section_separator())
 
@@ -1750,28 +1780,28 @@ class CheatCheckBox(QCheckBox):
             QCheckBox {
                 color: black;
                 font-size: 10pt;
-                font-family: "Arial", "Comic Sans MS", sans-serif;
-                padding-left: 6px;
+                font-family: "Comic Sans MS", "Arial", sans-serif;
+                padding-left: 8px;
             }
 
             QCheckBox::indicator {
-                width: 16px;
-                height: 16px;
-                border: 2px solid black;
-                background-color: #f0f0f0; /* classic Paint box */
+                width: 24px;
+                height: 24px;
+                border: 4px solid black;
+                background-color: #ffffff;
             }
 
             QCheckBox::indicator:hover {
-                background-color: #e0e0e0;
+                background-color: #ffeb3b;
             }
 
             QCheckBox::indicator:checked {
-                background-color: #ff0000; /* red check */
-                border: 2px solid black;
+                background-color: #f44336;
+                border: 4px solid black;
             }
 
             QCheckBox::indicator:checked:hover {
-                background-color: #ff5555;
+                background-color: #ff5555;          /* brighter red on hover */
             }
         """)
 
@@ -1784,34 +1814,43 @@ class CheatComboBox(QComboBox):
         self.setFixedWidth(width)
         self.setStyleSheet("""
             QComboBox {
-                background-color: #f0f0f0;
+                background-color: #ffffff;
                 border: 2px solid black;
                 border-radius: 0px;
-                padding: 4px 8px;
+                padding: 2px 6px;
                 color: black;
-                font-family: "Arial", "Comic Sans MS", sans-serif;
+                font-family: "Comic Sans MS", "Arial", sans-serif;
                 font-size: 10pt;
             }
             QComboBox:hover {
-                background-color: #e0e0e0;
+                background-color: #ffeb3b;
             }
             QComboBox::drop-down {
                 border-left: 2px solid black;
+                width: 20px;
+                background: #00ffff;
             }
             QComboBox::down-arrow {
-                image: url("icons/arrow.png");  /* path to your arrow image */
-                width: 12px;
-                height: 12px;
+                image: none;
+                width: 0; 
+                height: 0;
+                border-left: 6px solid black;
+                border-top: 4px solid transparent;
+                border-bottom: 4px solid transparent;
+                margin-right: 4px;
             }
-
             QComboBox QAbstractItemView {
-                background-color: #f0f0f0;
+                background-color: #ffffff;
                 border: 2px solid black;
                 selection-background-color: #ff0000;
                 selection-color: black;
-                font-family: "Arial", "Comic Sans MS", sans-serif;
+                font-family: "Comic Sans MS", "Arial", sans-serif;
+                font-size: 10pt;
             }
         """)
+
+
+        
         self.wheelEvent = lambda event: None  # disable scroll
 
 
@@ -1820,30 +1859,68 @@ class NoScrollSlider(QSlider):
         super().__init__(orientation, parent)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setStyleSheet("""
-            QSlider::groove:horizontal {
-                height: 6px;
-                background: #f0f0f0;
-                border: 2px solid black;
+            QWidget {
+                background-color: #e9e9e9;
+                color: black;
+                font-family: "Comic Sans MS", sans-serif;
+                font-size: 11pt;
             }
-            QSlider::handle:horizontal {
-                background-color: #0000ff;  /* blue handle */
-                border: 2px solid black;
-                width: 16px;
-                height: 16px;
-                margin: -6px 0;
+
+            QTabWidget::pane {
+                border: 4px solid #000;
+                background-color: #ffffff;
             }
-            QSlider::handle:horizontal:hover {
-                background-color: #5555ff;
+
+            QTabBar::tab {
+                width: 84px;
+                height: 84px;
+                margin: 4px;
+                border: 4px solid #000;
+                background-color: #ffeb3b;
+                font-weight: bold;
             }
-            QSlider::sub-page:horizontal {
-                background: #00ff00;  /* green filled part */
-                border: 2px solid black;
+            QTabBar::tab:selected {
+                background-color: #2196f3;
+                color: #fff;
             }
-            QSlider::add-page:horizontal {
-                background: #f0f0f0;
-                border: 2px solid black;
+            QTabBar::tab:hover {
+                background-color: #4caf50;
+                color: #fff;
+            }
+
+            QPushButton {
+                background-color: #f44336;
+                color: #fff;
+                border: 4px solid #000;
+                padding: 10px 16px;
+                font-weight: bold;
+                border-radius: 0px;
+            }
+            QPushButton:hover {
+                background-color: #ff5555;
+            }
+            QPushButton:pressed {
+                background-color: #aa0000;
+            }
+
+            QScrollBar:vertical {
+                background: #e9e9e9;
+                width: 20px;
+                border: 3px solid #000;
+            }
+            QScrollBar::handle:vertical {
+                background: #2196f3;
+                min-height: 28px;
+                border: 3px solid #000;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #5555ff;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
+
 
     def wheelEvent(self, event):
         pass  # disable scroll wheel changes
@@ -1878,60 +1955,66 @@ class MainWindow(QWidget):
 
         # Paint-style styling
         self.setStyleSheet("""
-        QWidget {
-            background-color: #f0f0f0;
-            color: black;
-            font-family: "Arial", "Comic Sans MS", sans-serif;
-            font-size: 10pt;
-        }
-        QTabWidget::pane {
-            border: 2px solid black;
-            background-color: #f0f0f0;
-        }
-        QTabBar::tab {
-            width: 80px;
-            height: 80px;
-            padding: 0px;
-            margin: 0px;
-            border: 2px solid black;
-            background-color: #ffcc00;
-        }
-        QTabBar::tab:selected {
-            background-color: #00ccff;
-        }
-        QTabBar::tab:hover {
-            background-color: #99ff99;
-        }
-        QPushButton {
-            background-color: #ff0000;
-            color: black;
-            border: 2px solid black;
-            padding: 4px 8px;
-            font-weight: bold;
-            border-radius: 0px;
-        }
-        QPushButton:hover {
-            background-color: #ff5555;
-        }
-        QPushButton:pressed {
-            background-color: #aa0000;
-        }
-        QScrollBar:vertical {
-            background: #f0f0f0;
-            width: 12px;
-            border: 2px solid black;
-        }
-        QScrollBar::handle:vertical {
-            background: #0000ff;
-            min-height: 18px;
-            border: 2px solid black;
-        }
-        QScrollBar::handle:vertical:hover {
-            background: #5555ff;
-        }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            height: 0px;
-        }
+            QWidget {
+                background-color: #e9e9e9;
+                color: black;
+                font-family: "Comic Sans MS", sans-serif;
+                font-size: 11pt;
+            }
+
+            QTabWidget::pane {
+                border: 4px solid #000;
+                background-color: #ffffff;
+            }
+
+            QTabBar::tab {
+                width: 84px;
+                height: 84px;
+                margin: 4px;
+                border: 4px solid #000;
+                background-color: #ffeb3b;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected {
+                background-color: #2196f3;
+                color: #fff;
+            }
+            QTabBar::tab:hover {
+                background-color: #4caf50;
+                color: #fff;
+            }
+
+            QPushButton {
+                background-color: #f44336;
+                color: #fff;
+                border: 4px solid #000;
+                padding: 10px 16px;
+                font-weight: bold;
+                border-radius: 0px;
+            }
+            QPushButton:hover {
+                background-color: #ff5555;
+            }
+            QPushButton:pressed {
+                background-color: #aa0000;
+            }
+
+            QScrollBar:vertical {
+                background: #e9e9e9;
+                width: 20px;
+                border: 3px solid #000;
+            }
+            QScrollBar::handle:vertical {
+                background: #2196f3;
+                min-height: 28px;
+                border: 3px solid #000;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #5555ff;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
         """)
 
         # Drag movement

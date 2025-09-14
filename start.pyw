@@ -7,10 +7,10 @@ import subprocess
 import time
 from cryptography.fernet import Fernet
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QMessageBox
+    QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QMessageBox, QHBoxLayout, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QCursor, QIcon
 
 MAIN_SCRIPT = "GFusion.py"
 LAUNCHER_FILE = "launcher.py"
@@ -130,61 +130,175 @@ class OffsetUpdater(QThread):
 class LauncherGUI(QWidget):
     def __init__(self):
         super().__init__()
+        # Classic window (not translucent) for MS Paint feel
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setGeometry(100, 100, 600, 500)
+        self.setGeometry(150, 120, 760, 540)
+        self.setMinimumSize(640, 420)
         self.drag_position = None
 
+        # Fonts
+        self.h1 = QFont("Comic Sans MS", 14, QFont.Bold)
+        self.h2 = QFont("Comic Sans MS", 10, QFont.Bold)
+        self.log_font = QFont("Consolas", 10)
+
+        # Main style: light gray background, chunky black border, hand-drawn vibes
         self.setStyleSheet("""
-            QWidget {
-                background-color: #1e1e1e;
-                color: white;
-                font-family: Consolas;
-                border: 1px solid #3ecf8e;
-                border-radius: 10px;
+            QWidget#root {
+                background-color: #e9e9e9;   /* light paper-like background */
+                border: 6px solid #000000;   /* thick black border like MS Paint window */
             }
-            QPushButton {
-                background-color: #3c3f41;
+            QLabel#title {
+                color: white;
+                padding-left: 10px;
+            }
+            #titlebar {
+                background-color: #2b5797;   /* classic blue titlebar */
+                border-bottom: 3px solid #000;
+            }
+            QPushButton.ms-btn {
+                border: 3px solid #000;
+                border-radius: 4px;
+                padding: 12px 18px;
+                font-family: "Comic Sans MS";
+                font-weight: 700;
+                min-height: 44px;
+                min-width: 160px;
+                box-sizing: border-box;
+            }
+            QPushButton.ms-btn:hover { cursor: pointer; }
+            QPushButton#btn-yellow { background: #ffeb3b; }
+            QPushButton#btn-red    { background: #f44336; color: #fff; }
+            QPushButton#btn-blue   { background: #2196f3; color: #fff; }
+            QPushButton#btn-green  { background: #4caf50; color: #fff; }
+
+            QPushButton#closeBtn {
+                background-color: #ff3b3b;
+                color: white;
+                border: 3px solid #000;
+                min-width: 36px;
+                min-height: 28px;
+                font-weight: bold;
+            }
+
+            QTextEdit#log {
+                background-color: #ffffff;
+                border: 3px solid #000;
                 padding: 8px;
-                border-radius: 6px;
-                color: white;
             }
-            QPushButton:hover {
-                background-color: #505354;
+
+            QWidget#palette {
+                background-color: transparent;
+                border-bottom: 3px solid #000;
+                padding: 6px;
             }
-            QTextEdit {
-                background-color: #2b2b2b;
-                border: 1px solid #444;
+
+            QLabel.section-title {
+                font-family: "Comic Sans MS";
+                font-weight: 700;
+                padding: 6px 0;
             }
         """)
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 10)
+        # Root container so we can target it with stylesheet
+        root = QWidget(self)
+        root.setObjectName("root")
+        root.setGeometry(0, 0, self.width(), self.height())
 
-        self.title_bar = QLabel(" GFusion AES Launcher")
-        self.title_bar.setFont(QFont("Consolas", 14, QFont.Bold))
-        self.title_bar.setStyleSheet("color: #3ecf8e;")
-        self.title_bar.setFixedHeight(30)
-        self.title_bar.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        layout.addWidget(self.title_bar)
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(8, 6, 8, 8)
+        main_layout.setSpacing(10)
 
+        # Title bar (drag & close)
+        titlebar = QWidget()
+        titlebar.setObjectName("titlebar")
+        titlebar_layout = QHBoxLayout()
+        titlebar_layout.setContentsMargins(6, 2, 6, 2)
+
+        title_label = QLabel(" GFusion AES Launcher")
+        title_label.setObjectName("title")
+        title_label.setFont(self.h1)
+        title_label.setFixedHeight(36)
+        title_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+
+        close_btn = QPushButton("X")
+        close_btn.setObjectName("closeBtn")
+        close_btn.setFont(QFont("Comic Sans MS", 10, QFont.Bold))
+        close_btn.clicked.connect(self.close)
+        close_btn.setCursor(QCursor(Qt.PointingHandCursor))
+
+        titlebar_layout.addWidget(title_label)
+        titlebar_layout.addStretch()
+        titlebar_layout.addWidget(close_btn)
+        titlebar.setLayout(titlebar_layout)
+        titlebar.setFixedHeight(44)
+        titlebar.mousePressEvent = self.title_mouse_press
+        titlebar.mouseMoveEvent = self.title_mouse_move
+
+        main_layout.addWidget(titlebar)
+
+        # Paint-like color palette (purely visual)
+        palette = QWidget()
+        palette.setObjectName("palette")
+        pal_layout = QHBoxLayout()
+        pal_layout.setContentsMargins(4, 2, 4, 2)
+
+        for color_name, w in [("#ffeb3b", "Yellow"), ("#f44336", "Red"), ("#2196f3", "Blue"), ("#4caf50", "Green")]:
+            sw = QLabel()
+            sw.setFixedSize(44, 28)
+            sw.setStyleSheet(f"background:{color_name}; border:3px solid #000;")
+            pal_layout.addWidget(sw)
+            pal_layout.addSpacing(6)
+
+        pal_layout.addStretch()
+        palette.setLayout(pal_layout)
+        palette.setFixedHeight(44)
+        main_layout.addWidget(palette)
+
+        # Log output area (like the drawing/canvas area but used for logs)
         self.log_output = QTextEdit()
+        self.log_output.setObjectName("log")
         self.log_output.setReadOnly(True)
-        layout.addWidget(self.log_output)
+        self.log_output.setFont(self.log_font)
+        self.log_output.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        main_layout.addWidget(self.log_output)
 
-        self.update_btn = QPushButton("Update Offsets")
+        # Buttons row (large chunky MS Paint style)
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(12)
+
+        self.update_btn = QPushButton("UPDATE OFFSETS")
+        self.update_btn.setObjectName("btn-blue")
+        self.update_btn.setProperty("class", "ms-btn")
+        self.update_btn.setFont(self.h2)
+        self.update_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.update_btn.clicked.connect(self.update_offsets)
 
-        self.generate_btn = QPushButton("Generate Launcher")
+        self.generate_btn = QPushButton("GENERATE LAUNCHER")
+        self.generate_btn.setObjectName("btn-yellow")
+        self.generate_btn.setProperty("class", "ms-btn")
+        self.generate_btn.setFont(self.h2)
+        self.generate_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.generate_btn.clicked.connect(self.generate_launcher)
 
-        self.run_btn = QPushButton("Run Launcher")
+        self.run_btn = QPushButton("RUN LAUNCHER")
+        self.run_btn.setObjectName("btn-green")
+        self.run_btn.setProperty("class", "ms-btn")
+        self.run_btn.setFont(self.h2)
+        self.run_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.run_btn.clicked.connect(self.run_launcher)
 
         for btn in [self.update_btn, self.generate_btn, self.run_btn]:
-            layout.addWidget(btn)
+            btn.setStyleSheet("")  # let the parent stylesheet handle visuals
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn_layout.addWidget(btn)
 
-        self.setLayout(layout)
+        btn_row.setLayout(btn_layout)
+        main_layout.addWidget(btn_row)
+
+        root.setLayout(main_layout)
+        self.root = root
 
         # Setup GUI-only logging
         log_handler = QTextEditLogger(self.log_output)
@@ -195,6 +309,18 @@ class LauncherGUI(QWidget):
             logger.handlers.clear()
         logger.addHandler(log_handler)
 
+    # Titlebar dragging handlers
+    def title_mouse_press(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def title_mouse_move(self, event):
+        if event.buttons() == Qt.LeftButton and self.drag_position:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+
+    # Fallback drag when clicking anywhere on the window
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()

@@ -61,7 +61,14 @@ VIRTUAL_KEYS = {
 }
 
 def get_vk_code(key_name):
-    return VIRTUAL_KEYS.get(key_name.lower(), None)
+    key = key_name.lower()
+    if key in VIRTUAL_KEYS:
+        return VIRTUAL_KEYS[key]
+    if len(key) == 1:
+        # map single characters (a-z, 0-9)
+        return ord(key.upper())
+    return None
+
 
 # -----------------------------
 # NT ReadProcessMemory Setup
@@ -366,6 +373,19 @@ class AimbotRCS:
         self.aim_start_time = None
         self.last_aim_angle = None
         self.lock = threading.Lock()
+
+        # continuous raw mouse recording buffer (stores recent raw dx,dy samples)
+        self.mouse_buffer = deque(maxlen=1000)  # store recent deltas
+        self.raw_recordings_dirty = False
+
+        # track previous aim key state to detect press/release edges
+        self.prev_aim_state = False
+
+        # track previous target id and a short grace period to avoid phantom RCS after switching targets
+        self.prev_target_id = None
+        self.rcs_grace_until = 0.0
+
+
 
         self.weapon_tracker = CS2WeaponTracker()  # already uses CS2Process internally
 
@@ -837,10 +857,35 @@ class AimbotRCS:
                     time.sleep(0.1)
                     continue
 
-                self.left_down = GetAsyncKeyState(aim_vk) & 0x8000 != 0
+                # read current aim key state (edge-detection)
+                curr_aim_state = (GetAsyncKeyState(aim_vk) & 0x8000) != 0
+
+                # handle press edge
+                if curr_aim_state and not self.prev_aim_state:
+                    # started aiming: initialize timers/state
+                    self.aim_start_time = time.perf_counter()
+                    self.shots_fired = 0
+                    self.last_punch = (0.0, 0.0)
+                    self.last_aim_angle = None
+                    # optionally reset target when starting a new aim
+                    # self.target_id = None
+
+                # handle release edge
+                if not curr_aim_state and self.prev_aim_state:
+                    # released: clear transient aim state
+                    self.shots_fired = 0
+                    self.last_aim_angle = None
+                    self.aim_start_time = None
+                    # note: keep target_id behavior as you prefer (clear or keep)
+
+                # store for next frame and expose as before
+                self.prev_aim_state = curr_aim_state
+                self.left_down = curr_aim_state
+
                 if not self.cfg.enabled:
                     time.sleep(0.01)
                     continue
+
 
                 # --------------------
                 # Memory Reads (once)
@@ -929,6 +974,23 @@ class AimbotRCS:
                             min_dist = dist
                             target, target_pos, self.target_id = pawn_ent, predicted, i
 
+                # ---------- target-change detection ----------
+                # if we switched targets, clear recoil tracking and give a short grace window
+                target_changed = False
+                if self.target_id is not None and getattr(self, "prev_target_id", None) != self.target_id:
+                    target_changed = True
+                    # reset recoil tracking so no leftover punch is used for new target
+                    self.last_punch = (0.0, 0.0)
+                    # short grace time to ignore RCS on first frames after switching (seconds)
+                    self.rcs_grace_until = time.time() + getattr(self.cfg, "rcs_grace_time", 0.08)
+                    # optionally reset shot counters on switch (uncomment if desired)
+                    # self.shots_fired = 0
+
+                # keep prev_target_id updated for next iteration
+                if self.target_id is not None:
+                    self.prev_target_id = self.target_id
+
+
                 # --------------------
                 # Aimbot Logic
                 # --------------------
@@ -943,12 +1005,20 @@ class AimbotRCS:
                         continue
 
                     scale = self.cfg.rcs_scale * min(self.shots_fired / 2, 1.0)
-                    if self.cfg.rcs_enabled:
+
+                    # decide whether to apply recoil compensation:
+                    now = time.time()
+                    rcs_allowed = self.cfg.rcs_enabled and (now > getattr(self, "rcs_grace_until", 0.0)) and not target_changed
+
+                    if rcs_allowed:
+                        # normal RCS path (use live recoil values)
                         compensated_pitch = self.clamp_angle_diff(pitch, tp - recoil_pitch * scale)
                         compensated_yaw = self.clamp_angle_diff(yaw, ty - recoil_yaw * scale)
                     else:
+                        # we're in grace window or rcs disabled -> do not apply recoil correction for first frames
                         compensated_pitch = self.clamp_angle_diff(pitch, tp)
                         compensated_yaw = self.clamp_angle_diff(yaw, ty)
+
 
                     smooth = max(0.01, min(self.cfg.smooth_base + random.uniform(-self.cfg.smooth_var, self.cfg.smooth_var), 0.25))
                     key = self.quantize_angle(compensated_pitch, compensated_yaw, self.shots_fired)
