@@ -42,8 +42,8 @@ class Offsets:
     dwViewMatrix = 31666416
     dwViewRender = 31669632
     dwWeaponC4 = 31262776
-    dwWindowHeight = 9282740
-    dwWindowWidth = 9282736
+    dwWindowHeight = 9282796
+    dwWindowWidth = 9282792
     enable = 100
     end = 40
     endLerpTo = 72

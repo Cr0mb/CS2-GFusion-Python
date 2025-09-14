@@ -1641,42 +1641,38 @@ class RecoilViewer(QWidget):
         self.layout.addLayout(content)
 
     def scan_aimbot_data(self):
-        """Periodically scans the directory and updates the dropdown and data if needed."""
         if not os.path.exists(LEARN_DIR):
             self.weapon_ids = []
             self.all_data = {}
             self.dropdown.clear()
             self.ax.clear()
-            data_blob = repr(locals()).encode('utf-8', errors='ignore')
-        else:
-            # Create a blob even if the dir exists, so we don't crash
-            state = {
-                "weapon_ids": self.weapon_ids,
-                "all_data": self.all_data
-            }
-            data_blob = json.dumps(state, default=str).encode("utf-8", errors="ignore")
-
-        h = hashlib.sha1(data_blob).hexdigest()
-        if h != self._last_aimbot_plot_hash:
-            self._last_aimbot_plot_hash = h
             self.canvas.draw()
             return
-
 
         new_weapon_ids = [f[:-5] for f in os.listdir(LEARN_DIR) if f.endswith(".json")]
         if set(new_weapon_ids) != set(self.weapon_ids):
             self.weapon_ids = new_weapon_ids
             self.all_data = {}
             self.dropdown.clear()
+
             for wid in self.weapon_ids:
                 try:
                     with open(os.path.join(LEARN_DIR, f"{wid}.json")) as f:
-                        self.all_data[wid] = json.load(f)
-                        self.dropdown.addItem(wid)
+                        data = json.load(f)
+
+                    # Normalize: dict stays dict, list gets wrapped
+                    if isinstance(data, list):
+                        # raw mouse data → wrap in one entry
+                        self.all_data[wid] = {"raw_mouse": data}
+                    elif isinstance(data, dict):
+                        self.all_data[wid] = data
+                    else:
+                        self.all_data[wid] = {}
+
+                    self.dropdown.addItem(wid)
                 except Exception as e:
                     print(f"Error loading {wid}.json: {e}")
 
-            # Auto-select first if available
             if self.weapon_ids:
                 self.dropdown.setCurrentText(self.weapon_ids[0])
                 self.update_plot(self.weapon_ids[0])
@@ -1695,7 +1691,16 @@ class RecoilViewer(QWidget):
                 item.widget().deleteLater()
 
         data = self.all_data.get(weapon_id, {})
-        for idx, (key, vectors) in enumerate(data.items()):
+
+        # Handle both dict (learning) and raw list
+        if isinstance(data, dict):
+            items = data.items()
+        elif isinstance(data, list):
+            items = [("raw_mouse", data)]
+        else:
+            items = []
+
+        for idx, (key, vectors) in enumerate(items):
             x, y = [0], [0]
             inv_x, inv_y = [0], [0]
             for dx, dy in vectors:
@@ -1706,7 +1711,8 @@ class RecoilViewer(QWidget):
 
             color = f"C{idx % 10}"
             self.ax.plot(x, y, marker='o', color=color, linewidth=2, label=f"Recoil {key}")
-            self.ax.plot(inv_x, inv_y, marker='x', linestyle='--', color=color, alpha=0.6, linewidth=2, label=f"Compensate {key}")
+            self.ax.plot(inv_x, inv_y, marker='x', linestyle='--', color=color, alpha=0.6,
+                         linewidth=2, label=f"Compensate {key}")
             self.add_legend_item(f"Recoil {key}", color)
             self.add_legend_item(f"Compensate {key}", color, dashed=True)
 
