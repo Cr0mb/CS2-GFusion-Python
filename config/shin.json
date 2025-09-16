@@ -1,0 +1,254 @@
+{
+    "DeathMatch": false,
+    "FOV": 3.0,
+    "activation_key": "alt",
+    "aim_key": "left_alt",
+    "noise_chance": 0.2,
+    "noise_strength": 0.03,
+    "aim_start_delay": 0.4,
+    "aim_stop": false,
+    "armor_esp_enabled": false,
+    "armorbar_enabled": false,
+    "auto_pistol_enabled": false,
+    "autostrafe_enabled": true,
+    "bhop_enabled": false,
+    "bhop_stop": false,
+    "bomb_esp_enabled": true,
+    "bone_dot_color": [
+        255,
+        0,
+        255
+    ],
+    "bone_dot_esp_enabled": false,
+    "bone_dot_shape": "circle",
+    "bone_dot_size": 6,
+    "bone_indices_to_try": [
+        6,
+        18
+    ],
+    "circle_enabled": false,
+    "circle_stop": false,
+    "closest_to_crosshair": true,
+    "color_armor_text": [
+        173,
+        216,
+        230
+    ],
+    "color_armorbar": [
+        173,
+        216,
+        230
+    ],
+    "color_bone": [
+        255,
+        97,
+        35
+    ],
+    "color_box_ct": [
+        0,
+        0,
+        255
+    ],
+    "color_box_t": [
+        255,
+        0,
+        0
+    ],
+    "color_distance": [
+        255,
+        255,
+        255
+    ],
+    "color_flash_scope": [
+        255,
+        255,
+        0
+    ],
+    "color_head": [
+        255,
+        255,
+        255
+    ],
+    "color_healthbar": [
+        0,
+        255,
+        0
+    ],
+    "color_hp_text": [
+        0,
+        255,
+        0
+    ],
+    "color_line": [
+        255,
+        255,
+        255
+    ],
+    "color_local_box_background": [
+        30,
+        30,
+        30
+    ],
+    "color_local_box_border": [
+        100,
+        100,
+        100
+    ],
+    "color_local_coords_text": [
+        200,
+        200,
+        255
+    ],
+    "color_local_speed_text": [
+        180,
+        255,
+        180
+    ],
+    "color_local_velocity_text": [
+        255,
+        255,
+        255
+    ],
+    "color_money_text": [
+        0,
+        255,
+        0
+    ],
+    "color_name": [
+        170,
+        170,
+        0
+    ],
+    "color_name_effects": [
+        255,
+        215,
+        0
+    ],
+    "color_spectators": [
+        255,
+        165,
+        0
+    ],
+    "color_weapon_text": [
+        85,
+        255,
+        255
+    ],
+    "coordinates_esp_color": [
+        0,
+        255,
+        255
+    ],
+    "coordinates_esp_enabled": false,
+    "crosshair_color": [
+        255,
+        255,
+        255
+    ],
+    "crosshair_size": 6,
+    "distance_esp_enabled": false,
+    "downward_offset": 60,
+    "draw_crosshair_enabled": false,
+    "enable_learning": true,
+    "enable_velocity_prediction": false,
+    "enabled": true,
+    "esp_show_enemies_only": true,
+    "esp_show_team_only": false,
+    "fire_rate": 0.1,
+    "flash_esp_enabled": true,
+    "fov_changer_enabled": false,
+    "fov_circle_enabled": true,
+    "fov_info_overlay_enabled": false,
+    "fov_overlay_color": [
+        0,
+        255,
+        0
+    ],
+    "game_fov": 90,
+    "glow": false,
+    "glow_color_enemy": [
+        1,
+        0,
+        0,
+        1
+    ],
+    "glow_color_team": [
+        0,
+        0,
+        1,
+        1
+    ],
+    "glow_show_enemies": true,
+    "glow_show_team": true,
+    "glow_stop": false,
+    "grenade_prediction_enabled": false,
+    "head_esp_enabled": true,
+    "head_esp_shape": "circle",
+    "head_esp_size": 5,
+    "health_esp_enabled": false,
+    "healthbar_enabled": true,
+    "invert_y": -1,
+    "learn_dir": "aimbot_data",
+    "line_esp_enabled": false,
+    "line_esp_position": "bottom",
+    "max_delta_angle": 40,
+    "max_entities": 64,
+    "max_mouse_move": 10,
+    "money_esp_enabled": false,
+    "name_esp_enabled": true,
+    "noflash_enabled": false,
+    "obs_protection_enabled": true,
+    "panic_key": 46,
+    "panic_key_enabled": true,
+    "panic_mode_active": false,
+    "rcs_enabled": true,
+    "rcs_scale": 5.0,
+    "rcs_smooth_base": 1,
+    "rcs_smooth_var": 1,
+    "scope_esp_enabled": true,
+    "sensitivity": 0.022,
+    "shoot_teammates": false,
+    "show_box_esp": true,
+    "show_local_info_box": false,
+    "show_overlay_fps": true,
+    "skeleton_esp_enabled": true,
+    "smooth_base": 1,
+    "smooth_var": 1,
+    "spectator_list_enabled": true,
+    "speed_esp": false,
+    "speed_esp_color": [
+        0,
+        255,
+        255
+    ],
+    "target_bone_name": "head",
+    "target_switch_delay": 0,
+    "toggle_menu_key": "insert",
+    "trace_esp_color": [
+        0,
+        255,
+        255
+    ],
+    "trace_esp_enabled": false,
+    "trace_esp_max_points": 150,
+    "trigger_key": "alt",
+    "triggerbot_always_on": false,
+    "triggerbot_cooldown": 0.2,
+    "triggerbot_enabled": true,
+    "triggerbot_stop": false,
+    "velocity_esp": false,
+    "velocity_esp_color": [
+        255,
+        0,
+        0
+    ],
+    "velocity_esp_text": false,
+    "velocity_prediction_factor": 1,
+    "velocity_text_color": [
+        255,
+        0,
+        0
+    ],
+    "watermark_enabled": true,
+    "weapon_esp_enabled": true
+}
