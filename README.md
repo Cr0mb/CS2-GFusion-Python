@@ -48,7 +48,7 @@ V1.9 7/31/2025
 - Added always-on Triggerbot
 - Added Auto Pistol
 
-## Bugfix
+## Bug
 - Crouching with aimbot causes bone position to be incorrect
 ```
 
