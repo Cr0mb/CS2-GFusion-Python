@@ -20,16 +20,16 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 [**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)<br>
 [**GFusion V2.5**](https://www.youtube.com/watch?v=ZjwLNJX-leY)
 
-[code]
+```markdown
 V1.8 7/30/2025
 - Huge improvements to aimbot & recoil control (more accurate, still legit)
 - Added aim visualization tab to GFusion
 - Integrated Weapon ESP & Weapon color
 - Fixed weird aimbot mouse movement
 - Re-integrated RCS toggle with new aimbot customization options
-[/code]
+```
 
-[code]
+```markdown
 V1.9 7/31/2025
 - Moved into Misc tab
   - Grenade Prediction (simple)
@@ -50,9 +50,9 @@ V1.9 7/31/2025
 
 ## Bug
 - Crouching with aimbot causes bone position to be incorrect
-[/code]
+```
 
-[code]
+```markdown
 V2.0 8/1/2025
 - Added Money ESP
 - Added BHop Information Box
@@ -61,31 +61,31 @@ V2.0 8/1/2025
 - Added Speed ESP
 - Added Velocity ESP
 - Added Coordinates ESP
-[/code]
+```
 
-[code]
+```markdown
 V2.1 8/3/2025
 - Fixed glow team & glow enemy not refreshing on config load
 - Fixed Aim Sensitivity & Invert Y not refreshing on config load
-[/code]
+```
 
-[code]
+```markdown
 V2.2 8/4/2025
 - Added OBS Proof for Screen Capture
-[/code]
+```
 
-[code]
+```markdown
 V2.3 8/4/2025
 - Made menu OBS Proof for Screen Capture
-[/code]
+```
 
-[code]
+```markdown
 V2.4 8/6/2025
 - Added walkbot
 - Update offset_update.py to use https://www.unknowncheats.me/forum/counter-strike-2-a/711462-updated-cs2-dumper.html
-[/code]
+```
 
-[code]
+```markdown
 V2.5 8/8/2025
 - Tried to make some performance improvements to ESP overlay
 - Tried to make some performance improvements to Aimbot
@@ -93,39 +93,39 @@ V2.5 8/8/2025
 - Added show drawing FPS for overlay
 
 - Changed GDI Windows Overlay to be DirectX11 instead (Huge performance boost in visuals!)
-[/code]
+```
 
-[code]
+```markdown
 V2.6 8/13/2025
 - Fixed menu toggle key not working in MISC tab.
-[/code]
+```
 
-[code]
+```markdown
 V2.7 9/7/2025
 - Added Panic Key to ESP with customizable key press.
 - Updated offset_update.py
 - Changed memory reading for Aimbot & ESP for stealth / speed.
-[/code]
+```
 
-[code]
+```markdown
 V2.8 9/9/2025
 - Weapon ESP now reads faster
 - Changed memory reading for Aimbot again
-[/code]
+```
 
-[code]
+```markdown
 V2.9 9/9/2025
 - Updated Velocity Prediction
 - Updated menu styling
 - Updated memory reading for BHop
-[/code]
+```
 
-[code]
+```markdown
 V3.0 9/12/2025
 - Updated Aimbot Learning; now records all mouse movements instead of just at aim time.
-[/code]
+```
 
-[code]
+```markdown
 V3.1 9/14/2025
 - Raw Mouse movements are now visible in Visualize Aim (crashed game prior)
 - Fixed RCS with other aim keys causing compensation bug (aiming above or below player instead of on)
@@ -134,8 +134,7 @@ V3.1 9/14/2025
 - Updated styling for the main menu some more.
 - Added rounded box ESP.
 - Added corner box ESP.
-[/code]
-
+```
 
 # GFusion Feature List
 
