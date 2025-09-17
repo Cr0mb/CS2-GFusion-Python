@@ -20,6 +20,54 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 [**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)<br>
 [**GFusion V2.5**](https://www.youtube.com/watch?v=ZjwLNJX-leY)
 
+```markdown
+V1.8 7/30/2025
+- Huge improvements to aimbot & recoil control (more accurate, still legit)
+- Added aim visualization tab to GFusion
+- Integrated Weapon ESP & Weapon color
+- Fixed weird aimbot mouse movement
+- Re-integrated RCS toggle with new aimbot customization options
+```
+
+```markdown
+V1.9 7/31/2025
+- Moved into Misc tab
+  - Grenade Prediction (simple)
+  - Enable No Flash
+  - Spectator List
+- Moved into AimBot tab
+  - Show Aimbot FOV Circle
+- Big updates to menu design
+- Update to Spectator List, now draggable with new design
+- Added GFusion watermark, also draggable
+- Fixed thread toggle with auto pistol issues
+- Added color customization for aim FOV
+- Added keyboard listener to change menu key
+- Added config setting for enemy/team only ESP
+- Added customization for external crosshair size
+- Added always-on Triggerbot
+- Added Auto Pistol
+
+## Bugfix
+- Crouching with aimbot causes bone position to be incorrect
+```
+
+```markdown
+V2.0 8/1/2025
+- Added Money ESP
+- Added BHop Information Box
+- Fixed Aimbot tab not refreshing UI on config load
+- Added Trace ESP
+- Added Speed ESP
+- Added Velocity ESP
+- Added Coordinates ESP
+```
+
+```markdown
+V2.1 8/3/2025
+- Fixed glow team & glow enemy not refreshing on config load
+- Fixed Aim Sensitivity & Invert Y not refreshing on config load
+```
 
 ```markdown
 V2.2 8/4/2025
