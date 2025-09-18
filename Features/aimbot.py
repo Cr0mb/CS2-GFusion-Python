@@ -590,10 +590,6 @@ class AimbotRCS:
     def lerp(a, b, t):
         return a + (b - a) * t
 
-    @staticmethod
-    def add_noise(value, max_noise=0.03):
-        return value + random.uniform(-max_noise, max_noise)
-
     def clamp_angle_diff(self, current, target, max_delta=MAX_DELTA_ANGLE):
         d = self.angle_diff(target, current)
         if abs(d) > max_delta:
@@ -1037,8 +1033,15 @@ class AimbotRCS:
 
                     interp_pitch = pitch + (compensated_pitch - pitch) * smooth
                     interp_yaw = yaw + (compensated_yaw - yaw) * smooth
-                    sp = self.add_noise(interp_pitch, 0.03)
-                    sy = self.add_noise(interp_yaw, 0.03)
+                    sp, sy = interp_pitch, interp_yaw
+                    noise_chance = getattr(self.cfg, 'noise_chance', 0.2)
+                    noise_strength = getattr(self.cfg, 'noise_strength', 0.05)
+                    if random.random() < noise_chance:
+                        offset = random.uniform(-noise_strength, noise_strength)
+                        if random.choice([True, False]):
+                            sp += offset
+                        else:
+                            sy += offset
                     sp, sy = self.normalize(sp, sy)
 
                     delta_pitch = normalize_angle_delta(sp - pitch)
