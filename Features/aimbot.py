@@ -384,6 +384,19 @@ class AimbotRCS:
         # track previous target id and a short grace period to avoid phantom RCS after switching targets
         self.prev_target_id = None
         self.rcs_grace_until = 0.0
+        # --- Visibility Checker ---
+        self.vis_checker = None
+        if getattr(self.cfg, "visibility_aim_enabled", False):
+            try:
+                import vischeck
+                from Process.config import Config
+                map_file = getattr(Config, "visibility_map_file", "de_mirage.opt")
+                self.vis_checker = vischeck.VisCheck(map_file)
+                print(f"[VisCheck] Loaded {map_file} for Aimbot visibility checking")
+            except Exception as e:
+                print(f"[VisCheck Error] Failed to load map file: {e}")
+                self.vis_checker = None
+
 
 
 
@@ -687,6 +700,33 @@ class AimbotRCS:
     # -----------------------------
     # Mouse recorder thread
     # -----------------------------
+    
+    def is_target_visible(self, local_pos, target_pos):
+        if not getattr(self.cfg, "visibility_aim_enabled", False):
+            return True
+        if not self.vis_checker:
+            return True
+        if not local_pos or not target_pos:
+            return False
+            
+        # Quick sync with ESP map if needed
+        try:
+            esp_map_path = getattr(self.cfg, 'visibility_map_path', '')
+            if esp_map_path and os.path.exists(esp_map_path):
+                if not hasattr(self.vis_checker, 'get_current_map') or self.vis_checker.get_current_map() != esp_map_path:
+                    if hasattr(self.vis_checker, 'load_map'):
+                        self.vis_checker.load_map(esp_map_path)
+        except:
+            pass
+            
+        eye_offset = 64.0
+        local_eye = (local_pos[0], local_pos[1], local_pos[2] + eye_offset)
+        target_eye = (target_pos[0], target_pos[1], target_pos[2] + eye_offset)
+        try:
+            return self.vis_checker.is_visible(local_eye, target_eye)
+        except Exception:
+            return True
+
     def mouse_recorder_thread(self):
         """Continuously record raw mouse deltas (GetCursorPos) into mouse_buffer."""
         user32 = ctypes.windll.user32
@@ -950,6 +990,10 @@ class AimbotRCS:
                     if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
                         self.target_id = None
                         self.last_target_lost_time = time.time()
+                    elif not self.is_target_visible(my_pos, predicted):
+                        # Target is not visible, drop it
+                        self.target_id = None
+                        self.last_target_lost_time = time.time()
                     else:
                         target, target_pos = t_pawn, predicted
 
@@ -969,6 +1013,11 @@ class AimbotRCS:
                         tp, ty = self.calc_angle(my_pos, predicted)
                         if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
                             continue
+                        
+                        # Check visibility before selecting target
+                        if not self.is_target_visible(my_pos, predicted):
+                            continue
+                            
                         dist = squared_distance(my_pos, predicted)
                         if dist < min_dist:
                             min_dist = dist

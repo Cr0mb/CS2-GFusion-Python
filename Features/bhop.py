@@ -9,7 +9,7 @@ import keyboard
 from Process.offsets import Offsets
 from Process.config import Config
 
-# Constants
+# Windows API constants
 PROCESS_VM_READ = 0x0010
 PROCESS_QUERY_INFORMATION = 0x0400
 TH32CS_SNAPPROCESS = 0x00000002
@@ -28,7 +28,7 @@ CloseHandle = ctypes.windll.kernel32.CloseHandle
 ReadProcessMemory = ctypes.windll.kernel32.ReadProcessMemory
 QueryFullProcessImageName = ctypes.windll.kernel32.QueryFullProcessImageNameW
 
-# Structures
+
 class PROCESSENTRY32(ctypes.Structure):
     _fields_ = [
         ('dwSize', wintypes.DWORD),
@@ -42,6 +42,7 @@ class PROCESSENTRY32(ctypes.Structure):
         ('dwFlags', wintypes.DWORD),
         ('szExeFile', ctypes.c_char * 260),
     ]
+
 
 class MODULEENTRY32(ctypes.Structure):
     _fields_ = [
@@ -57,8 +58,9 @@ class MODULEENTRY32(ctypes.Structure):
         ("szExePath", ctypes.c_char * 260),
     ]
 
+
 def get_pid_by_name(process_name):
-    """Get PID of the process matching process_name (case-insensitive)."""
+    """Return the PID of the process matching process_name (case-insensitive)."""
     process_name = process_name.lower().encode('utf-8')
     snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot == INVALID_HANDLE_VALUE:
@@ -66,21 +68,21 @@ def get_pid_by_name(process_name):
 
     pe32 = PROCESSENTRY32()
     pe32.dwSize = ctypes.sizeof(PROCESSENTRY32)
-
     if not Process32First(snapshot, ctypes.byref(pe32)):
         CloseHandle(snapshot)
         return None
 
-    pid = None
     while True:
         if pe32.szExeFile.lower() == process_name:
             pid = pe32.th32ProcessID
-            break
+            CloseHandle(snapshot)
+            return pid
         if not Process32Next(snapshot, ctypes.byref(pe32)):
             break
 
     CloseHandle(snapshot)
-    return pid
+    return None
+
 
 class CS2Process:
     def __init__(self, process_name="cs2.exe", module_name="client.dll", wait_timeout=30):
@@ -105,7 +107,6 @@ class CS2Process:
     def wait_for_process(self):
         if not self._wait_for_process():
             raise RuntimeError(f"{self.process_name} not running after {self.wait_timeout} seconds")
-        # Open with minimal permissions
         self.handle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, False, self.pid)
         if not self.handle:
             raise RuntimeError(f"Failed to open process {self.process_name} (PID: {self.pid})")
@@ -120,8 +121,8 @@ class CS2Process:
 
         me32 = MODULEENTRY32()
         me32.dwSize = ctypes.sizeof(MODULEENTRY32)
-
         found = False
+
         if Module32First(snapshot, ctypes.byref(me32)):
             while True:
                 if me32.szModule.lower() == self.module_name.encode():
@@ -145,28 +146,32 @@ class CS2Process:
             return f"<CS2Process pid={self.pid} handle={self.handle} module_base=0x{self.module_base:x}>"
         return "<CS2Process uninitialized>"
 
+
 def get_process_name(pid):
-    """Get process executable name for given pid."""
+    """Return process executable name for a given PID."""
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
     handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
         return None
+
     buffer_len = wintypes.DWORD(260)
     exe_name_buffer = ctypes.create_unicode_buffer(260)
     if QueryFullProcessImageName(handle, 0, exe_name_buffer, ctypes.byref(buffer_len)):
         full_path = exe_name_buffer.value
-        exe_name = full_path.split('\\')[-1].lower()
         CloseHandle(handle)
-        return exe_name
+        return full_path.split('\\')[-1].lower()
+
     CloseHandle(handle)
     return None
+
 
 class BHopProcess:
     KEYEVENTF_KEYDOWN = 0x0000
     KEYEVENTF_KEYUP = 0x0002
     VK_SPACE = 0x20
 
-    def __init__(self, process_name="cs2.exe", module_name="client.dll", jump_cooldown=0.1, foreground_check_interval=10):
+    def __init__(self, process_name="cs2.exe", module_name="client.dll",
+                 jump_cooldown=0.1, foreground_check_interval=10):
         self.user32 = ctypes.WinDLL('user32', use_last_error=True)
         self.process_name = process_name.lower()
         self.module_name = module_name
@@ -178,7 +183,6 @@ class BHopProcess:
 
         self.handle = self.cs2.handle
         self.base_addr = self.cs2.module_base
-
         self.cached_exe = None
         self.last_jump_time = 0
         self.iteration = 0
@@ -193,14 +197,12 @@ class BHopProcess:
         if not hwnd:
             return None
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pid == 0:
-            return None
-        return get_process_name(pid)
+        return get_process_name(pid) if pid else None
 
     def safe_read(self, address, size, default=None):
         buffer = (ctypes.c_byte * size)()
-        bytesRead = ctypes.c_size_t()
-        if ReadProcessMemory(self.handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(bytesRead)):
+        bytes_read = ctypes.c_size_t()
+        if ReadProcessMemory(self.handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(bytes_read)):
             return bytes(buffer)
         return default
 
@@ -235,7 +237,6 @@ class BHopProcess:
                     continue
 
                 if keyboard.is_pressed('space'):
-                    # Refresh pawn pointer every few iterations
                     if pawn_refresh_counter <= 0:
                         cached_pawn = self.read_longlong(self.base_addr + Offsets.dwLocalPlayerPawn)
                         pawn_refresh_counter = pawn_refresh_interval
@@ -248,13 +249,11 @@ class BHopProcess:
 
                     flags = self.read_int(cached_pawn + Offsets.m_fFlags)
                     on_ground = (flags & 1) == 1
-
                     now = time.monotonic()
                     if on_ground and now - self.last_jump_time > self.jump_cooldown:
                         self.press_spacebar()
                         self.last_jump_time = now
 
-                # jitter to break read pattern
                 time.sleep(0.0004 + random.uniform(0.0001, 0.0003))
 
             except KeyboardInterrupt:
@@ -266,10 +265,12 @@ class BHopProcess:
 
         print("[BHop] Stopped.")
 
+
 def main():
     Config.bhop_enabled = True
     bhop = BHopProcess()
     bhop.run()
+
 
 if __name__ == "__main__":
     main()

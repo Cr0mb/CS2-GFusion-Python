@@ -1,18 +1,50 @@
 import math
-import struct
 import time
-import ctypes
-from ctypes import wintypes, windll, byref, c_float, c_size_t
-
 import win32api
-import win32con
 import win32gui
+import win32con
 import win32ui
-
-from Process.offsets import Offsets
+import ctypes
+import struct
+from ctypes import windll, wintypes, byref, c_float, c_size_t
+from ctypes.wintypes import RECT
+import sys
+import os
+import threading
 from Process.config import Config
+from Process.offsets import Offsets
 
-PROCESS_PERMISSIONS = 0x0010  # PROCESS_VM_READ
+# Add current directory to path for vischeck.pyd
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+try:
+    import vischeck
+    VISCHECK_AVAILABLE = True
+    print("[VisCheck] Module loaded successfully")
+except ImportError as e:
+    VISCHECK_AVAILABLE = False
+    print(f"[Warning] VisCheck module import error: {e}")
+    print("[Info] Make sure vischeck.pyd is in the main directory and compiled for your Python version")
+except Exception as e:
+    VISCHECK_AVAILABLE = False
+    print(f"[Error] VisCheck module unexpected error: {e}")
+
+PROCESS_PERMISSIONS = 0x0010 | 0x0400  # PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
+
+# Global variables for threaded map loading
+map_loading_in_progress = False
+map_load_lock = threading.Lock()
+
+# Map detection offsets (hardcoded)
+DW_GAME_TYPES = 1793760  # absolute offset in matchmaking.dll
+DW_GAME_TYPES_MAP_NAME = 0x120  # field offset inside GameTypes
+
+# Global variables for map name checking
+last_map_check_time = time.time()
+current_detected_map = ""
 
 
 
@@ -876,26 +908,46 @@ class Overlay:
 
 
         
-def RenderBoneESP(overlay, entity, matrix):
-    # Cache settings for performance
-    skeleton_enabled = Config.skeleton_esp_enabled
-    bone_dot_enabled = Config.bone_dot_esp_enabled
+def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, flags):
+    skeleton_enabled = flags.get("skeleton_esp_enabled", False)
+    bone_dot_enabled = flags.get("bone_dot_esp_enabled", False)
     if not (skeleton_enabled or bone_dot_enabled):
         return
 
-    color_bone = Config.color_bone
-    bone_dot_size = Config.bone_dot_size
-    bone_dot_color = Config.bone_dot_color
-    draw_circle = Config.bone_dot_shape.lower() == "circle"
+    # Base skeleton color (fallback)
+    color_bone = getattr(Config, "color_bone", (255, 255, 255))
 
-    # Build required bone set
+    # Team-aware defaults if you want them (optional)
+    # color_bone = (255, 120, 120) if entity.team == 2 else (120, 120, 255)
+
+    # Per-team, per-visibility override
+    is_visible = None
+    if flags.get("visibility_esp_enabled", False) and vis_checker and local_pos:
+        try:
+            is_visible = check_player_visibility(local_pos, entity.pos, vis_checker)
+        except Exception as e:
+            print(f"[VisCheck Skeleton Error] {e}")
+            is_visible = None  # Ensure is_visible is always defined
+
+    if is_visible is not None:
+        if entity.team == 2:  # T
+            color_bone = flags["color_skeleton_visible_t"] if is_visible else flags["color_skeleton_invisible_t"]
+        else:  # CT
+            color_bone = flags["color_skeleton_visible_ct"] if is_visible else flags["color_skeleton_invisible_ct"]
+    else:
+        # If no visibility info, leave color_bone as-is (team default or generic)
+        pass
+
+    bone_dot_size = flags.get("bone_esp_size", 6)
+    bone_dot_color = flags.get("bone_esp_color", (255, 0, 255))
+    draw_circle = str(flags.get("bone_esp_shape", "circle")).lower() == "circle"
+
     needed_bones = set()
     if skeleton_enabled:
         needed_bones.update(b for conn in overlay.BONE_CONNECTIONS for b in conn)
     if bone_dot_enabled:
         needed_bones.update(overlay.BONE_POSITIONS.values())
 
-    # Get screen positions once
     width, height = overlay.width, overlay.height
     bone_screens = {}
     for bone in needed_bones:
@@ -907,28 +959,24 @@ def RenderBoneESP(overlay, entity, matrix):
                 continue
         bone_screens[bone] = None
 
-    # Draw skeleton lines
+    # Skeleton lines
     if skeleton_enabled:
-        draw_line = overlay.draw_line
         for start, end in overlay.BONE_CONNECTIONS:
-            a, b = bone_screens[start], bone_screens[end]
+            a, b = bone_screens.get(start), bone_screens.get(end)
             if a and b:
-                draw_line(a[0], a[1], b[0], b[1], color_bone)
+                overlay.draw_line(a[0], a[1], b[0], b[1], color_bone)
 
-    # Draw bone dots
+    # Bone dots
     if bone_dot_enabled:
-        draw_circle_fn = overlay.draw_circle
-        draw_box_fn = overlay.draw_box
-        size = bone_dot_size
         for bone in overlay.BONE_POSITIONS.values():
-            screen = bone_screens[bone]
+            screen = bone_screens.get(bone)
             if screen:
                 x, y = screen
                 if draw_circle:
-                    draw_circle_fn(x, y, size, bone_dot_color)
+                    overlay.draw_circle(x, y, bone_dot_size, bone_dot_color)
                 else:
-                    draw_box_fn(x - size, y - size, size * 2, size * 2, bone_dot_color)
-
+                    overlay.draw_box(x - bone_dot_size, y - bone_dot_size, bone_dot_size * 2, bone_dot_size * 2, bone_dot_color)
+                   
 class BombStatus:
     def __init__(self, handle, base):
         self.handle = handle
@@ -993,11 +1041,208 @@ def is_in_game(handle, base):
     pawn = safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn)
     return pawn != 0
 
+def check_player_visibility(local_pos, entity_pos, vis_checker):
+    """
+    Check if a player is visible using external map parsing with VisCheck module.
+    Returns True if the player is visible, False otherwise.
+    
+    Args:
+        local_pos: Local player position (Vec3)
+        entity_pos: Target entity position (Vec3)  
+        vis_checker: VisCheck module instance
+    """
+    try:
+        if not local_pos or not entity_pos or not vis_checker:
+            return False
+            
+        # Check if vis_checker has a map loaded
+        if not vis_checker.is_map_loaded():
+            # If no map is loaded or loading, default to visible to not break ESP
+            return True
+            
+        # Add small height offset to simulate eye level
+        eye_offset = 64.0  # CS2 player eye height offset
+        
+        local_eye_pos = (local_pos.x, local_pos.y, local_pos.z + eye_offset)
+        entity_eye_pos = (entity_pos.x, entity_pos.y, entity_pos.z + eye_offset)
+        
+        # Use VisCheck module to perform ray-triangle intersection
+        is_visible = vis_checker.is_visible(local_eye_pos, entity_eye_pos)
+        
+        # Debug output to see what's happening (uncomment for debugging)
+        # print(f"[VisCheck Debug] Map loaded: {vis_checker.is_map_loaded()}, Visibility: {is_visible}")
+        
+        # If vis_checker is not working properly, default to True (visible)
+        if is_visible is None:
+            print("[VisCheck Debug] Null result from vis_checker - defaulting to VISIBLE")
+            return True
+            
+        return bool(is_visible)  # Ensure boolean return
+        
+    except Exception as e:
+        print(f"[VisCheck Error] {e}")
+        print("[VisCheck Debug] Exception occurred - defaulting to VISIBLE")
+        return True
+
 entity_traces = {}  # {entity_id: [Vec3, Vec3, ...]}
 
 local_info_box_pos = [100, 400]
 local_info_drag_offset = [0, 0]
 local_info_dragging = False
+
+def get_current_map_name(handle, matchmaking_base):
+    """
+    Read the current map name from matchmaking.dll using existing read_bytes function
+    The map name is stored as a pointer to string, so we need to dereference it
+    Returns the map name as string or None if failed
+    """
+    try:
+        if not handle or not matchmaking_base:
+            print(f"[Map Debug] Invalid handle ({handle}) or matchmaking_base ({hex(matchmaking_base) if matchmaking_base else 'None'})")
+            return None
+        
+        # Compute the address where the map name pointer is stored
+        map_name_ptr_address = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
+        print(f"[Map Debug] Reading pointer from: {hex(map_name_ptr_address)}")
+        
+        # Read the pointer (8 bytes on 64-bit)
+        ptr_bytes = read_bytes(handle, map_name_ptr_address, 8)
+        if not ptr_bytes:
+            print(f"[Map Debug] Failed to read pointer")
+            return None
+            
+        # Convert bytes to pointer value
+        map_name_ptr = struct.unpack("Q", ptr_bytes)[0]  # Q = unsigned long long (64-bit)
+        
+        if map_name_ptr == 0 or map_name_ptr > 0x7FFFFFFFFFFF:
+            print(f"[Map Debug] Invalid pointer: {hex(map_name_ptr)}")
+            return None
+            
+        print(f"[Map Debug] Following pointer to: {hex(map_name_ptr)}")
+        
+        # Now read the actual string from the pointer location
+        string_bytes = read_bytes(handle, map_name_ptr, 128)
+        if not string_bytes:
+            print(f"[Map Debug] Failed to read string from pointer")
+            return None
+            
+        # Convert to string
+        map_name = string_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
+        
+        if map_name and len(map_name) >= 3 and not map_name.isspace():
+            print(f"[Map Debug] Successfully read map name: {map_name}")
+            return map_name
+        else:
+            # Empty or invalid map name (probably not in game)
+            print(f"[Map Debug] Successfully read map name: <empty>")
+            return "<empty>"
+            
+    except Exception as e:
+        print(f"[Map Debug] Error reading map name: {e}")
+        return None
+
+def auto_map_loader(handle, matchmaking_base, vis_checker):
+    """
+    Automatically loads the correct map when CS2 map changes
+    Only loads when detected map differs from currently loaded map
+    """
+    global last_map_check_time, current_detected_map
+    
+    current_time = time.time()
+    if current_time - last_map_check_time >= 3.0:  # Check every 3 seconds (less frequent)
+        last_map_check_time = current_time
+        
+        # Get current map from CS2 memory
+        detected_map = get_current_map_name(handle, matchmaking_base)
+        if not detected_map or detected_map == "<empty>":
+            # No valid map detected (probably not in game) - ignore silently
+            return
+        
+        # Get currently loaded map in VisCheck
+        if vis_checker and vis_checker.is_map_loaded():
+            loaded_map_path = vis_checker.get_current_map()
+            # Extract map name from path (e.g., "maps/de_mirage.opt" -> "de_mirage")
+            if loaded_map_path:
+                loaded_map_name = os.path.basename(loaded_map_path).replace('.opt', '')
+            else:
+                loaded_map_name = None
+        else:
+            loaded_map_name = None
+        
+        # Compare detected vs loaded
+        if detected_map != current_detected_map:
+            print(f"[Auto-Map] Detected map change: {current_detected_map} -> {detected_map}")
+            current_detected_map = detected_map
+        
+        if detected_map != loaded_map_name:
+            # Map mismatch - need to load correct map
+            target_map_file = f"{detected_map}.opt"
+            target_map_path = os.path.join("maps", target_map_file)
+            
+            if os.path.exists(target_map_path):
+                print(f"[Auto-Map] Auto-loading map: {detected_map} (was: {loaded_map_name})")
+                
+                # Trigger automatic map load through config
+                from Process.config import Config
+                setattr(Config, 'visibility_map_path', target_map_path)
+                setattr(Config, 'visibility_map_reload_needed', True)
+                
+            else:
+                print(f"[Auto-Map] Map file not found: {target_map_path}")
+                print(f"[Auto-Map] Detected: {detected_map}, Loaded: {loaded_map_name}")
+        else:
+            # Maps match - no action needed
+            if current_detected_map != detected_map:  # Only print on first detection
+                print(f"[Auto-Map] Map synchronized: {detected_map}")
+
+def debug_map_check(handle, matchmaking_base):
+    """
+    Debug function that checks and prints current map name every second  
+    """
+    global last_map_check_time, current_detected_map
+    
+    current_time = time.time()
+    if current_time - last_map_check_time >= 1.0:  # Check every second
+        last_map_check_time = current_time
+        
+        map_name = get_current_map_name(handle, matchmaking_base)
+        if map_name and map_name != "<empty>":
+            current_detected_map = map_name
+            print(f"[Map Debug] Current map: {map_name}")
+        elif map_name == "<empty>":
+            # Silent when not in game
+            pass
+        else:
+            print(f"[Map Debug] Failed to read map name")
+
+def load_map_threaded(vis_checker, map_path):
+    """Load map in background thread to prevent GUI blocking"""
+    global map_loading_in_progress
+    
+    def load_worker():
+        global map_loading_in_progress
+        try:
+            map_loading_in_progress = True
+            print(f"[VisCheck] Background loading: {map_path}")
+            
+            # Add small delay to prevent issues
+            time.sleep(0.1)
+            
+            if vis_checker.load_map(map_path):
+                print(f"[VisCheck] Background load complete: {map_path}")
+            else:
+                print(f"[VisCheck] Background load failed: {map_path}")
+                    
+        except Exception as e:
+            print(f"[VisCheck] Background load error: {e}")
+        finally:
+            map_loading_in_progress = False
+            print(f"[VisCheck] Background loading finished for: {map_path}")
+    
+    # Start loading in background thread
+    thread = threading.Thread(target=load_worker, daemon=True)
+    thread.start()
+    print(f"[VisCheck] Started background thread for: {map_path}")
 
 def esp_weapon(handle, pawn_addr):
     try:
@@ -1036,9 +1281,43 @@ def main():
     pid = wintypes.DWORD()
     windll.user32.GetWindowThreadProcessId(hwnd, byref(pid))
     handle = windll.kernel32.OpenProcess(PROCESS_PERMISSIONS, False, pid.value)
+    
+    # Initialize VisCheck module for map-based visibility checking
+    vis_checker = None
+    if VISCHECK_AVAILABLE:
+        try:
+            # Create empty VisCheck instance for dynamic map loading
+            vis_checker = vischeck.VisCheck()
+            print("[VisCheck] Module initialized for dynamic map loading")
+            
+            # Try to load initial map if one is configured
+            initial_map = getattr(Config, 'visibility_map_file', '')
+            if initial_map:
+                initial_map_path = os.path.join("maps", initial_map)
+                if os.path.exists(initial_map_path):
+                    print(f"[VisCheck] Loading initial map: {initial_map_path}")
+                    if vis_checker.load_map(initial_map_path):
+                        print(f"[VisCheck] Initial map loaded successfully: {initial_map_path}")
+                        # Set the config to indicate map is loaded
+                        setattr(Config, 'visibility_map_path', initial_map_path)
+                        setattr(Config, 'visibility_map_loaded', True)
+                    else:
+                        print(f"[VisCheck] Failed to load initial map: {initial_map_path}")
+                
+        except Exception as e:
+            print(f"[VisCheck Error] Failed to initialize module: {e}")
+            print("[VisCheck] Visibility ESP will default to NOT VISIBLE")
+            vis_checker = None
+    else:
+        print("[VisCheck] Module not available - Visibility ESP will be disabled")
+        print("[Info] To enable Visibility ESP:")
+        print("  1. Compile vischeck.pyd for your Python version")
+        print("  2. Place vischeck.pyd in the main directory")
+        print("  3. Place your map .opt file (e.g., de_mirage.opt) in the main directory")
 
     overlay = Overlay("GFusion")
     base = overlay.get_module_base(pid.value, "client.dll")
+    matchmaking_base = overlay.get_module_base(pid.value, "matchmaking.dll")
     spectator_list = SpectatorList(handle, base)
     bomb_status = BombStatus(handle, base)
 
@@ -1139,9 +1418,62 @@ def main():
                 win32api.Sleep(1)
                 continue
 
-            # Cache all config flags once
+            # Cache config reference first
             cfg = Config
+            
+            # Auto-load correct maps based on CS2 detection
+            auto_map_loader(handle, matchmaking_base, vis_checker)
+            
+            # Handle dynamic map switching (simplified - back to sync for debugging)
+            if vis_checker and getattr(cfg, 'visibility_map_reload_needed', False):
+                try:
+                    map_path = getattr(cfg, 'visibility_map_path', '')
+                    if map_path and os.path.exists(map_path):
+                        print(f"[VisCheck] Switching to map: {map_path}")
+                        
+                        # Check if map is already loaded (compare full paths)
+                        current_map = vis_checker.get_current_map() if vis_checker.is_map_loaded() else ""
+                        if current_map == map_path:
+                            print(f"[VisCheck] Map already loaded: {map_path}")
+                        else:
+                            # Unload current map first if loaded
+                            if vis_checker.is_map_loaded():
+                                print(f"[VisCheck] Unloading current map: {current_map}")
+                                vis_checker.unload_map()
+                            
+                            # Load new map
+                            print(f"[VisCheck] Loading new map: {map_path}")
+                            if vis_checker.load_map(map_path):
+                                print(f"[VisCheck] Successfully loaded: {map_path}")
+                                setattr(cfg, 'visibility_map_loaded', True)
+                            else:
+                                print(f"[VisCheck] Failed to load: {map_path}")
+                                setattr(cfg, 'visibility_map_loaded', False)
+                    else:
+                        # Unload map if no valid path
+                        if vis_checker.is_map_loaded():
+                            current_map = vis_checker.get_current_map()
+                            print(f"[VisCheck] Unloading map: {current_map}")
+                            vis_checker.unload_map()
+                            setattr(cfg, 'visibility_map_loaded', False)
+                    
+                    # Clear reload flag
+                    setattr(cfg, 'visibility_map_reload_needed', False)
+                    
+                except Exception as e:
+                    print(f"[VisCheck] Error during dynamic map switch: {e}")
+                    setattr(cfg, 'visibility_map_reload_needed', False)
+
+            # Cache all config flags once
             flags = {
+                "color_box_visible_ct": getattr(cfg, "color_box_visible_ct", getattr(cfg, "color_box_visible", (0, 255, 0))),
+                "color_box_visible_t": getattr(cfg, "color_box_visible_t", getattr(cfg, "color_box_visible", (0, 255, 0))),
+                "color_box_invisible_ct": getattr(cfg, "color_box_invisible_ct", getattr(cfg, "color_box_not_visible", (255, 0, 0))),
+                "color_box_invisible_t": getattr(cfg, "color_box_invisible_t", getattr(cfg, "color_box_not_visible", (255, 0, 0))),
+                "color_skeleton_visible_ct": getattr(cfg, "color_skeleton_visible_ct", getattr(cfg, "color_skeleton_visible", (0, 255, 0))),
+                "color_skeleton_visible_t": getattr(cfg, "color_skeleton_visible_t", getattr(cfg, "color_skeleton_visible", (0, 255, 0))),
+                "color_skeleton_invisible_ct": getattr(cfg, "color_skeleton_invisible_ct", getattr(cfg, "color_skeleton_not_visible", (255, 0, 0))),
+                "color_skeleton_invisible_t": getattr(cfg, "color_skeleton_invisible_t", getattr(cfg, "color_skeleton_not_visible", (255, 0, 0))),
                 "head_esp_enabled": getattr(cfg, "head_esp_enabled", False),
                 "head_esp_shape": getattr(cfg, "head_esp_shape", "circle").lower(),
                 "box_esp_enabled": getattr(cfg, "show_box_esp", False),
@@ -1202,6 +1534,10 @@ def main():
                 "money_esp_enabled": getattr(cfg, "money_esp_enabled", True),
                 "money_esp_text": getattr(cfg, "money_esp_text", True),
                 "color_money_text": getattr(cfg, "color_money_text", (0, 255, 255)),
+                "visibility_esp_enabled": getattr(cfg, "visibility_esp_enabled", False),
+                "visibility_text_enabled": getattr(cfg, "visibility_text_enabled", True),
+                "color_visible_text": getattr(cfg, "color_visible_text", (0, 255, 0)),
+                "color_not_visible_text": getattr(cfg, "color_not_visible_text", (255, 0, 0)),
             }
 
             matrix = read_matrix(handle, base + Offsets.dwViewMatrix)
@@ -1346,10 +1682,31 @@ def main():
                         overlay.draw_box(ent.head2d["x"] - radius, ent.head2d["y"] - radius, side, side, color)
 
                 if flags["box_esp_enabled"]:
-                    color = flags["color_box_t"] if ent.team == 2 else flags["color_box_ct"]
-                    radius = 8
-                    style = getattr(cfg, "box_esp_style", "normal")
+                    # Default box color by team
+                    if ent.team == 2:  # T
+                        color = flags["color_box_t"]
+                    else:              # CT (or anything not 2)
+                        color = flags["color_box_ct"]
 
+                    # Per-team, per-visibility override
+                    if flags["visibility_esp_enabled"] and vis_checker and local_pos:
+                        is_visible = None  # Initialize before try block
+                        try:
+                            is_visible = check_player_visibility(local_pos, ent.pos, vis_checker)
+                        except Exception as e:
+                            print(f"[VisCheck BoxESP Error] {e}")
+                            is_visible = None  # Ensure is_visible is defined
+                            
+                        # Only apply visibility colors if check succeeded
+                        if is_visible is not None:
+                            if ent.team == 2:  # T
+                                color = flags["color_box_visible_t"] if is_visible else flags["color_box_invisible_t"]
+                            else:              # CT
+                                color = flags["color_box_visible_ct"] if is_visible else flags["color_box_invisible_ct"]
+
+
+                    style = getattr(cfg, "box_esp_style", "normal")
+                    radius = 8
                     if style == "corner" and hasattr(overlay, "draw_corner_box"):
                         overlay.draw_corner_box(x, y, w, h, color, getattr(cfg, "corner_box_len", 8))
                     elif style == "rounded" and hasattr(overlay, "draw_rounded_box"):
@@ -1421,8 +1778,10 @@ def main():
                     except Exception as e:
                         print(f"[Coordinates ESP Error] {e}")
 
+                # Skeleton ESP
                 if flags["skeleton_esp_enabled"] or flags["bone_esp_enabled"]:
-                    RenderBoneESP(overlay, ent, matrix)
+                    RenderBoneESP(overlay, ent, matrix, local_pos, vis_checker, local_team, flags)
+
 
                 if flags["healthbar_enabled"]:
                     draw_health_bar(ent, x, y, h)
@@ -1456,6 +1815,32 @@ def main():
                     except Exception as e:
                         print(f"[State ESP Error] {e}")
 
+                # Visibility Text ESP
+                if flags["visibility_esp_enabled"] and vis_checker and local_pos:
+                    is_visible = None  # Initialize before try block
+                    try:
+                        is_visible = check_player_visibility(local_pos, ent.pos, vis_checker)
+                    except Exception as e:
+                        if flags["visibility_esp_enabled"] and vis_checker:
+                            is_visible = check_player_visibility(handle, base, vis_checker, local_pos, ent.pos)
+                    
+                    # Only show text if visibility check succeeded AND text is enabled
+                    if is_visible is not None and flags["visibility_text_enabled"]:
+                        if is_visible:
+                            visibility_text = "VISIBLE"
+                            visibility_color = flags["color_visible_text"]
+                        else:
+                            visibility_text = "NOT VISIBLE"
+                            visibility_color = flags["color_not_visible_text"]
+
+                        overlay.draw_text(
+                            visibility_text,
+                            x + w/2, y + h + 22,
+                            visibility_color,
+                            font_size,
+                            centered=True
+                        )
+                        line_index += 1
             if flags["bomb_esp_enabled"]:
                 bomb_info = bomb_status.read_bomb()
                 if bomb_info:

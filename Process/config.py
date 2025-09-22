@@ -9,6 +9,7 @@ class Config:
 
     watermark_enabled = True
 
+    use_gpu_overlay = False
 
     # ===========================
     # Walk Bot
@@ -69,6 +70,11 @@ class Config:
     color_local_coords_text = (200, 200, 255)
     
     money_esp_enabled = False
+    
+    # Visibility Check ESP
+    visibility_esp_enabled = True
+    visibility_text_enabled = True  # Show/hide "VISIBLE" text overlay
+    visibility_map_file = "de_mirage.opt"  # Map file for visibility checking
 
     # ===========================
     # ESP Customization
@@ -85,6 +91,19 @@ class Config:
     # ===========================
     # ESP Colors
     # ===========================
+    
+    color_box_visible_ct = (0, 200, 255)
+    color_box_invisible_ct = (0, 70, 120)
+    color_box_visible_t = (255, 200, 0)
+    color_box_invisible_t = (120, 70, 0)
+
+    color_skeleton_visible_ct = (0, 200, 255)
+    color_skeleton_invisible_ct = (0, 70, 120)
+    color_skeleton_visible_t = (255, 200, 0)
+    color_skeleton_invisible_t = (120, 70, 0)
+
+
+
     color_box_t = (255, 0, 0)
     color_box_ct = (0, 0, 255)
     color_bone = (0, 255, 0)
@@ -115,6 +134,10 @@ class Config:
     coordinates_esp_color = (0, 255, 255)
     
     color_money_text = (0, 255, 0)
+    
+    # Visibility ESP Colors
+    color_visible_text = (0, 255, 0)      # Green for visible
+    color_not_visible_text = (255, 0, 0)  # Red for not visible
 
     # ===========================
     # FOV & Overlay
@@ -139,7 +162,6 @@ class Config:
     # ===========================
     bhop_enabled = False
     bhop_stop = False
-    autostrafe_enabled = True
     # ===========================
     # Glow ESP
     # ===========================
@@ -168,7 +190,7 @@ class Config:
 
     auto_pistol_enabled = False
     activation_key = "alt"
-    fire_rate = 0.1
+    fire_rate = 1.0
 
     # ===========================
     # FOV Changer
@@ -192,6 +214,11 @@ class Config:
     aim_start_delay = 0
     downward_offset = 62
     DeathMatch = False
+
+    rcs_grace_after_damage = True
+    rcs_grace_after_damage = 0.12
+    
+    visibility_aim_enabled = True
 
     # ===========================
     # Aimbot Learning & Prediction
@@ -241,22 +268,65 @@ class Config:
     def from_dict(cls, data: dict):
         for key, value in data.items():
             if hasattr(cls, key):
-                current = getattr(cls, key)
-                # Convert lists back to tuples if original was a tuple
-                if isinstance(current, tuple) and isinstance(value, list):
-                    setattr(cls, key, tuple(value))
-                else:
-                    setattr(cls, key, value)
+                try:
+                    current = getattr(cls, key)
+                    # Convert lists back to tuples if original was a tuple
+                    if isinstance(current, tuple) and isinstance(value, list):
+                        setattr(cls, key, tuple(value))
+                    else:
+                        setattr(cls, key, value)
+                except Exception as e:
+                    print(f"[Config] Warning: Could not set {key} = {value}: {e}")
+            else:
+                print(f"[Config] Warning: Unknown config attribute '{key}' ignored")
 
     @classmethod
     def save_to_file(cls, filename):
         os.makedirs("config", exist_ok=True)
-        with open(f"config/{filename}.json", "w") as f:
-            json.dump(cls.to_dict(), f, indent=4)
+        try:
+            config_data = cls.to_dict()
+            # Ensure new attributes are included
+            if not any('visibility' in key for key in config_data.keys()):
+                print("[Config] Warning: Visibility ESP settings missing, adding defaults")
+                config_data['visibility_esp_enabled'] = getattr(cls, 'visibility_esp_enabled', False)
+                config_data['visibility_map_file'] = getattr(cls, 'visibility_map_file', 'de_mirage.opt')
+                config_data['color_visible_text'] = getattr(cls, 'color_visible_text', (0, 255, 0))
+                config_data['color_not_visible_text'] = getattr(cls, 'color_not_visible_text', (255, 0, 0))
+            
+            with open(f"config/{filename}.json", "w") as f:
+                json.dump(config_data, f, indent=4)
+            print(f"[Config] Saved {len(config_data)} settings to {filename}.json")
+        except Exception as e:
+            print(f"[Config] Error saving to {filename}.json: {e}")
+            raise
 
     @classmethod
     def load_from_file(cls, filename):
         path = f"config/{filename}.json"
         if os.path.exists(path):
-            with open(path, "r") as f:
-                cls.from_dict(json.load(f))
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                    cls.from_dict(data)
+                    
+                    # Ensure new visibility ESP settings have defaults if missing
+                    if not hasattr(cls, 'visibility_esp_enabled') or not hasattr(cls, 'visibility_map_file'):
+                        print("[Config] Adding missing visibility ESP defaults")
+                        if not hasattr(cls, 'visibility_esp_enabled'):
+                            cls.visibility_esp_enabled = False
+                        if not hasattr(cls, 'visibility_text_enabled'):
+                            cls.visibility_text_enabled = True
+                        if not hasattr(cls, 'visibility_map_file'):
+                            cls.visibility_map_file = 'de_mirage.opt'
+                        if not hasattr(cls, 'color_visible_text'):
+                            cls.color_visible_text = (0, 255, 0)
+                        if not hasattr(cls, 'color_not_visible_text'):
+                            cls.color_not_visible_text = (255, 0, 0)
+                    
+                    print(f"[Config] Loaded config from {filename}.json")
+            except json.JSONDecodeError as e:
+                print(f"[Config] Error: Invalid JSON in {filename}.json: {e}")
+            except Exception as e:
+                print(f"[Config] Error loading {filename}.json: {e}")
+        else:
+            print(f"[Config] Config file {filename}.json not found, using defaults")

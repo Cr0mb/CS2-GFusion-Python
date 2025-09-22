@@ -5,11 +5,12 @@ import string
 import logging
 import subprocess
 import time
+from pathlib import Path
 from cryptography.fernet import Fernet
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QMessageBox, QHBoxLayout, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer
 from PyQt5.QtGui import QFont, QCursor, QIcon
 
 MAIN_SCRIPT = "GFusion.py"
@@ -125,6 +126,162 @@ class OffsetUpdater(QThread):
             logging.info("Updating offsets by running Process/offset_update.py...")
             os.system(f'"{sys.executable}" Process/offset_update.py')
         self.finished.emit()
+
+# Auto conversion thread with integrated functionality
+class AutoConvertThread(QThread):
+    log_message = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        """Run the complete auto conversion process with logging"""
+        try:
+            self.log_message.emit("CS2 Auto Physics Converter")
+            self.log_message.emit("=" * 40)
+            
+            # Get the maps directory
+            script_dir = Path("maps").absolute()
+            
+            # Define executable paths (look in maps directory)
+            phys_extractor_exe = script_dir / "PhysExtractor.exe"
+            vphys_to_opt_exe = script_dir / "VPhysToOpt.exe"
+            
+            # Check if executables exist
+            if not phys_extractor_exe.exists():
+                self.log_message.emit(f"ERROR: PhysExtractor.exe not found at: {phys_extractor_exe}")
+                self.log_message.emit("Please ensure PhysExtractor.exe is in the maps directory")
+                return
+            
+            if not vphys_to_opt_exe.exists():
+                self.log_message.emit(f"ERROR: VPhysToOpt.exe not found at: {vphys_to_opt_exe}")
+                self.log_message.emit("Please ensure VPhysToOpt.exe is in the maps directory")
+                return
+            
+            self.log_message.emit(f"PhysExtractor: {phys_extractor_exe}")
+            self.log_message.emit(f"VPhysToOpt: {vphys_to_opt_exe}")
+            self.log_message.emit(f"Working directory: {script_dir}")
+            self.log_message.emit("")
+            
+            # Step 1: Run PhysExtractor.exe
+            self.log_message.emit("Step 1: Running PhysExtractor to extract .vphys files...")
+            self.log_message.emit("-" * 50)
+            
+            try:
+                # Run PhysExtractor.exe
+                result = subprocess.run([str(phys_extractor_exe)], 
+                                      capture_output=False, 
+                                      text=True, 
+                                      cwd=str(script_dir))
+                
+                if result.returncode != 0:
+                    self.log_message.emit(f"ERROR: PhysExtractor failed with return code: {result.returncode}")
+                    return
+                    
+            except Exception as e:
+                self.log_message.emit(f"ERROR running PhysExtractor: {e}")
+                return
+            
+            self.log_message.emit("PhysExtractor completed!")
+            
+            # Step 2: Find all .vphys files in current directory
+            self.log_message.emit("")
+            self.log_message.emit("Step 2: Finding .vphys files to convert...")
+            self.log_message.emit("-" * 50)
+            
+            vphys_files = list(Path(script_dir).glob("*.vphys"))
+            
+            if not vphys_files:
+                self.log_message.emit("No .vphys files found in the directory.")
+                return
+            
+            self.log_message.emit(f"Found {len(vphys_files)} .vphys files to convert:")
+            for i, file in enumerate(vphys_files, 1):
+                self.log_message.emit(f"  {i}. {file.name}")
+            
+            self.log_message.emit("")
+            
+            # Step 3: Convert each .vphys file with VPhysToOpt.exe
+            self.log_message.emit("Step 3: Converting .vphys files...")
+            self.log_message.emit("-" * 50)
+            
+            converted_count = 0
+            failed_count = 0
+            
+            for i, vphys_file in enumerate(vphys_files, 1):
+                self.log_message.emit(f"Converting {i}/{len(vphys_files)}: {vphys_file.name}")
+                
+                try:
+                    # Run VPhysToOpt.exe with the directory path containing the .vphys file
+                    result = subprocess.run([str(vphys_to_opt_exe), str(script_dir)],
+                                          capture_output=True,
+                                          text=True,
+                                          cwd=str(script_dir),
+                                          timeout=60)  # 60 second timeout per file
+                    
+                    if result.returncode == 0:
+                        self.log_message.emit(f"  ✓ Successfully converted: {vphys_file.name}")
+                        
+                        # Remove the original .vphys file after successful conversion
+                        try:
+                            vphys_file.unlink()
+                            self.log_message.emit(f"  ✓ Removed original: {vphys_file.name}")
+                            converted_count += 1
+                        except Exception as e:
+                            self.log_message.emit(f"  ⚠ Warning: Could not remove {vphys_file.name}: {e}")
+                            converted_count += 1  # Still count as converted
+                            
+                    else:
+                        self.log_message.emit(f"  ✗ Failed to convert: {vphys_file.name}")
+                        self.log_message.emit(f"    Return code: {result.returncode}")
+                        if result.stderr:
+                            self.log_message.emit(f"    Error: {result.stderr.strip()}")
+                        failed_count += 1
+                        
+                except subprocess.TimeoutExpired:
+                    self.log_message.emit(f"  ✗ Timeout converting: {vphys_file.name}")
+                    failed_count += 1
+                    
+                except Exception as e:
+                    self.log_message.emit(f"  ✗ Error converting {vphys_file.name}: {e}")
+                    failed_count += 1
+                
+                # Small delay between conversions
+                time.sleep(0.5)
+            
+            # Step 4: Summary
+            self.log_message.emit("")
+            self.log_message.emit("=" * 50)
+            self.log_message.emit("CONVERSION SUMMARY")
+            self.log_message.emit("=" * 50)
+            self.log_message.emit(f"Total files found: {len(vphys_files)}")
+            self.log_message.emit(f"Successfully converted: {converted_count}")
+            self.log_message.emit(f"Failed conversions: {failed_count}")
+            
+            if failed_count == 0:
+                self.log_message.emit("")
+                self.log_message.emit("🎉 All files converted successfully!")
+            else:
+                self.log_message.emit("")
+                self.log_message.emit(f"⚠ {failed_count} files failed to convert.")
+            
+            # Check for any remaining .vphys files
+            remaining_vphys = list(Path(script_dir).glob("*.vphys"))
+            if remaining_vphys:
+                self.log_message.emit(f"Remaining .vphys files: {len(remaining_vphys)}")
+                for file in remaining_vphys:
+                    self.log_message.emit(f"  - {file.name}")
+            else:
+                self.log_message.emit("✓ All .vphys files have been processed and removed.")
+            
+            self.log_message.emit("")
+            self.log_message.emit("Conversion process completed!")
+            
+        except Exception as e:
+            self.log_message.emit(f"CRITICAL ERROR: {e}")
+        finally:
+            self.finished.emit()
 
 # GUI
 class LauncherGUI(QWidget):
@@ -289,7 +446,14 @@ class LauncherGUI(QWidget):
         self.run_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.run_btn.clicked.connect(self.run_launcher)
 
-        for btn in [self.update_btn, self.generate_btn, self.run_btn]:
+        self.auto_convert_btn = QPushButton("AUTO CONVERT MAPS")
+        self.auto_convert_btn.setObjectName("btn-red")
+        self.auto_convert_btn.setProperty("class", "ms-btn")
+        self.auto_convert_btn.setFont(self.h2)
+        self.auto_convert_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.auto_convert_btn.clicked.connect(self.run_auto_convert)
+
+        for btn in [self.update_btn, self.generate_btn, self.run_btn, self.auto_convert_btn]:
             btn.setStyleSheet("")  # let the parent stylesheet handle visuals
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn_layout.addWidget(btn)
@@ -364,6 +528,44 @@ class LauncherGUI(QWidget):
                 logging.error(f"Failed to start launcher stealthily: {e}")
         else:
             QMessageBox.warning(self, "Error", f"{LAUNCHER_FILE} not found. Please generate it first.")
+
+    def run_auto_convert(self):
+        """Run the auto conversion process with integrated logging"""
+        if not os.path.exists("maps"):
+            logging.error("Maps folder not found!")
+            QMessageBox.warning(self, "Error", "Maps folder not found! Please create the maps folder first.")
+            return
+
+        try:
+            logging.info("Starting auto conversion process...")
+            
+            # Disable button during execution
+            self.auto_convert_btn.setEnabled(False)
+            self.auto_convert_btn.setText("CONVERTING...")
+            
+            # Start the conversion thread
+            self.auto_convert_thread = AutoConvertThread()
+            self.auto_convert_thread.log_message.connect(self.log_conversion_message)
+            self.auto_convert_thread.finished.connect(self.on_conversion_finished)
+            self.auto_convert_thread.start()
+            
+        except Exception as e:
+            logging.error(f"Failed to start auto convert: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to start auto convert process:\n\n{e}")
+            
+            # Re-enable button on error
+            self.auto_convert_btn.setEnabled(True)
+            self.auto_convert_btn.setText("AUTO CONVERT MAPS")
+    
+    def log_conversion_message(self, message):
+        """Log a message from the conversion thread"""
+        logging.info(message)
+    
+    def on_conversion_finished(self):
+        """Called when conversion process finishes"""
+        logging.info("Auto conversion process completed!")
+        self.auto_convert_btn.setEnabled(True)
+        self.auto_convert_btn.setText("AUTO CONVERT MAPS")
 
 # Entry point
 def main():
