@@ -8,8 +8,9 @@ put "maps" directory in parent directory with GFusion.py
 
 
 
-<img width="932" height="684" alt="image" src="https://github.com/user-attachments/assets/de73d708-e335-4a43-be1b-473dfe2f7fda" />
-<img width="758" height="538" alt="image" src="https://github.com/user-attachments/assets/dfa68813-d91c-475d-9977-e63b7a58a487" />
+<img width="932" height="685" alt="image" src="https://github.com/user-attachments/assets/af0e793b-fea8-4df0-ac9d-616d5a491b61" />
+
+<img width="758" height="537" alt="image" src="https://github.com/user-attachments/assets/16b9495a-7d1c-448b-8f33-baf0c7b86110" />
 
 
 For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
