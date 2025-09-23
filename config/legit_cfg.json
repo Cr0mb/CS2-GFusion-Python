@@ -1,6 +1,6 @@
 {
     "DeathMatch": false,
-    "FOV": 19.4,
+    "FOV": 5.7,
     "activation_key": "alt",
     "aim_key": "mouse1",
     "aim_start_delay": 0.03,
@@ -244,14 +244,13 @@
     "max_entities": 64,
     "max_mouse_move": 10,
     "money_esp_enabled": false,
-    "name_esp_enabled": false,
+    "name_esp_enabled": true,
     "noflash_enabled": false,
     "obs_protection_enabled": false,
     "panic_key": 46,
     "panic_key_enabled": true,
     "panic_mode_active": false,
     "rcs_enabled": true,
-    "rcs_grace_after_damage": 0.12,
     "rcs_scale": 2.3,
     "rcs_smooth_base": 1.0,
     "rcs_smooth_var": 0.01,
@@ -261,7 +260,7 @@
     "show_box_esp": true,
     "show_local_info_box": false,
     "show_overlay_fps": false,
-    "skeleton_esp_enabled": false,
+    "skeleton_esp_enabled": true,
     "smooth_base": 0.24,
     "smooth_var": 0.0,
     "spectator_list_enabled": true,
@@ -286,7 +285,6 @@
     "triggerbot_cooldown": 0.2,
     "triggerbot_enabled": false,
     "triggerbot_stop": false,
-    "use_gpu_overlay": false,
     "velocity_esp": false,
     "velocity_esp_color": [
         255,
@@ -304,9 +302,9 @@
     "visibility_esp_enabled": true,
     "visibility_map_file": "aim_botz.opt",
     "visibility_map_loaded": true,
-    "visibility_map_path": "maps\\de_anubis.opt",
+    "visibility_map_path": "maps\\aim_botz.opt",
     "visibility_map_reload_needed": false,
     "visibility_text_enabled": false,
     "watermark_enabled": true,
-    "weapon_esp_enabled": false
+    "weapon_esp_enabled": true
 }

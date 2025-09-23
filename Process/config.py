@@ -9,7 +9,7 @@ class Config:
 
     watermark_enabled = True
 
-    use_gpu_overlay = False
+    debug_mode = True
 
     # ===========================
     # Walk Bot
@@ -214,9 +214,6 @@ class Config:
     aim_start_delay = 0
     downward_offset = 62
     DeathMatch = False
-
-    rcs_grace_after_damage = True
-    rcs_grace_after_damage = 0.12
     
     visibility_aim_enabled = True
 

@@ -23,14 +23,11 @@ if parent_dir not in sys.path:
 try:
     import vischeck
     VISCHECK_AVAILABLE = True
-    print("[VisCheck] Module loaded successfully")
-except ImportError as e:
+except ImportError:
     VISCHECK_AVAILABLE = False
-    print(f"[Warning] VisCheck module import error: {e}")
-    print("[Info] Make sure vischeck.pyd is in the main directory and compiled for your Python version")
-except Exception as e:
+except Exception:
     VISCHECK_AVAILABLE = False
-    print(f"[Error] VisCheck module unexpected error: {e}")
+
 
 PROCESS_PERMISSIONS = 0x0010 | 0x0400  # PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
 
@@ -1034,6 +1031,11 @@ watermark_pos = [20, 20]
 watermark_dragging = False
 watermark_drag_offset = [0, 0]
 
+vischeck_box_pos = [20, 200]
+vischeck_dragging = False
+vischeck_drag_offset = [0, 0]
+
+
 def calculate_speed(vel):
     return math.sqrt(vel['x']**2 + vel['y']**2 + vel['z']**2)
 
@@ -1069,19 +1071,13 @@ def check_player_visibility(local_pos, entity_pos, vis_checker):
         # Use VisCheck module to perform ray-triangle intersection
         is_visible = vis_checker.is_visible(local_eye_pos, entity_eye_pos)
         
-        # Debug output to see what's happening (uncomment for debugging)
-        # print(f"[VisCheck Debug] Map loaded: {vis_checker.is_map_loaded()}, Visibility: {is_visible}")
-        
         # If vis_checker is not working properly, default to True (visible)
         if is_visible is None:
-            print("[VisCheck Debug] Null result from vis_checker - defaulting to VISIBLE")
             return True
             
         return bool(is_visible)  # Ensure boolean return
         
-    except Exception as e:
-        print(f"[VisCheck Error] {e}")
-        print("[VisCheck Debug] Exception occurred - defaulting to VISIBLE")
+    except Exception:
         return True
 
 entity_traces = {}  # {entity_id: [Vec3, Vec3, ...]}
@@ -1091,56 +1087,78 @@ local_info_drag_offset = [0, 0]
 local_info_dragging = False
 
 def get_current_map_name(handle, matchmaking_base):
-    """
-    Read the current map name from matchmaking.dll using existing read_bytes function
-    The map name is stored as a pointer to string, so we need to dereference it
-    Returns the map name as string or None if failed
-    """
     try:
         if not handle or not matchmaking_base:
-            print(f"[Map Debug] Invalid handle ({handle}) or matchmaking_base ({hex(matchmaking_base) if matchmaking_base else 'None'})")
             return None
-        
-        # Compute the address where the map name pointer is stored
+
         map_name_ptr_address = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
-        print(f"[Map Debug] Reading pointer from: {hex(map_name_ptr_address)}")
-        
-        # Read the pointer (8 bytes on 64-bit)
+
         ptr_bytes = read_bytes(handle, map_name_ptr_address, 8)
         if not ptr_bytes:
-            print(f"[Map Debug] Failed to read pointer")
             return None
-            
-        # Convert bytes to pointer value
-        map_name_ptr = struct.unpack("Q", ptr_bytes)[0]  # Q = unsigned long long (64-bit)
-        
+
+        map_name_ptr = struct.unpack("Q", ptr_bytes)[0]
         if map_name_ptr == 0 or map_name_ptr > 0x7FFFFFFFFFFF:
-            print(f"[Map Debug] Invalid pointer: {hex(map_name_ptr)}")
             return None
-            
-        print(f"[Map Debug] Following pointer to: {hex(map_name_ptr)}")
-        
-        # Now read the actual string from the pointer location
+
         string_bytes = read_bytes(handle, map_name_ptr, 128)
         if not string_bytes:
-            print(f"[Map Debug] Failed to read string from pointer")
             return None
-            
-        # Convert to string
+
         map_name = string_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
-        
         if map_name and len(map_name) >= 3 and not map_name.isspace():
-            print(f"[Map Debug] Successfully read map name: {map_name}")
             return map_name
         else:
-            # Empty or invalid map name (probably not in game)
-            print(f"[Map Debug] Successfully read map name: <empty>")
             return "<empty>"
-            
-    except Exception as e:
-        print(f"[Map Debug] Error reading map name: {e}")
-        return None
 
+    except Exception:
+        return None
+     
+# === DRAG HANDLER FOR DEBUG BOX ===
+def handle_vischeck_drag(hwnd):
+    global vischeck_dragging, vischeck_drag_offset
+    box_width = 200
+    box_height = 48
+    mx, my = win32gui.ScreenToClient(hwnd, win32api.GetCursorPos())
+    left_down = win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000
+
+    if vischeck_dragging:
+        if not left_down:
+            vischeck_dragging = False
+        else:
+            vischeck_box_pos[0] = mx - vischeck_drag_offset[0]
+            vischeck_box_pos[1] = my - vischeck_drag_offset[1]
+    else:
+        px, py = vischeck_box_pos
+        if left_down and px <= mx <= px + box_width and py <= my <= py + box_height:
+            vischeck_dragging = True
+            vischeck_drag_offset[0] = mx - px
+            vischeck_drag_offset[1] = my - py
+
+
+# === DRAW DEBUG BOX ===
+def draw_vischeck_box(overlay, vis_checker):
+    if not getattr(Config, "debug_mode", False):
+        return
+    handle_vischeck_drag(overlay.hwnd)
+    x, y = vischeck_box_pos
+    w, h = 200, 48
+
+    # MSPaint-style two-tone background
+    overlay.draw_filled_rect(x, y, w, h // 2, (220, 220, 220))
+    overlay.draw_filled_rect(x, y + h // 2, w, h // 2, (180, 180, 180))
+    overlay.draw_box(x, y, w, h, (0, 0, 0))
+
+    # Map Name
+    map_text = f"Map: {current_detected_map or 'Unknown'}"
+    overlay.draw_text(map_text, x + w // 2, y + 14, (0, 0, 0), 14, centered=True)
+
+    # VisCheck Status
+    vc_status = "Loaded" if vis_checker and vis_checker.is_map_loaded() else "Not Loaded"
+    overlay.draw_text(f"VisCheck: {vc_status}", x + w // 2, y + 30, (0, 0, 255), 14, centered=True)
+
+
+        
 def auto_map_loader(handle, matchmaking_base, vis_checker):
     """
     Automatically loads the correct map when CS2 map changes
@@ -1171,7 +1189,6 @@ def auto_map_loader(handle, matchmaking_base, vis_checker):
         
         # Compare detected vs loaded
         if detected_map != current_detected_map:
-            print(f"[Auto-Map] Detected map change: {current_detected_map} -> {detected_map}")
             current_detected_map = detected_map
         
         if detected_map != loaded_map_name:
@@ -1180,24 +1197,14 @@ def auto_map_loader(handle, matchmaking_base, vis_checker):
             target_map_path = os.path.join("maps", target_map_file)
             
             if os.path.exists(target_map_path):
-                print(f"[Auto-Map] Auto-loading map: {detected_map} (was: {loaded_map_name})")
-                
                 # Trigger automatic map load through config
                 from Process.config import Config
                 setattr(Config, 'visibility_map_path', target_map_path)
                 setattr(Config, 'visibility_map_reload_needed', True)
-                
-            else:
-                print(f"[Auto-Map] Map file not found: {target_map_path}")
-                print(f"[Auto-Map] Detected: {detected_map}, Loaded: {loaded_map_name}")
-        else:
-            # Maps match - no action needed
-            if current_detected_map != detected_map:  # Only print on first detection
-                print(f"[Auto-Map] Map synchronized: {detected_map}")
 
 def debug_map_check(handle, matchmaking_base):
     """
-    Debug function that checks and prints current map name every second  
+    Debug function that checks current map name every second
     """
     global last_map_check_time, current_detected_map
     
@@ -1208,12 +1215,6 @@ def debug_map_check(handle, matchmaking_base):
         map_name = get_current_map_name(handle, matchmaking_base)
         if map_name and map_name != "<empty>":
             current_detected_map = map_name
-            print(f"[Map Debug] Current map: {map_name}")
-        elif map_name == "<empty>":
-            # Silent when not in game
-            pass
-        else:
-            print(f"[Map Debug] Failed to read map name")
 
 def load_map_threaded(vis_checker, map_path):
     """Load map in background thread to prevent GUI blocking"""
@@ -1223,26 +1224,20 @@ def load_map_threaded(vis_checker, map_path):
         global map_loading_in_progress
         try:
             map_loading_in_progress = True
-            print(f"[VisCheck] Background loading: {map_path}")
             
             # Add small delay to prevent issues
             time.sleep(0.1)
             
-            if vis_checker.load_map(map_path):
-                print(f"[VisCheck] Background load complete: {map_path}")
-            else:
-                print(f"[VisCheck] Background load failed: {map_path}")
+            vis_checker.load_map(map_path)
                     
-        except Exception as e:
-            print(f"[VisCheck] Background load error: {e}")
+        except Exception:
+            pass
         finally:
             map_loading_in_progress = False
-            print(f"[VisCheck] Background loading finished for: {map_path}")
     
     # Start loading in background thread
     thread = threading.Thread(target=load_worker, daemon=True)
     thread.start()
-    print(f"[VisCheck] Started background thread for: {map_path}")
 
 def esp_weapon(handle, pawn_addr):
     try:
@@ -1276,7 +1271,7 @@ def get_weapon_name(weapon_id):
 def main():
     hwnd = windll.user32.FindWindowW(None, "Counter-Strike 2")
     if not hwnd:
-        return print("[!] CS2 not running.")
+        return
 
     pid = wintypes.DWORD()
     windll.user32.GetWindowThreadProcessId(hwnd, byref(pid))
@@ -1288,32 +1283,23 @@ def main():
         try:
             # Create empty VisCheck instance for dynamic map loading
             vis_checker = vischeck.VisCheck()
-            print("[VisCheck] Module initialized for dynamic map loading")
             
             # Try to load initial map if one is configured
             initial_map = getattr(Config, 'visibility_map_file', '')
             if initial_map:
                 initial_map_path = os.path.join("maps", initial_map)
                 if os.path.exists(initial_map_path):
-                    print(f"[VisCheck] Loading initial map: {initial_map_path}")
                     if vis_checker.load_map(initial_map_path):
-                        print(f"[VisCheck] Initial map loaded successfully: {initial_map_path}")
                         # Set the config to indicate map is loaded
                         setattr(Config, 'visibility_map_path', initial_map_path)
                         setattr(Config, 'visibility_map_loaded', True)
                     else:
-                        print(f"[VisCheck] Failed to load initial map: {initial_map_path}")
+                        setattr(Config, 'visibility_map_loaded', False)
                 
-        except Exception as e:
-            print(f"[VisCheck Error] Failed to initialize module: {e}")
-            print("[VisCheck] Visibility ESP will default to NOT VISIBLE")
+        except Exception:
             vis_checker = None
     else:
-        print("[VisCheck] Module not available - Visibility ESP will be disabled")
-        print("[Info] To enable Visibility ESP:")
-        print("  1. Compile vischeck.pyd for your Python version")
-        print("  2. Place vischeck.pyd in the main directory")
-        print("  3. Place your map .opt file (e.g., de_mirage.opt) in the main directory")
+        vis_checker = None
 
     overlay = Overlay("GFusion")
     base = overlay.get_module_base(pid.value, "client.dll")
@@ -1429,35 +1415,18 @@ def main():
                 try:
                     map_path = getattr(cfg, 'visibility_map_path', '')
                     if map_path and os.path.exists(map_path):
-                        print(f"[VisCheck] Switching to map: {map_path}")
-                        
-                        # Check if map is already loaded (compare full paths)
                         current_map = vis_checker.get_current_map() if vis_checker.is_map_loaded() else ""
-                        if current_map == map_path:
-                            print(f"[VisCheck] Map already loaded: {map_path}")
-                        else:
-                            # Unload current map first if loaded
+                        if current_map != map_path:
                             if vis_checker.is_map_loaded():
-                                print(f"[VisCheck] Unloading current map: {current_map}")
                                 vis_checker.unload_map()
-                            
-                            # Load new map
-                            print(f"[VisCheck] Loading new map: {map_path}")
-                            if vis_checker.load_map(map_path):
-                                print(f"[VisCheck] Successfully loaded: {map_path}")
-                                setattr(cfg, 'visibility_map_loaded', True)
-                            else:
-                                print(f"[VisCheck] Failed to load: {map_path}")
-                                setattr(cfg, 'visibility_map_loaded', False)
+                            vis_checker.load_map(map_path)
+                            setattr(cfg, 'visibility_map_loaded', True)
                     else:
-                        # Unload map if no valid path
                         if vis_checker.is_map_loaded():
-                            current_map = vis_checker.get_current_map()
-                            print(f"[VisCheck] Unloading map: {current_map}")
                             vis_checker.unload_map()
                             setattr(cfg, 'visibility_map_loaded', False)
-                    
-                    # Clear reload flag
+                    setattr(cfg, 'visibility_map_reload_needed', False)
+                except Exception:
                     setattr(cfg, 'visibility_map_reload_needed', False)
                     
                 except Exception as e:
@@ -1586,7 +1555,8 @@ def main():
                 # Optional: small underline for MSPaint flair (under author)
                 # overlay.draw_filled_rect(wm_x + wm_w // 4, author_y + 8, wm_w // 2, 2, (0, 0, 255))
 
-
+            # Draw VisCheck debug box if enabled
+            draw_vischeck_box(overlay, vis_checker)
 
             if flags.get("show_local_info_box", True) and local_pos:
                 handle_local_info_drag()

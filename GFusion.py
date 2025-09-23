@@ -852,6 +852,7 @@ class AimbotTab(QWidget):
 
         row = QHBoxLayout()
         self.add_checkbox(row, "Enable Aimbot", "enabled")
+        self.add_checkbox(row, "Visibility Check", "visibility_aim_enabled")
         self.add_checkbox(row, "DeathMatch Mode", "DeathMatch")
         main_group.addLayout(row)
 
@@ -957,13 +958,6 @@ class AimbotTab(QWidget):
         self.add_float_slider_to_grid(float_grid, 2, 0, "Target Switch Delay", "target_switch_delay", 0.0, 1.0, 0.01, 100)
         self.add_float_slider_to_grid(float_grid, 2, 1, "RCS Smooth Base", "rcs_smooth_base", 0.0, 1.0, 0.01, 100)
         self.add_float_slider_to_grid(float_grid, 2, 2, "RCS Smooth Variance", "rcs_smooth_var", 0.0, 1.0, 0.01, 100)
-        # --- New: RCS Grace After Damage --- 8/18/2025
-        self.add_float_slider_to_grid(
-            float_grid, 3, 0,
-            "RCS Grace After Damage",
-            "rcs_grace_after_damage",
-            0.0, 1.0, 0.01, 100
-        )
 
         layout.addLayout(float_grid)
         layout.addWidget(create_section_separator())
@@ -1305,6 +1299,7 @@ class ESPTab(QWidget):
             ("Distance ESP", "distance_esp_enabled"),
             ("Name ESP", "name_esp_enabled"),
             ("Weapon ESP", "weapon_esp_enabled"),
+            ("Debug Maps", "debug_mode"),
         ]
 
         for i, (label, attr) in enumerate(basic_features):
@@ -1338,16 +1333,6 @@ class ESPTab(QWidget):
 
             
         layout.addLayout(basic_grid)
-        layout.addWidget(create_section_separator())
-
-        # --- Overlay Rendering Mode ---
-        layout.addWidget(self.section_title("Overlay Renderer:"))
-        self.gpu_overlay_cb = CheatCheckBox("Use GPU (DX11) Overlay")
-        self.gpu_overlay_cb.setChecked(getattr(Config, "use_gpu_overlay", False))
-        self.gpu_overlay_cb.stateChanged.connect(
-            lambda state: setattr(Config, "use_gpu_overlay", state == Qt.Checked)
-        )
-        layout.addWidget(self.gpu_overlay_cb)
         layout.addWidget(create_section_separator())
 
         # --- Visibility ESP Settings ---
