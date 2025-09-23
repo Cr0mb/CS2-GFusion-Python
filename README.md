@@ -6,6 +6,12 @@ put "maps" directory in parent directory with GFusion.py
 
 [Download maps](https://mega.nz/file/6J0H1TLD#ygHmkIMEECSLj2Lu8nu3BAMPObBT1nI5rD4jQ754VeI)
 
+Visibility logic comes from here
+
+https://github.com/Read1dno/VisCheckCS2 
+
+vischeck.pyd module only supports python 313. for older versions you will need to build the module based on your system.
+
 
 
 <img width="932" height="685" alt="image" src="https://github.com/user-attachments/assets/af0e793b-fea8-4df0-ac9d-616d5a491b61" />
