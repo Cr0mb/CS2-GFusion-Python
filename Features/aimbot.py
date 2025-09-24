@@ -384,6 +384,19 @@ class AimbotRCS:
         # track previous target id and a short grace period to avoid phantom RCS after switching targets
         self.prev_target_id = None
         self.rcs_grace_until = 0.0
+        # --- Visibility Checker ---
+        self.vis_checker = None
+        if getattr(self.cfg, "visibility_aim_enabled", False):
+            try:
+                import vischeck
+                from Process.config import Config
+                map_file = getattr(Config, "visibility_map_file", "de_mirage.opt")
+                self.vis_checker = vischeck.VisCheck(map_file)
+                print(f"[VisCheck] Loaded {map_file} for Aimbot visibility checking")
+            except Exception as e:
+                print(f"[VisCheck Error] Failed to load map file: {e}")
+                self.vis_checker = None
+
 
 
 
@@ -683,6 +696,33 @@ class AimbotRCS:
     # -----------------------------
     # Mouse recorder thread
     # -----------------------------
+    
+    def is_target_visible(self, local_pos, target_pos):
+        if not getattr(self.cfg, "visibility_aim_enabled", False):
+            return True
+        if not self.vis_checker:
+            return True
+        if not local_pos or not target_pos:
+            return False
+            
+        # Quick sync with ESP map if needed
+        try:
+            esp_map_path = getattr(self.cfg, 'visibility_map_path', '')
+            if esp_map_path and os.path.exists(esp_map_path):
+                if not hasattr(self.vis_checker, 'get_current_map') or self.vis_checker.get_current_map() != esp_map_path:
+                    if hasattr(self.vis_checker, 'load_map'):
+                        self.vis_checker.load_map(esp_map_path)
+        except:
+            pass
+            
+        eye_offset = 64.0
+        local_eye = (local_pos[0], local_pos[1], local_pos[2] + eye_offset)
+        target_eye = (target_pos[0], target_pos[1], target_pos[2] + eye_offset)
+        try:
+            return self.vis_checker.is_visible(local_eye, target_eye)
+        except Exception:
+            return True
+
     def mouse_recorder_thread(self):
         """Continuously record raw mouse deltas (GetCursorPos) into mouse_buffer."""
         user32 = ctypes.windll.user32
@@ -809,6 +849,13 @@ class AimbotRCS:
         dy = -avg_dx * sensitivity
         return dp, dy
 
+    
+    def reset_recoil(self):
+        """Reset recoil state when switching targets or when target dies."""
+        self.last_punch = (0.0, 0.0)
+        self.shots_fired = 0
+        self.last_aim_angle = None
+
     def run(self):
         from ctypes import windll
         GetAsyncKeyState = windll.user32.GetAsyncKeyState
@@ -858,23 +905,14 @@ class AimbotRCS:
 
                 # handle press edge
                 if curr_aim_state and not self.prev_aim_state:
-                    # started aiming: initialize timers/state
                     self.aim_start_time = time.perf_counter()
-                    self.shots_fired = 0
-                    self.last_punch = (0.0, 0.0)
-                    self.last_aim_angle = None
-                    # optionally reset target when starting a new aim
-                    # self.target_id = None
+                    self.reset_recoil()
 
                 # handle release edge
                 if not curr_aim_state and self.prev_aim_state:
-                    # released: clear transient aim state
-                    self.shots_fired = 0
-                    self.last_aim_angle = None
+                    self.reset_recoil()
                     self.aim_start_time = None
-                    # note: keep target_id behavior as you prefer (clear or keep)
 
-                # store for next frame and expose as before
                 self.prev_aim_state = curr_aim_state
                 self.left_down = curr_aim_state
 
@@ -882,10 +920,6 @@ class AimbotRCS:
                     time.sleep(0.01)
                     continue
 
-
-                # --------------------
-                # Memory Reads (once)
-                # --------------------
                 base = self.base
                 o = self.o
                 pawn = self.read(base + o.dwLocalPlayerPawn, "long")
@@ -915,9 +949,6 @@ class AimbotRCS:
                 if not entity_list:
                     continue
 
-                # --------------------
-                # Entity Cache Refresh
-                # --------------------
                 if time.time() - last_cache_time > cache_refresh_rate:
                     entity_cache.clear()
                     for i in range(self.cfg.max_entities):
@@ -932,9 +963,6 @@ class AimbotRCS:
 
                 target, target_pos = None, None
 
-                # --------------------
-                # Track Target
-                # --------------------
                 if self.target_id in entity_cache:
                     _, t_pawn = entity_cache[self.target_id]
                     bone_idx = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw, frame_time=frame_time)
@@ -945,16 +973,12 @@ class AimbotRCS:
                     tp, ty = self.calc_angle(my_pos, predicted)
                     if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
                         self.target_id = None
-                        self.last_target_lost_time = time.time()
+                    elif not self.is_target_visible(my_pos, predicted):
+                        self.target_id = None
                     else:
                         target, target_pos = t_pawn, predicted
 
-                # --------------------
-                # Acquire New Target
-                # --------------------
                 if target is None:
-                    if self.last_target_lost_time and (time.time() - self.last_target_lost_time) < self.cfg.target_switch_delay:
-                        continue
                     min_dist = float("inf")
                     for i, (_, pawn_ent) in entity_cache.items():
                         bone_idx = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw, frame_time=frame_time)
@@ -965,31 +989,20 @@ class AimbotRCS:
                         tp, ty = self.calc_angle(my_pos, predicted)
                         if any(map(math.isnan, (tp, ty))) or not self.in_fov(pitch, yaw, tp, ty):
                             continue
+                        if not self.is_target_visible(my_pos, predicted):
+                            continue
                         dist = squared_distance(my_pos, predicted)
                         if dist < min_dist:
                             min_dist = dist
                             target, target_pos, self.target_id = pawn_ent, predicted, i
 
-                # ---------- target-change detection ----------
-                # if we switched targets, clear recoil tracking and give a short grace window
-                target_changed = False
-                if self.target_id is not None and getattr(self, "prev_target_id", None) != self.target_id:
-                    target_changed = True
-                    # reset recoil tracking so no leftover punch is used for new target
-                    self.last_punch = (0.0, 0.0)
-                    # short grace time to ignore RCS on first frames after switching (seconds)
-                    self.rcs_grace_until = time.time() + getattr(self.cfg, "rcs_grace_time", 0.08)
-                    # optionally reset shot counters on switch (uncomment if desired)
-                    # self.shots_fired = 0
+                # simplified recoil reset logic
+                if self.target_id != self.prev_target_id:
+                    self.reset_recoil()
+                if target and self.read(target + self.o.m_iHealth) <= 0:
+                    self.reset_recoil()
+                self.prev_target_id = self.target_id
 
-                # keep prev_target_id updated for next iteration
-                if self.target_id is not None:
-                    self.prev_target_id = self.target_id
-
-
-                # --------------------
-                # Aimbot Logic
-                # --------------------
                 mouse_dx, mouse_dy = 0, 0
                 if self.left_down and target and target_pos:
                     self.shots_fired += 1
@@ -1000,95 +1013,58 @@ class AimbotRCS:
                     if abs(self.angle_diff(ty, yaw)) > 90:
                         continue
 
+                    # --- Improved RCS ---
                     scale = self.cfg.rcs_scale * min(self.shots_fired / 2, 1.0)
 
-                    # decide whether to apply recoil compensation:
-                    now = time.time()
-                    rcs_allowed = self.cfg.rcs_enabled and (now > getattr(self, "rcs_grace_until", 0.0)) and not target_changed
+                    # compute compensated angles
+                    comp_pitch = tp - recoil_pitch * scale
+                    comp_yaw   = ty - recoil_yaw * scale
 
-                    if rcs_allowed:
-                        # normal RCS path (use live recoil values)
-                        compensated_pitch = self.clamp_angle_diff(pitch, tp - recoil_pitch * scale)
-                        compensated_yaw = self.clamp_angle_diff(yaw, ty - recoil_yaw * scale)
-                    else:
-                        # we're in grace window or rcs disabled -> do not apply recoil correction for first frames
-                        compensated_pitch = self.clamp_angle_diff(pitch, tp)
-                        compensated_yaw = self.clamp_angle_diff(yaw, ty)
+                    # clamp delta to avoid sudden jumps
+                    comp_pitch = self.clamp_angle_diff(pitch, comp_pitch, max_delta=5.0)
+                    comp_yaw   = self.clamp_angle_diff(yaw, comp_yaw,   max_delta=5.0)
 
-
-                    smooth = max(0.01, min(self.cfg.smooth_base + random.uniform(-self.cfg.smooth_var, self.cfg.smooth_var), 0.25))
-                    key = self.quantize_angle(compensated_pitch, compensated_yaw, self.shots_fired)
+                    # get learned + human correction
+                    key = self.quantize_angle(comp_pitch, comp_yaw, self.shots_fired)
                     dp, dy = self.get_learned_correction(key)
 
-                    # If we have raw mouse recordings, sample a recent human correction and integrate it
                     if getattr(self.cfg, 'enable_mouse_recording', True):
-                        human_dp, human_dy = self.sample_recent_human_correction(sample_count=6)
-                        human_blend = getattr(self.cfg, 'human_blend', 0.35)
-                        # Blend the stored learned correction and the sampled human correction
-                        dp = (1.0 - human_blend) * dp + human_blend * human_dp
-                        dy = (1.0 - human_blend) * dy + human_blend * human_dy
+                        human_dp, human_dy = self.sample_recent_human_correction(sample_count=8)
+                        if abs(human_dp) < 2.0 and abs(human_dy) < 2.0:  # reject outliers
+                            blend = getattr(self.cfg, 'human_blend', 0.35)
+                            dp = (1.0 - blend) * dp + blend * human_dp
+                            dy = (1.0 - blend) * dy + blend * human_dy
 
-                    compensated_pitch += dp
-                    compensated_yaw += dy
+                    comp_pitch += dp
+                    comp_yaw   += dy
 
-                    interp_pitch = pitch + (compensated_pitch - pitch) * smooth
-                    interp_yaw = yaw + (compensated_yaw - yaw) * smooth
-                    sp, sy = interp_pitch, interp_yaw
-                    noise_chance = getattr(self.cfg, 'noise_chance', 0.2)
-                    noise_strength = getattr(self.cfg, 'noise_strength', 0.05)
-                    if random.random() < noise_chance:
-                        offset = random.uniform(-noise_strength, noise_strength)
-                        if random.choice([True, False]):
-                            sp += offset
-                        else:
-                            sy += offset
+                    # adaptive smoothing (faster settle with more bullets fired)
+                    dyn_smooth = self.cfg.smooth_base + (self.shots_fired * 0.002)
+                    dyn_smooth = min(dyn_smooth, 0.25)
+                    smooth = max(0.01, dyn_smooth)
+
+                    # final interpolation
+                    sp = self.lerp(pitch, comp_pitch, smooth)
+                    sy = self.lerp(yaw, comp_yaw, smooth)
                     sp, sy = self.normalize(sp, sy)
 
-                    delta_pitch = normalize_angle_delta(sp - pitch)
-                    delta_yaw = normalize_angle_delta(sy - yaw)
+                    # low-pass filter small deltas
+                    delta_pitch = (sp - pitch) * 0.9
+                    delta_yaw   = (sy - yaw) * 0.9
 
-                    delta_pitch = max(min(delta_pitch, self.cfg.max_delta_angle), -self.cfg.max_delta_angle)
-                    delta_yaw = max(min(delta_yaw, self.cfg.max_delta_angle), -self.cfg.max_delta_angle)
-
-                    # convert to mouse pixels using your existing sensitivity mapping
+                    # convert to mouse movement
                     mouse_dx = int(-delta_yaw / self.cfg.sensitivity)
                     mouse_dy = int(-delta_pitch / self.cfg.sensitivity) * self.cfg.invert_y
 
+                    # clamp max move
                     mouse_dx = max(min(mouse_dx, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
                     mouse_dy = max(min(mouse_dy, self.cfg.max_mouse_move), -self.cfg.max_mouse_move)
 
-                    # Update learning: leverage both aimbot-calculated correction and recent human deltas
-                    if self.last_aim_angle:
-                        lp, ly = self.last_aim_angle
-                        if abs(self.angle_diff(sp, lp)) > 0.002 or abs(self.angle_diff(sy, ly)) > 0.002:
-                            dp_learn = max(min(sp - pitch, 1.0), -1.0)
-                            dy_learn = max(min(sy - yaw, 1.0), -1.0)
-                            # also compute human-derived corrections to reinforce learning
-                            if getattr(self.cfg, 'enable_mouse_recording', True):
-                                human_dp, human_dy = self.sample_recent_human_correction(sample_count=8)
-                            else:
-                                human_dp, human_dy = 0.0, 0.0
-
-                            # prefer human-derived corrections when they are significant
-                            combined_dp = dp_learn
-                            combined_dy = dy_learn
-                            if abs(human_dp) > 0.01 or abs(human_dy) > 0.01:
-                                # incorporate human corrections (small alpha)
-                                combined_dp = 0.5 * dp_learn + 0.5 * human_dp
-                                combined_dy = 0.5 * dy_learn + 0.5 * human_dy
-
-                            if abs(combined_dp) > 0.05 or abs(combined_dy) > 0.05:
-                                burst_strength = max(1.0, len(self.mouse_buffer))  # or use median magnitude
-                                self.update_learning(key, combined_dp * burst_strength, combined_dy * burst_strength)
                     self.last_aim_angle = (sp, sy)
-
                 else:
-                    self.shots_fired = 0
-                    self.last_aim_angle = None
+                    self.reset_recoil()
 
-                # --------------------
-                # Single Mouse Move
-                # --------------------
+
                 if mouse_dx != 0 or mouse_dy != 0:
                     move_mouse(mouse_dx, mouse_dy)
 
@@ -1096,19 +1072,16 @@ class AimbotRCS:
                 print(f"[!] AimbotRCS error: {e}")
                 time.sleep(0.3)
 
-            # --------------------
-            # Frame Limiting
-            # --------------------
             elapsed = time.perf_counter() - start_time
             sleep_time = max(0.0, frame_time - elapsed)
             time.sleep(sleep_time)
 
         if self.cfg.enable_learning:
             self.save_learning()
-        # also save raw recordings on exit
         if getattr(self.cfg, 'enable_mouse_recording', True):
             self.save_raw_recordings()
         print("[AimbotRCS] Stopped.")
+
 
 def start_aim_rcs(cfg):
     AimbotRCS(cfg).run()

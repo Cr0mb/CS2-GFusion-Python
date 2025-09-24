@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QWindow
 from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QEasingCurve, QPropertyAnimation
 from PyQt5.QtGui import QColor, QFont, QPalette
-from PyQt5.QtWidgets import (
+from PyQt5.QtWidgets import (                                           
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QSlider,
     QLabel, QPushButton, QLineEdit, QComboBox, QTabWidget, QColorDialog,
     QGridLayout, QFrame, QScrollArea, QTextEdit, QMessageBox
@@ -26,7 +26,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from Process.config import Config
-
+import win32ui  
 import Features.esp
 from Features.aimbot import start_aim_rcs
 from Features.bhop import BHopProcess
@@ -287,8 +287,12 @@ class ConfigTab(QWidget):
     def save_config(self):
         name = self.name_input.text().strip()
         if name:
-            cfg.save_to_file(name)
-            self.refresh_config_list()
+            try:
+                cfg.save_to_file(name)
+                self.refresh_config_list()
+                print(f"[Config] Successfully saved config '{name}'")
+            except Exception as e:
+                print(f"[Config] Error saving config '{name}': {e}")
 
     def load_config(self):
         name = self.name_input.text().strip()
@@ -848,6 +852,7 @@ class AimbotTab(QWidget):
 
         row = QHBoxLayout()
         self.add_checkbox(row, "Enable Aimbot", "enabled")
+        self.add_checkbox(row, "Visibility Check", "visibility_aim_enabled")
         self.add_checkbox(row, "DeathMatch Mode", "DeathMatch")
         main_group.addLayout(row)
 
@@ -870,6 +875,25 @@ class AimbotTab(QWidget):
         main_group.addLayout(key_layout)
 
         layout.addLayout(main_group)
+        layout.addWidget(create_section_separator())
+
+        # --- Auto Pistol Fire Rate Slider ---
+        fire_rate_layout = QVBoxLayout()
+        self.fire_rate_label = QLabel(f"Fire Rate: {Config.fire_rate:.2f}s")
+        self.fire_rate_slider = NoScrollSlider(Qt.Horizontal)
+        self.fire_rate_slider.setMinimum(1)        # 0.01s min
+        self.fire_rate_slider.setMaximum(100)      # 1.0s max
+        self.fire_rate_slider.setValue(int(Config.fire_rate * 100))
+
+        def update_fire_rate(val):
+            Config.fire_rate = val / 100.0
+            self.fire_rate_label.setText(f"Fire Rate: {Config.fire_rate:.2f}s")
+
+        self.fire_rate_slider.valueChanged.connect(update_fire_rate)
+
+        fire_rate_layout.addWidget(self.fire_rate_label)
+        fire_rate_layout.addWidget(self.fire_rate_slider)
+        layout.addLayout(fire_rate_layout)
         layout.addWidget(create_section_separator())
 
         # --- Advanced Features ---
@@ -1093,7 +1117,7 @@ class AimbotTab(QWidget):
 
     def add_checkbox(self, layout, label, attr):
         cb = CheatCheckBox(label)
-        cb.setChecked(getattr(Config, attr))
+        cb.setChecked(getattr(Config, attr, False))  # Add default value
         cb.stateChanged.connect(lambda state: setattr(Config, attr, state == Qt.Checked))
         layout.addWidget(cb)
 
@@ -1275,6 +1299,7 @@ class ESPTab(QWidget):
             ("Distance ESP", "distance_esp_enabled"),
             ("Name ESP", "name_esp_enabled"),
             ("Weapon ESP", "weapon_esp_enabled"),
+            ("Debug Maps", "debug_mode"),
         ]
 
         for i, (label, attr) in enumerate(basic_features):
@@ -1308,6 +1333,50 @@ class ESPTab(QWidget):
 
             
         layout.addLayout(basic_grid)
+        layout.addWidget(create_section_separator())
+
+        # --- Visibility ESP Settings ---
+        layout.addWidget(self.section_title("Visibility ESP Settings:"))
+        visibility_layout = QHBoxLayout()
+        self.add_checkbox(visibility_layout, "Enable Visibility ESP", "visibility_esp_enabled")
+        # Show Visibility Text checkbox with proper default
+        visibility_text_cb = CheatCheckBox("Show Visibility Text")
+        visibility_text_cb.setChecked(getattr(Config, "visibility_text_enabled", True))  # Default to True
+        visibility_text_cb.stateChanged.connect(
+            lambda state: setattr(Config, "visibility_text_enabled", state == Qt.Checked)
+        )
+        visibility_layout.addWidget(visibility_text_cb)
+        
+        # Map file selection
+        map_layout = QHBoxLayout()
+        map_layout.addWidget(QLabel("Map File:"))
+        
+        # Create dropdown for map selection from maps folder
+        self.map_combo = QComboBox()
+        self.refresh_map_list()
+        
+        # Connect to update config and load map when selection changes
+        self.map_combo.currentTextChanged.connect(self.on_map_selection_changed)
+        
+        # Add refresh button for maps
+        refresh_maps_btn = QPushButton("↻")
+        refresh_maps_btn.setFixedWidth(28)
+        refresh_maps_btn.clicked.connect(self.refresh_map_list)
+        
+        if 'comboboxes' not in self.ui_elements:
+            self.ui_elements['comboboxes'] = {}
+        self.ui_elements['comboboxes']['visibility_map_file'] = self.map_combo
+        
+        map_layout.addWidget(self.map_combo)
+        map_layout.addWidget(refresh_maps_btn)
+        
+        visibility_container = QWidget()
+        visibility_container.setLayout(visibility_layout)
+        layout.addWidget(visibility_container)
+        
+        map_container = QWidget()
+        map_container.setLayout(map_layout)
+        layout.addWidget(map_container)
         layout.addWidget(create_section_separator())
 
         # --- Advanced ESP Features ---
@@ -1402,6 +1471,8 @@ class ESPTab(QWidget):
             ("Coordinate ESP Color", "coordinates_esp_color"),
             ("Trace ESP Color", "trace_esp_color"),
             ("Money ESP Color", "color_money_text"),
+            ("Visible Text Color", "color_visible_text"),
+            ("Not Visible Text Color", "color_not_visible_text"),
         ]
         for i, (label, attr) in enumerate(color_settings):
             self.add_color_picker_to_grid(color_grid, i // 3, i % 3, label, attr)
@@ -1429,6 +1500,10 @@ class ESPTab(QWidget):
     def refresh_ui(self):
         """Refresh all UI elements with current config values"""
         # Update checkboxes
+        # Update GPU/CPU overlay toggle
+        if hasattr(self, "gpu_overlay_cb"):
+            self.gpu_overlay_cb.setChecked(getattr(Config, "use_gpu_overlay", False))
+
         for attr, checkbox in self.ui_elements.get('checkboxes', {}).items():
             checkbox.setChecked(getattr(Config, attr, False))
 
@@ -1440,15 +1515,30 @@ class ESPTab(QWidget):
 
         # Update comboboxes
         for attr, combo in self.ui_elements.get('comboboxes', {}).items():
-            current_value = getattr(Config, attr, "").lower()
-            index = combo.findText(current_value)
-            if index >= 0:
-                combo.setCurrentIndex(index)
+            if attr == 'visibility_map_file':
+                # Special handling for map file - refresh list first
+                self.refresh_map_list()
+                # Load the currently selected map if visibility ESP is enabled
+                current_map = getattr(Config, 'visibility_map_file', '')
+                if current_map and getattr(Config, 'visibility_esp_enabled', False):
+                    if not hasattr(Config, 'current_loaded_map') or Config.current_loaded_map != current_map:
+                        print(f"[VIS-CHECK] Initial map load triggered: {current_map}")
+                        self.on_map_selection_changed(current_map)
+            else:
+                current_value = getattr(Config, attr, "").lower()
+                index = combo.findText(current_value)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
 
         # Update color buttons
         for attr, btn in self.ui_elements.get('color_buttons', {}).items():
             color = getattr(Config, attr, (255, 255, 255))
             btn.setStyleSheet(f"background-color: rgb{color}; border: 1px solid black;")
+
+        # Update text inputs
+        for attr, text_input in self.ui_elements.get('text_inputs', {}).items():
+            value = getattr(Config, attr, "")
+            text_input.setText(str(value))
 
         panic_label = self.ui_elements.get('labels', {}).get('panic_key', None)
         if panic_label:
@@ -1570,6 +1660,107 @@ class ESPTab(QWidget):
         if 'color_buttons' not in self.ui_elements:
             self.ui_elements['color_buttons'] = {}
         self.ui_elements['color_buttons'][attr] = btn
+
+    def refresh_map_list(self):
+        """Refresh the map dropdown with available .opt files from maps folder"""
+        maps_folder = "maps"
+        self.map_combo.clear()
+        
+        # Create maps folder if it doesn't exist
+        os.makedirs(maps_folder, exist_ok=True)
+        
+        try:
+            # Get all .opt files from maps folder
+            opt_files = [f for f in os.listdir(maps_folder) if f.lower().endswith('.opt')]
+            
+            if opt_files:
+                # Sort files alphabetically
+                opt_files.sort()
+                self.map_combo.addItems(opt_files)
+                
+                # Try to select the current configured map
+                current_map = getattr(Config, 'visibility_map_file', '')
+                if current_map in opt_files:
+                    index = self.map_combo.findText(current_map)
+                    if index >= 0:
+                        self.map_combo.setCurrentIndex(index)
+                elif opt_files:
+                    # If current map not found, select first available and update config
+                    self.map_combo.setCurrentIndex(0)
+                    setattr(Config, 'visibility_map_file', opt_files[0])
+            else:
+                # No maps found - add placeholder
+                self.map_combo.addItem("No maps found - add .opt files to maps folder")
+                
+        except Exception as e:
+            print(f"Error refreshing map list: {e}")
+            self.map_combo.addItem("Error reading maps folder")
+
+    def on_map_selection_changed(self, selected_map):
+        """Handle map selection change - load/unload maps for visibility checking"""
+        if not selected_map or selected_map == "No maps found - add .opt files to maps folder" or selected_map == "Error reading maps folder":
+            return
+        
+        try:
+            # Update config
+            setattr(Config, 'visibility_map_file', selected_map)
+            
+            # Unload current map if one is loaded
+            if hasattr(Config, 'current_loaded_map') and Config.current_loaded_map:
+                print(f"[VIS-CHECK] Unloading map: {Config.current_loaded_map}")
+                self.unload_current_map()
+            
+            # Load the new map
+            print(f"[VIS-CHECK] Requesting map load: {selected_map}")
+            success = self.load_map_for_visibility_check(selected_map)
+            
+            if success:
+                Config.current_loaded_map = selected_map
+                print(f"[VIS-CHECK] Map load request sent: {selected_map}")
+            else:
+                Config.current_loaded_map = None
+                print(f"[VIS-CHECK] Failed to request map load: {selected_map}")
+                
+        except Exception as e:
+            print(f"[VIS-CHECK] Error changing map: {e}")
+            Config.current_loaded_map = None
+
+    def load_map_for_visibility_check(self, map_filename):
+        """Load a map file for visibility checking"""
+        try:
+            map_path = os.path.join("maps", map_filename)
+            
+            if not os.path.exists(map_path):
+                print(f"[VIS-CHECK] Map file not found: {map_path}")
+                return False
+            
+            # Set the map file path in config for visibility system to use
+            setattr(Config, 'visibility_map_path', map_path)
+            setattr(Config, 'visibility_map_loaded', True)
+            setattr(Config, 'visibility_map_reload_needed', True)  # Signal ESP to reload
+            
+            # The actual map loading will happen in ESP thread
+            print(f"[VIS-CHECK] Map reload scheduled: {map_path}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"[VIS-CHECK] Error loading map {map_filename}: {e}")
+            return False
+
+    def unload_current_map(self):
+        """Unload the currently loaded map"""
+        try:
+            # Clear map-related config
+            setattr(Config, 'visibility_map_path', '')
+            setattr(Config, 'visibility_map_loaded', False)
+            setattr(Config, 'visibility_map_reload_needed', True)  # Signal ESP to unload
+            
+            # The actual map unloading will happen in ESP thread
+            print("[VIS-CHECK] Map unload scheduled")
+            
+        except Exception as e:
+            print(f"[VIS-CHECK] Error unloading map: {e}")
 
 def start_toggle_listener(main_window):
     def listen():
@@ -1925,6 +2116,10 @@ class NoScrollSlider(QSlider):
     def wheelEvent(self, event):
         pass  # disable scroll wheel changes
 
+    def refresh_ui(self):
+        """Refresh UI elements - RecoilViewer doesn't have config-dependent UI"""
+        pass
+
 
 import ctypes
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget, QApplication
@@ -2041,6 +2236,9 @@ class MainWindow(QWidget):
         self.tabs.addTab(self.recoil_viewer_tab, QIcon("icons/aim_learning.png"), "")
         self.tabs.addTab(self.config_tab, QIcon("icons/config.png"), "")
 
+        # Connect config refresh signals to all tabs
+        self.config_tab.config_loaded.connect(self.refresh_all_tabs)
+
         # Layout
         layout = QVBoxLayout()
         layout.setSpacing(10)
@@ -2058,6 +2256,23 @@ class MainWindow(QWidget):
             QTimer.singleShot(100, lambda: self.set_obs_protection(True))
         else:
             QTimer.singleShot(100, lambda: self.set_obs_protection(False))
+
+    def refresh_all_tabs(self):
+        """Refresh all tab UIs when config is loaded"""
+        try:
+            if hasattr(self.aimbot_tab, 'refresh_ui'):
+                self.aimbot_tab.refresh_ui()
+            if hasattr(self.esp_tab, 'refresh_ui'):
+                self.esp_tab.refresh_ui()
+            if hasattr(self.triggerbot_tab, 'refresh_ui'):
+                self.triggerbot_tab.refresh_ui()
+            if hasattr(self.misc_tab, 'refresh_ui'):
+                self.misc_tab.refresh_ui()
+            if hasattr(self.recoil_viewer_tab, 'refresh_ui'):
+                self.recoil_viewer_tab.refresh_ui()
+            print("[Config] All tabs refreshed successfully")
+        except Exception as e:
+            print(f"[Config] Error refreshing tabs: {e}")
 
 
     # --- OBS / screen capture protection ---

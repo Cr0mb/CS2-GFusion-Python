@@ -1,8 +1,21 @@
 GFusion is a fully external Python-based cheat framework for Counter-Strike 2. It is built using ctypes, win32api, and PyQt5. It does not rely on any common cheat libraries like pymem or pyMeow.
 
+``maps.zip`` is necessary in order for visual check to work.
 
-<img width="932" height="684" alt="image" src="https://github.com/user-attachments/assets/de73d708-e335-4a43-be1b-473dfe2f7fda" />
-<img width="758" height="538" alt="image" src="https://github.com/user-attachments/assets/dfa68813-d91c-475d-9977-e63b7a58a487" />
+put "maps" directory in parent directory with GFusion.py
+
+[Download maps](https://mega.nz/file/6J0H1TLD#ygHmkIMEECSLj2Lu8nu3BAMPObBT1nI5rD4jQ754VeI)
+
+Visibility logic comes from here
+
+https://github.com/Read1dno/VisCheckCS2 
+
+vischeck.pyd module only supports python 313. for older versions you will need to build the module based on your system.
+
+
+<img width="932" height="685" alt="image" src="https://github.com/user-attachments/assets/af0e793b-fea8-4df0-ac9d-616d5a491b61" />
+
+<img width="758" height="537" alt="image" src="https://github.com/user-attachments/assets/16b9495a-7d1c-448b-8f33-baf0c7b86110" />
 
 
 For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
@@ -20,6 +33,54 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 [**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)<br>
 [**GFusion V2.5**](https://www.youtube.com/watch?v=ZjwLNJX-leY)
 
+```markdown
+V1.8 7/30/2025
+- Huge improvements to aimbot & recoil control (more accurate, still legit)
+- Added aim visualization tab to GFusion
+- Integrated Weapon ESP & Weapon color
+- Fixed weird aimbot mouse movement
+- Re-integrated RCS toggle with new aimbot customization options
+```
+
+```markdown
+V1.9 7/31/2025
+- Moved into Misc tab
+  - Grenade Prediction (simple)
+  - Enable No Flash
+  - Spectator List
+- Moved into AimBot tab
+  - Show Aimbot FOV Circle
+- Big updates to menu design
+- Update to Spectator List, now draggable with new design
+- Added GFusion watermark, also draggable
+- Fixed thread toggle with auto pistol issues
+- Added color customization for aim FOV
+- Added keyboard listener to change menu key
+- Added config setting for enemy/team only ESP
+- Added customization for external crosshair size
+- Added always-on Triggerbot
+- Added Auto Pistol
+
+## Bug
+- Crouching with aimbot causes bone position to be incorrect
+```
+
+```markdown
+V2.0 8/1/2025
+- Added Money ESP
+- Added BHop Information Box
+- Fixed Aimbot tab not refreshing UI on config load
+- Added Trace ESP
+- Added Speed ESP
+- Added Velocity ESP
+- Added Coordinates ESP
+```
+
+```markdown
+V2.1 8/3/2025
+- Fixed glow team & glow enemy not refreshing on config load
+- Fixed Aim Sensitivity & Invert Y not refreshing on config load
+```
 
 ```markdown
 V2.2 8/4/2025
@@ -45,6 +106,47 @@ V2.5 8/8/2025
 - Added show drawing FPS for overlay
 
 - Changed GDI Windows Overlay to be DirectX11 instead (Huge performance boost in visuals!)
+```
+
+```markdown
+V2.6 8/13/2025
+- Fixed menu toggle key not working in MISC tab.
+```
+
+```markdown
+V2.7 9/7/2025
+- Added Panic Key to ESP with customizable key press.
+- Updated offset_update.py
+- Changed memory reading for Aimbot & ESP for stealth / speed.
+```
+
+```markdown
+V2.8 9/9/2025
+- Weapon ESP now reads faster
+- Changed memory reading for Aimbot again
+```
+
+```markdown
+V2.9 9/9/2025
+- Updated Velocity Prediction
+- Updated menu styling
+- Updated memory reading for BHop
+```
+
+```markdown
+V3.0 9/12/2025
+- Updated Aimbot Learning; now records all mouse movements instead of just at aim time.
+```
+
+```markdown
+V3.1 9/14/2025
+- Raw Mouse movements are now visible in Visualize Aim (crashed game prior)
+- Fixed RCS with other aim keys causing compensation bug (aiming above or below player instead of on)
+- Also better recoil compensation for further targets now seems more accurate.
+- Updated start.pyw launcher to match menu styling.
+- Updated styling for the main menu some more.
+- Added rounded box ESP.
+- Added corner box ESP.
 ```
 
 # GFusion Feature List

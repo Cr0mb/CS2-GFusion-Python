@@ -1,15 +1,14 @@
 {
     "DeathMatch": false,
-    "FOV": 3.0,
+    "FOV": 5.7,
     "activation_key": "alt",
     "aim_key": "mouse1",
-    "aim_start_delay": 0,
+    "aim_start_delay": 0.03,
     "aim_stop": false,
     "armor_esp_enabled": false,
     "armorbar_enabled": false,
     "auto_pistol_enabled": false,
-    "autostrafe_enabled": true,
-    "bhop_enabled": true,
+    "bhop_enabled": false,
     "bhop_stop": false,
     "bomb_esp_enabled": true,
     "bone_dot_color": [
@@ -24,6 +23,7 @@
         6,
         18
     ],
+    "box_esp_style": "rounded",
     "circle_enabled": false,
     "circle_stop": false,
     "closest_to_crosshair": false,
@@ -38,18 +38,38 @@
         230
     ],
     "color_bone": [
+        0,
         255,
-        97,
-        35
+        0
     ],
     "color_box_ct": [
         0,
         0,
         255
     ],
+    "color_box_invisible_ct": [
+        0,
+        70,
+        120
+    ],
+    "color_box_invisible_t": [
+        120,
+        70,
+        0
+    ],
     "color_box_t": [
         255,
         0,
+        0
+    ],
+    "color_box_visible_ct": [
+        0,
+        200,
+        255
+    ],
+    "color_box_visible_t": [
+        255,
+        200,
         0
     ],
     "color_distance": [
@@ -113,13 +133,38 @@
         0
     ],
     "color_name": [
-        170,
-        170,
-        0
+        255,
+        255,
+        255
     ],
     "color_name_effects": [
         255,
         215,
+        0
+    ],
+    "color_not_visible_text": [
+        255,
+        0,
+        0
+    ],
+    "color_skeleton_invisible_ct": [
+        0,
+        70,
+        120
+    ],
+    "color_skeleton_invisible_t": [
+        120,
+        70,
+        0
+    ],
+    "color_skeleton_visible_ct": [
+        0,
+        200,
+        255
+    ],
+    "color_skeleton_visible_t": [
+        255,
+        200,
         0
     ],
     "color_spectators": [
@@ -127,9 +172,14 @@
         165,
         0
     ],
-    "color_weapon_text": [
-        85,
+    "color_visible_text": [
+        0,
         255,
+        0
+    ],
+    "color_weapon_text": [
+        200,
+        200,
         255
     ],
     "coordinates_esp_color": [
@@ -144,6 +194,7 @@
         255
     ],
     "crosshair_size": 6,
+    "current_loaded_map": "aim_botz.opt",
     "distance_esp_enabled": false,
     "downward_offset": 62,
     "draw_crosshair_enabled": false,
@@ -152,7 +203,7 @@
     "enabled": true,
     "esp_show_enemies_only": true,
     "esp_show_team_only": false,
-    "fire_rate": 0.1,
+    "fire_rate": 1.0,
     "flash_esp_enabled": true,
     "fov_changer_enabled": false,
     "fov_circle_enabled": false,
@@ -189,26 +240,26 @@
     "learn_dir": "aimbot_data",
     "line_esp_enabled": false,
     "line_esp_position": "bottom",
-    "max_delta_angle": 40,
+    "max_delta_angle": 60,
     "max_entities": 64,
-    "max_mouse_move": 3,
+    "max_mouse_move": 10,
     "money_esp_enabled": false,
     "name_esp_enabled": true,
     "noflash_enabled": false,
-    "obs_protection_enabled": true,
+    "obs_protection_enabled": false,
     "panic_key": 46,
     "panic_key_enabled": true,
     "panic_mode_active": false,
     "rcs_enabled": true,
-    "rcs_scale": 5.0,
-    "rcs_smooth_base": 0.29,
+    "rcs_scale": 2.3,
+    "rcs_smooth_base": 1.0,
     "rcs_smooth_var": 0.01,
     "scope_esp_enabled": true,
     "sensitivity": 0.022,
     "shoot_teammates": false,
     "show_box_esp": true,
     "show_local_info_box": false,
-    "show_overlay_fps": true,
+    "show_overlay_fps": false,
     "skeleton_esp_enabled": true,
     "smooth_base": 0.24,
     "smooth_var": 0.0,
@@ -247,6 +298,13 @@
         0,
         0
     ],
+    "visibility_aim_enabled": true,
+    "visibility_esp_enabled": true,
+    "visibility_map_file": "aim_botz.opt",
+    "visibility_map_loaded": true,
+    "visibility_map_path": "maps\\aim_botz.opt",
+    "visibility_map_reload_needed": false,
+    "visibility_text_enabled": false,
     "watermark_enabled": true,
     "weapon_esp_enabled": true
 }
