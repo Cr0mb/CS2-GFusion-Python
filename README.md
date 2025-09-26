@@ -1,3 +1,9 @@
+<img width="932" height="685" alt="image" src="https://github.com/user-attachments/assets/af0e793b-fea8-4df0-ac9d-616d5a491b61" />
+
+<img width="758" height="537" alt="image" src="https://github.com/user-attachments/assets/16b9495a-7d1c-448b-8f33-baf0c7b86110" />
+
+<img width="1599" height="899" alt="image" src="https://github.com/user-attachments/assets/460fde4b-77f1-4fd9-ae8f-7583e6ffea00" />
+
 GFusion is a fully external Python-based cheat framework for Counter-Strike 2. It is built using ctypes, win32api, and PyQt5. It does not rely on any common cheat libraries like pymem or pyMeow.
 
 ``maps.zip`` is necessary in order for visual check to work.
@@ -19,6 +25,8 @@ https://github.com/za233/NeacController
 <img width="932" height="685" alt="image" src="https://github.com/user-attachments/assets/af0e793b-fea8-4df0-ac9d-616d5a491b61" />
 
 <img width="758" height="537" alt="image" src="https://github.com/user-attachments/assets/16b9495a-7d1c-448b-8f33-baf0c7b86110" />
+
+<img width="1599" height="899" alt="image" src="https://github.com/user-attachments/assets/460fde4b-77f1-4fd9-ae8f-7583e6ffea00" />
 
 
 For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
@@ -171,7 +179,7 @@ V3.3 9/23/2025
 [+] Added Overlay window for map name and vischeck loading status
 ```
 
-```markdown V3.3 9/26/2025
+```markdown V3.4 9/26/2025
 [+] Added Kernel Driver NeacController
 [+] Made Vischeck map loading faster
 ```
