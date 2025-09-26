@@ -149,6 +149,30 @@ V3.1 9/14/2025
 - Added corner box ESP.
 ```
 
+```markdown
+V3.2 9/22/2025
+[+] Added visible check to ESP
+[+] Added visible check to Aimbot
+[+] Added auto map extractor and converter
+[+] Added new module: vis check
+[+] Fixed configs
+```
+
+```markdown
+V3.3 9/23/2025
+[+] Updated & fixed start.pyw launcher generator
+[+] Added a clean reset_recoil() method.
+[+] Resets recoil when switching to a new target or when the target dies.
+[+] Removes the grace-period logic for a simpler, more predictable system.
+[+] Cleaned up RCS logic
+[+] Added Overlay window for map name and vischeck loading status
+```
+
+```markdown V3.3 9/26/2025
+[+] Added Kernel Driver NeacController
+[+] Made Vischeck map loading faster
+```
+
 # GFusion Feature List
 
 <details>
