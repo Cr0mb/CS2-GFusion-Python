@@ -12,6 +12,9 @@ https://github.com/Read1dno/VisCheckCS2
 
 vischeck.pyd module only supports python 313. for older versions you will need to build the module based on your system.
 
+Kernel driver comes from here
+
+https://github.com/za233/NeacController
 
 <img width="932" height="685" alt="image" src="https://github.com/user-attachments/assets/af0e793b-fea8-4df0-ac9d-616d5a491b61" />
 
