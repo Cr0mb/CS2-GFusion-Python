@@ -1,0 +1,81 @@
+Metadata-Version: 2.4
+Name: neac_controller
+Version: 1.0.0
+Summary: Python bindings for NeacController - Windows Kernel Driver Controller
+Home-page: 
+Author: CS2 Team
+Author-email: 
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: C++
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: System :: Systems Administration
+Requires-Python: >=3.6
+Requires-Dist: pybind11>=2.6.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+
+NeacController Python Module
+
+This module provides Python bindings for the NeacController Windows kernel driver,
+enabling process memory manipulation, kernel memory access, and driver management
+from Python applications.
+
+Features:
+- Driver service management (start/stop)
+- Process memory read/write operations
+- Kernel memory access
+- Memory protection management
+- Process control (kill processes)
+- SSDT (System Service Descriptor Table) access
+
+Requirements:
+- Windows operating system
+- Administrator privileges
+- NeacSafe64 driver installed
+
+Usage:
+    import neac_controller
+    
+    # Create driver manager instance
+    driver = neac_controller.NeacDriverManager()
+    
+    # Start the driver service
+    if driver.start_driver():
+        print("Driver started successfully")
+    
+    # Connect to the driver
+    if driver.connect():
+        print("Connected to driver")
+        
+        # Example: Read process memory
+        pid = 1234  # target process ID
+        base_addr = driver.get_process_base(pid)
+        if base_addr:
+            value = driver.read_uint32(pid, base_addr)
+            print(f"Read value: {value}")
+        
+        # Disconnect when done
+        driver.disconnect()
+    
+    # Stop the driver service
+    driver.stop_driver()
+
+Warning:
+This module provides low-level system access and should be used with caution.
+Improper use may cause system instability or security issues.
+    

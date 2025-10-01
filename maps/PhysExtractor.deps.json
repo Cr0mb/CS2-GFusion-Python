@@ -1,0 +1,377 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "PhysExtractor/1.0.0": {
+        "dependencies": {
+          "ValveResourceFormat": "14.1.4764"
+        },
+        "runtime": {
+          "PhysExtractor.dll": {}
+        }
+      },
+      "K4os.Compression.LZ4/1.3.8": {
+        "runtime": {
+          "lib/net6.0/K4os.Compression.LZ4.dll": {
+            "assemblyVersion": "1.3.8.0",
+            "fileVersion": "1.3.8.0"
+          }
+        }
+      },
+      "KeyValues2/0.8.0": {
+        "runtime": {
+          "lib/net9.0/Datamodel.NET.dll": {
+            "assemblyVersion": "1.2.0.0",
+            "fileVersion": "1.2.0.0"
+          }
+        }
+      },
+      "SharpGLTF.Core/1.0.5": {
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SharpGLTF.Runtime/1.0.5": {
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.5"
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Runtime.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SharpGLTF.Toolkit/1.0.5": {
+        "dependencies": {
+          "SharpGLTF.Runtime": "1.0.5"
+        },
+        "runtime": {
+          "lib/net8.0/SharpGLTF.Toolkit.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "SkiaSharp/3.119.0": {
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "3.119.0",
+          "SkiaSharp.NativeAssets.macOS": "3.119.0"
+        },
+        "runtime": {
+          "lib/net8.0/SkiaSharp.dll": {
+            "assemblyVersion": "3.119.0.0",
+            "fileVersion": "3.119.0.0"
+          }
+        }
+      },
+      "SkiaSharp.NativeAssets.Linux.NoDependencies/3.119.0": {
+        "runtimeTargets": {
+          "runtimes/linux-arm/native/libSkiaSharp.so": {
+            "rid": "linux-arm",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-arm64/native/libSkiaSharp.so": {
+            "rid": "linux-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-loongarch64/native/libSkiaSharp.so": {
+            "rid": "linux-loongarch64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-musl-arm/native/libSkiaSharp.so": {
+            "rid": "linux-musl-arm",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-musl-arm64/native/libSkiaSharp.so": {
+            "rid": "linux-musl-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-musl-loongarch64/native/libSkiaSharp.so": {
+            "rid": "linux-musl-loongarch64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-musl-riscv64/native/libSkiaSharp.so": {
+            "rid": "linux-musl-riscv64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-musl-x64/native/libSkiaSharp.so": {
+            "rid": "linux-musl-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-riscv64/native/libSkiaSharp.so": {
+            "rid": "linux-riscv64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-x64/native/libSkiaSharp.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/linux-x86/native/libSkiaSharp.so": {
+            "rid": "linux-x86",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "SkiaSharp.NativeAssets.macOS/3.119.0": {
+        "runtimeTargets": {
+          "runtimes/osx/native/libSkiaSharp.dylib": {
+            "rid": "osx",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "SkiaSharp.NativeAssets.Win32/3.119.0": {
+        "runtimeTargets": {
+          "runtimes/win-arm64/native/libSkiaSharp.dll": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/libSkiaSharp.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x86/native/libSkiaSharp.dll": {
+            "rid": "win-x86",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "System.IO.Hashing/9.0.7": {
+        "runtime": {
+          "lib/net9.0/System.IO.Hashing.dll": {
+            "assemblyVersion": "9.0.0.7",
+            "fileVersion": "9.0.725.31616"
+          }
+        }
+      },
+      "TinyBCSharp/0.1.2": {
+        "runtime": {
+          "lib/net8.0/TinyBCSharp.dll": {
+            "assemblyVersion": "0.0.0.0",
+            "fileVersion": "0.1.2.0"
+          }
+        }
+      },
+      "TinyEXR.NET/0.3.10": {
+        "runtime": {
+          "lib/netstandard2.1/TinyEXR.NET.dll": {
+            "assemblyVersion": "0.3.9.0",
+            "fileVersion": "0.3.9.0"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/linux-x64/native/libTinyEXR.Native.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/osx-arm64/native/libTinyEXR.Native.dylib": {
+            "rid": "osx-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/osx-x64/native/libTinyEXR.Native.dylib": {
+            "rid": "osx-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/win-x64/native/TinyEXR.Native.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "ValveKeyValue/0.13.1.398": {
+        "runtime": {
+          "lib/netstandard2.1/ValveKeyValue.dll": {
+            "assemblyVersion": "0.13.1.0",
+            "fileVersion": "0.13.1.398"
+          }
+        }
+      },
+      "ValvePak/2.0.1.107": {
+        "dependencies": {
+          "System.IO.Hashing": "9.0.7"
+        },
+        "runtime": {
+          "lib/net8.0/ValvePak.dll": {
+            "assemblyVersion": "2.0.1.0",
+            "fileVersion": "2.0.1.107"
+          }
+        }
+      },
+      "ValveResourceFormat/14.1.4764": {
+        "dependencies": {
+          "K4os.Compression.LZ4": "1.3.8",
+          "KeyValues2": "0.8.0",
+          "SharpGLTF.Toolkit": "1.0.5",
+          "SkiaSharp": "3.119.0",
+          "SkiaSharp.NativeAssets.Linux.NoDependencies": "3.119.0",
+          "System.IO.Hashing": "9.0.7",
+          "TinyBCSharp": "0.1.2",
+          "TinyEXR.NET": "0.3.10",
+          "ValveKeyValue": "0.13.1.398",
+          "ValvePak": "2.0.1.107",
+          "ZstdSharp.Port": "0.8.6"
+        },
+        "runtime": {
+          "lib/net9.0/ValveResourceFormat.dll": {
+            "assemblyVersion": "14.1.0.0",
+            "fileVersion": "14.1.4764.0"
+          }
+        }
+      },
+      "ZstdSharp.Port/0.8.6": {
+        "runtime": {
+          "lib/net9.0/ZstdSharp.dll": {
+            "assemblyVersion": "0.8.6.0",
+            "fileVersion": "0.8.6.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "PhysExtractor/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "K4os.Compression.LZ4/1.3.8": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-LhwlPa7c1zs1OV2XadMtAWdImjLIsqFJPoRcIWAadSRn0Ri1DepK65UbWLPmt4riLqx2d40xjXRk0ogpqNtK7g==",
+      "path": "k4os.compression.lz4/1.3.8",
+      "hashPath": "k4os.compression.lz4.1.3.8.nupkg.sha512"
+    },
+    "KeyValues2/0.8.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-B6QSRGR32KJibr4XiVTUW2taJmVMNwhhREFtZ8WUg/bEv8hwOlLDAcUpPgZVewTplR2T1Tl0J5o4ZkwPt7aOiA==",
+      "path": "keyvalues2/0.8.0",
+      "hashPath": "keyvalues2.0.8.0.nupkg.sha512"
+    },
+    "SharpGLTF.Core/1.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HNHKPqaHXm7R1nlXZ764K5UI02IeDOQ5DQKLjwYUVNTsSW27jJpw+wLGQx6ZFoiFYqUlyZjmsu+WfEak2GmJAg==",
+      "path": "sharpgltf.core/1.0.5",
+      "hashPath": "sharpgltf.core.1.0.5.nupkg.sha512"
+    },
+    "SharpGLTF.Runtime/1.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-EVP32k4LqERxSVICiupT8xQvhHSHJCiXajBjNpqdfdajtREHayuVhH0Jmk6uSjTLX8/IIH9XfT34sw3TwvCziw==",
+      "path": "sharpgltf.runtime/1.0.5",
+      "hashPath": "sharpgltf.runtime.1.0.5.nupkg.sha512"
+    },
+    "SharpGLTF.Toolkit/1.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-piQKk7PH2pSWQSQmCSd8cYPaDtAy/ppAD+Mrh2RUhhHI8awl81HqqLyAauwQhJwea3LNaiJ6f4ehZuOGk89TlA==",
+      "path": "sharpgltf.toolkit/1.0.5",
+      "hashPath": "sharpgltf.toolkit.1.0.5.nupkg.sha512"
+    },
+    "SkiaSharp/3.119.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-gR9yVoOta2Mc1Rxt15LD65AckfHMfwjIs/3kkD59C9bT2nYYISsE6uz3t4aMPNHA6CgsIL0Ssn+jE5OVilZ1yw==",
+      "path": "skiasharp/3.119.0",
+      "hashPath": "skiasharp.3.119.0.nupkg.sha512"
+    },
+    "SkiaSharp.NativeAssets.Linux.NoDependencies/3.119.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-e92vdqf1VOETPjy1T67Fs1zPxfGMM1nbrpt69GM5foXSI/iIbq6L9avPz/bl/DbWtb81D0yF/NKjRmXuOZoLcg==",
+      "path": "skiasharp.nativeassets.linux.nodependencies/3.119.0",
+      "hashPath": "skiasharp.nativeassets.linux.nodependencies.3.119.0.nupkg.sha512"
+    },
+    "SkiaSharp.NativeAssets.macOS/3.119.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-YE1vNn0Nyw2PWtv7hw1PYkKJO0itFiQp9vSqGppZUKzQJqwp28a2jgdCMPfYtOiR8KCnDgZqQoynqJRRaE2ZVg==",
+      "path": "skiasharp.nativeassets.macos/3.119.0",
+      "hashPath": "skiasharp.nativeassets.macos.3.119.0.nupkg.sha512"
+    },
+    "SkiaSharp.NativeAssets.Win32/3.119.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-IwC9yx36lOdXVT2DjgmWHl1qkVspfj8ctd4+li8CNnvqdfaTolXCOh6TLznURcPAvzatx9K/tLOB7zT6T8EA9w==",
+      "path": "skiasharp.nativeassets.win32/3.119.0",
+      "hashPath": "skiasharp.nativeassets.win32.3.119.0.nupkg.sha512"
+    },
+    "System.IO.Hashing/9.0.7": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-2sMrwd/AHYipeiOwYcoqD99c4U8F2x7GalonEYxkHUvTLNzE9Pxx2lz8ygS9cOqyDsruYARZAYL5pPVFh/s3lw==",
+      "path": "system.io.hashing/9.0.7",
+      "hashPath": "system.io.hashing.9.0.7.nupkg.sha512"
+    },
+    "TinyBCSharp/0.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-XNqUm7oBpYlxQyUNjpNHk+pEBSlmGsl+wkK2mJU+WNTchwke7kfzdnUQCk0H4ANnIjggz6CKIJz5i/wEFAWJRQ==",
+      "path": "tinybcsharp/0.1.2",
+      "hashPath": "tinybcsharp.0.1.2.nupkg.sha512"
+    },
+    "TinyEXR.NET/0.3.10": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-b/hOsuY+oANVkj/ynk7uplJ224GJhalpPW6kL2Qatc8DYBuiqGzCO447Vu5Ki6l0sawUMUYpgqWb72reDhkJxw==",
+      "path": "tinyexr.net/0.3.10",
+      "hashPath": "tinyexr.net.0.3.10.nupkg.sha512"
+    },
+    "ValveKeyValue/0.13.1.398": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Cm9fOJZ5Meb7uFON2XtvO2oiw/2hxAnkXI+5enms0AGNRZu5vPhw1PF5H1B2W8SbRZxqE/hkzMkWdIOO0MGPzg==",
+      "path": "valvekeyvalue/0.13.1.398",
+      "hashPath": "valvekeyvalue.0.13.1.398.nupkg.sha512"
+    },
+    "ValvePak/2.0.1.107": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-A1aeTwCoE2gc8iRhzCNyqU+vZY3asUwVzf7iyMApeilP15PQ4fmw+V7fZoKVCMp3RXOHcFCXzFmDvQxS8zh0iw==",
+      "path": "valvepak/2.0.1.107",
+      "hashPath": "valvepak.2.0.1.107.nupkg.sha512"
+    },
+    "ValveResourceFormat/14.1.4764": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xHpR5PCwqWShC6Yg67S4jStCTtZ2DcWEt0PlVK9NoIUOED2dPzj/SKUa3YixFpPp5cH7kyM0rmjdkvGYtG4y8g==",
+      "path": "valveresourceformat/14.1.4764",
+      "hashPath": "valveresourceformat.14.1.4764.nupkg.sha512"
+    },
+    "ZstdSharp.Port/0.8.6": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-iP4jVLQoQmUjMU88g1WObiNr6YKZGvh4aOXn3yOJsHqZsflwRsxZPcIBvNXgjXO3vQKSLctXGLTpcBPLnWPS8A==",
+      "path": "zstdsharp.port/0.8.6",
+      "hashPath": "zstdsharp.port.0.8.6.nupkg.sha512"
+    }
+  }
+}

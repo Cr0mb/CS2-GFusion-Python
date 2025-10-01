@@ -1,0 +1,8 @@
+﻿  VisCheck.cpp
+     Creating library C:\Users\traps\OneDrive\Desktop\Test\CS2\VisCheckCS2\x64\Release\vischeck.lib and object C:\Users\traps\OneDrive\Desktop\Test\CS2\VisCheckCS2\x64\Release\vischeck.exp
+  Generating code
+  24 of 5226 functions ( 0.5%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    32 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  vischeck.vcxproj -> C:\Users\traps\OneDrive\Desktop\Test\CS2\VisCheckCS2\x64\Release\vischeck.pyd
