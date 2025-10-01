@@ -2319,13 +2319,52 @@ def main():
                 if flags["name_esp_enabled"]:
                     overlay.draw_text(ent.name, x + w / 2, y - 16, font_color, font_size, centered=True)
 
+                # Base screen position for text (just below the box)
+                base_x = x + w/2
+                base_y = y + h + 20
+                line_spacing = 14  # pixels between lines
+                line_index = 0
+
+                # Coordinates ESP
                 if flags["coordinates_esp_enabled"]:
                     try:
-                        scr = world_to_screen(matrix, ent.pos, overlay.width, overlay.height)
                         txt = f"X: {ent.pos.x:.1f} Y: {ent.pos.y:.1f} Z: {ent.pos.z:.1f}"
-                        overlay.draw_text(txt, scr["x"], scr["y"] + 20, getattr(cfg, "coordinates_esp_color", (255,255,255)), 14, centered=True)
+                        overlay.draw_text(
+                            txt,
+                            base_x,
+                            base_y + line_index * line_spacing,
+                            getattr(cfg, "coordinates_esp_color", (255, 255, 255)),
+                            14,
+                            centered=True
+                        )
+                        line_index += 1
                     except Exception as e:
                         print(f"[Coordinates ESP Error] {e}")
+
+                # Visibility Text ESP
+                if flags["visibility_esp_enabled"] and vis_checker and local_pos:
+                    is_visible = None
+                    try:
+                        is_visible = check_player_visibility(local_pos, ent.pos, vis_checker)
+                    except Exception as e:
+                        if flags["visibility_esp_enabled"] and vis_checker:
+                            is_visible = check_player_visibility(handle, base, vis_checker, local_pos, ent.pos)
+                    
+                    if is_visible is not None and flags["visibility_text_enabled"]:
+                        visibility_text = "VISIBLE" if is_visible else "NOT VISIBLE"
+                        visibility_color = (
+                            flags["color_visible_text"] if is_visible else flags["color_not_visible_text"]
+                        )
+                        overlay.draw_text(
+                            visibility_text,
+                            base_x,
+                            base_y + line_index * line_spacing,
+                            visibility_color,
+                            font_size,
+                            centered=True
+                        )
+                        line_index += 1
+
 
                 # Skeleton ESP
                 if flags["skeleton_esp_enabled"] or flags["bone_esp_enabled"]:
@@ -2363,33 +2402,6 @@ def main():
                             line_index += 1
                     except Exception as e:
                         print(f"[State ESP Error] {e}")
-
-                # Visibility Text ESP
-                if flags["visibility_esp_enabled"] and vis_checker and local_pos:
-                    is_visible = None  # Initialize before try block
-                    try:
-                        is_visible = check_player_visibility(local_pos, ent.pos, vis_checker)
-                    except Exception as e:
-                        if flags["visibility_esp_enabled"] and vis_checker:
-                            is_visible = check_player_visibility(handle, base, vis_checker, local_pos, ent.pos)
-                    
-                    # Only show text if visibility check succeeded AND text is enabled
-                    if is_visible is not None and flags["visibility_text_enabled"]:
-                        if is_visible:
-                            visibility_text = "VISIBLE"
-                            visibility_color = flags["color_visible_text"]
-                        else:
-                            visibility_text = "NOT VISIBLE"
-                            visibility_color = flags["color_not_visible_text"]
-
-                        overlay.draw_text(
-                            visibility_text,
-                            x + w/2, y + h + 22,
-                            visibility_color,
-                            font_size,
-                            centered=True
-                        )
-                        line_index += 1
             
             # END OF ENTITY LOOP - Bomb ESP below runs once per frame, not once per entity
             if flags["bomb_esp_enabled"]:
