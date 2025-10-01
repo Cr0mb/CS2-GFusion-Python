@@ -1148,30 +1148,32 @@ def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, f
     if not (skeleton_enabled or bone_dot_enabled):
         return
 
-    # Base skeleton color (fallback)
-    color_bone = getattr(Config, "color_bone", (255, 255, 255))
-
-    # Team-aware defaults if you want them (optional)
-    # color_bone = (255, 120, 120) if entity.team == 2 else (120, 120, 255)
-
-    # Per-team, per-visibility override
-    is_visible = None
-    if flags.get("visibility_esp_enabled", False) and vis_checker and local_pos:
-        try:
-            is_visible = check_player_visibility(local_pos, entity.pos, vis_checker)
-        except Exception as e:
-            print(f"[VisCheck Skeleton Error] {e}")
-            is_visible = None  # Ensure is_visible is always defined
-
-    if is_visible is not None:
-        if entity.team == 2:  # T
-            color_bone = flags["color_skeleton_visible_t"] if is_visible else flags["color_skeleton_invisible_t"]
-        else:  # CT
-            color_bone = flags["color_skeleton_visible_ct"] if is_visible else flags["color_skeleton_invisible_ct"]
+    # --- Skeleton color selection ---
+    if entity.hp <= 0:
+        # Dead skeleton colors use same config as box
+        color_bone = flags.get("color_dead_t", (128, 0, 0)) if entity.team == 2 else flags.get("color_dead_ct", (0, 0, 128))
     else:
-        # If no visibility info, leave color_bone as-is (team default or generic)
-        pass
+        # Alive skeleton colors
+        if flags.get("visibility_esp_enabled", False) and vis_checker and local_pos:
+            try:
+                is_visible = check_player_visibility(local_pos, entity.pos, vis_checker)
+            except Exception as e:
+                print(f"[VisCheck Skeleton Error] {e}")
+                is_visible = None
 
+            if is_visible is not None:
+                if entity.team == 2:  # T
+                    color_bone = flags.get("color_skeleton_visible_t", (255, 0, 0)) if is_visible else flags.get("color_skeleton_invisible_t", (128, 0, 0))
+                else:  # CT
+                    color_bone = flags.get("color_skeleton_visible_ct", (0, 0, 255)) if is_visible else flags.get("color_skeleton_invisible_ct", (0, 0, 128))
+            else:
+                # fallback if vischeck failed
+                color_bone = getattr(Config, "color_bone", (255, 255, 255))
+        else:
+            # fallback if vischeck disabled
+            color_bone = getattr(Config, "color_bone", (255, 255, 255))
+
+    # --- Bone rendering ---
     bone_dot_size = flags.get("bone_esp_size", 6)
     bone_dot_color = flags.get("bone_esp_color", (255, 0, 255))
     draw_circle = str(flags.get("bone_esp_shape", "circle")).lower() == "circle"
@@ -1210,7 +1212,8 @@ def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, f
                     overlay.draw_circle(x, y, bone_dot_size, bone_dot_color)
                 else:
                     overlay.draw_box(x - bone_dot_size, y - bone_dot_size, bone_dot_size * 2, bone_dot_size * 2, bone_dot_color)
-                   
+
+                 
 class BombStatus:
     def __init__(self, handle, base):
         self.handle = handle
@@ -1909,6 +1912,8 @@ def main():
 
             # Cache all config flags once
             flags = {
+                "color_box_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),   # Dark red
+                "color_dead_ct": getattr(cfg, "color_dead_ct", (0, 0, 128)), # Dark blue
                 "color_box_visible_ct": getattr(cfg, "color_box_visible_ct", getattr(cfg, "color_box_visible", (0, 255, 0))),
                 "color_box_visible_t": getattr(cfg, "color_box_visible_t", getattr(cfg, "color_box_visible", (0, 255, 0))),
                 "color_box_invisible_ct": getattr(cfg, "color_box_invisible_ct", getattr(cfg, "color_box_not_visible", (255, 0, 0))),
@@ -2158,22 +2163,12 @@ def main():
                     is_teammate = ent.team == local_team
                     if (flags["esp_show_enemies_only"] and not is_enemy) or (flags["esp_show_team_only"] and not is_teammate):
                         continue
-                    # Track death timestamp on each entity
-                    if not hasattr(ent, "death_time"):
-                        ent.death_time = None
 
-                    if ent.hp <= 0:
-                        # First time this entity hits 0 HP → record timestamp
-                        if ent.death_time is None:
-                            ent.death_time = time.time()
-                        # Stop drawing if linger time exceeded (1.0s here)
-                        if time.time() - ent.death_time > 1.0:
-                            continue
-                    else:
-                        # Reset if alive again (new round / respawn)
-                        ent.death_time = None
+                    # Configurable death handling
+                    if not getattr(Config, "draw_dead_entities", True) and ent.hp <= 0:
+                        continue
 
-                    # Keep the WTS check separate
+                    # Keep the WTS (world-to-screen) check separate
                     if not ent.wts(matrix, overlay.width, overlay.height):
                         continue
 
@@ -2232,27 +2227,30 @@ def main():
 
                 try:
                     if flags["box_esp_enabled"]:
-                        # Default box color by team
-                        if ent.team == 2:  # T
-                            color = flags["color_box_t"]
-                        else:              # CT (or anything not 2)
-                            color = flags["color_box_ct"]
+                        if ent.hp <= 0:
+                            # Dead player color
+                            color = flags["color_box_dead_t"] if ent.team == 2 else flags["color_box_dead_ct"]
+                        else:
+                            # Alive colors
+                            if ent.team == 2:  # T
+                                color = flags["color_box_t"]
+                            else:              # CT
+                                color = flags["color_box_ct"]
 
-                        # Per-team, per-visibility override
-                        if flags["visibility_esp_enabled"] and vis_checker and local_pos:
-                            is_visible = None  # Initialize before try block
-                            try:
-                                is_visible = check_player_visibility(local_pos, ent.pos, vis_checker)
-                            except Exception as e:
-                                print(f"[VisCheck BoxESP Error] {e}")
-                                is_visible = None  # Ensure is_visible is defined
-                                
-                            # Only apply visibility colors if check succeeded
-                            if is_visible is not None:
-                                if ent.team == 2:  # T
-                                    color = flags["color_box_visible_t"] if is_visible else flags["color_box_invisible_t"]
-                                else:              # CT
-                                    color = flags["color_box_visible_ct"] if is_visible else flags["color_box_invisible_ct"]
+                            # Apply visibility overrides only for alive players
+                            if flags["visibility_esp_enabled"] and vis_checker and local_pos:
+                                is_visible = None
+                                try:
+                                    is_visible = check_player_visibility(local_pos, ent.pos, vis_checker)
+                                except Exception as e:
+                                    print(f"[VisCheck BoxESP Error] {e}")
+                                    is_visible = None
+                                if is_visible is not None:
+                                    if ent.team == 2:
+                                        color = flags["color_box_visible_t"] if is_visible else flags["color_box_invisible_t"]
+                                    else:
+                                        color = flags["color_box_visible_ct"] if is_visible else flags["color_box_invisible_ct"]
+
 
                         style = getattr(cfg, "box_esp_style", "normal")
                         radius = 8
