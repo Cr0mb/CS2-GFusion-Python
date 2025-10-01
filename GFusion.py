@@ -94,7 +94,7 @@ def wait_for_cs2():
     while True:
         if process_exists("cs2.exe"):
             print("[GFusion] cs2.exe found! Waiting 10 seconds before startup...")
-            time.sleep(10)
+            time.sleep(11)
             print("[GFusion] Proceeding with GFusion initialization.")
             return
         time.sleep(2)
@@ -1686,6 +1686,7 @@ class ESPTab(QWidget):
         layout.addWidget(self.section_title("Advanced ESP Features"))
         adv_grid = QGridLayout()
         adv_features = [
+            ("Draw Dead Players", "draw_dead_entities"),
             ("Flash ESP", "flash_esp_enabled"),
             ("Scope ESP", "scope_esp_enabled"),
             ("Head ESP", "head_esp_enabled"),
@@ -1759,6 +1760,8 @@ class ESPTab(QWidget):
             ("Coordinate ESP", "coordinates_esp_color"), ("Trace ESP", "trace_esp_color"),
             ("Money ESP", "color_money_text"), ("Visible Text", "color_visible_text"),
             ("Not Visible Text", "color_not_visible_text"),
+            ("Color Dead CT", "color_dead_ct"),
+            ("Color Dead T", "color_dead_t"),
         ]
         for i, (label, attr) in enumerate(colors):
             self.add_color_picker_to_grid(color_grid, i // 3, i % 3, label, attr)
