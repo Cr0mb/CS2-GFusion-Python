@@ -52,8 +52,9 @@ import ctypes
 import ctypes.wintypes
 
 def wait_for_cs2():
-    """Block until cs2.exe is detected, then wait 16 seconds before continuing."""
+    """Block until cs2.exe is detected AND client.dll is readable."""
     TH32CS_SNAPPROCESS = 0x00000002
+    TH32CS_SNAPMODULE = 0x00000008
 
     class PROCESSENTRY32(ctypes.Structure):
         _fields_ = [
@@ -69,12 +70,27 @@ def wait_for_cs2():
             ("szExeFile", ctypes.c_char * ctypes.wintypes.MAX_PATH),
         ]
 
+    class MODULEENTRY32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", ctypes.wintypes.DWORD),
+            ("th32ModuleID", ctypes.wintypes.DWORD),
+            ("th32ProcessID", ctypes.wintypes.DWORD),
+            ("GlblcntUsage", ctypes.wintypes.DWORD),
+            ("ProccntUsage", ctypes.wintypes.DWORD),
+            ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
+            ("modBaseSize", ctypes.wintypes.DWORD),
+            ("hModule", ctypes.wintypes.HMODULE),
+            ("szModule", ctypes.c_char * 256),
+            ("szExePath", ctypes.c_char * ctypes.wintypes.MAX_PATH),
+        ]
+
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-    def process_exists(exe_name: str) -> bool:
+    def get_pid(exe_name: str):
+        """Get PID of running process by name"""
         snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
         if snapshot == ctypes.wintypes.HANDLE(-1).value:
-            return False
+            return None
 
         entry = PROCESSENTRY32()
         entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
@@ -83,20 +99,43 @@ def wait_for_cs2():
         while success:
             name = entry.szExeFile.split(b"\x00", 1)[0].decode(errors="ignore")
             if name.lower() == exe_name.lower():
+                pid = entry.th32ProcessID
+                kernel32.CloseHandle(snapshot)
+                return pid
+            success = kernel32.Process32Next(snapshot, ctypes.byref(entry))
+
+        kernel32.CloseHandle(snapshot)
+        return None
+
+    def module_exists(pid: int, module_name: str) -> bool:
+        """Check if a module (DLL) is loaded in the process"""
+        snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid)
+        if snapshot == ctypes.wintypes.HANDLE(-1).value:
+            return False
+
+        entry = MODULEENTRY32()
+        entry.dwSize = ctypes.sizeof(MODULEENTRY32)
+
+        success = kernel32.Module32First(snapshot, ctypes.byref(entry))
+        while success:
+            mod_name = entry.szModule.split(b"\x00", 1)[0].decode(errors="ignore")
+            if mod_name.lower() == module_name.lower():
                 kernel32.CloseHandle(snapshot)
                 return True
-            success = kernel32.Process32Next(snapshot, ctypes.byref(entry))
+            success = kernel32.Module32Next(snapshot, ctypes.byref(entry))
 
         kernel32.CloseHandle(snapshot)
         return False
 
-    print("[GFusion] Waiting for cs2.exe to start...")
+    print("[GFusion] Waiting for cs2.exe and client.dll to be ready...")
     while True:
-        if process_exists("cs2.exe"):
-            print("[GFusion] cs2.exe found! Waiting 10 seconds before startup...")
-            time.sleep(11)
-            print("[GFusion] Proceeding with GFusion initialization.")
-            return
+        pid = get_pid("cs2.exe")
+        if pid:
+            if module_exists(pid, "client.dll"):
+                print("[GFusion] cs2.exe and client.dll found! Starting GFusion...")
+                return
+            else:
+                print("[GFusion] cs2.exe found but client.dll not loaded yet, waiting...")
         time.sleep(2)
 
 def register_tab(tab):
