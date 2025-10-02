@@ -75,6 +75,7 @@ import importlib.abc
 import importlib.util
 from cryptography.fernet import Fernet
 import traceback
+import os
 
 key = {FERNET_KEY!r}
 fernet = Fernet(key)
@@ -87,15 +88,8 @@ class AESLoader(importlib.abc.Loader):
         return None
     def exec_module(self, module):
         try:
-            # Debug: Check the type of self.name
-            name_value = {{self.name}}
-            if not isinstance(name_value, str):
-                print("WARNING: Module name is not a string: " + str(name_value) + " (type: " + str(type(name_value)) + ")")
-                # Convert to string if it's somehow not a string
-                if isinstance(name_value, set) and len(name_value) == 1:
-                    name_value = next(iter(name_value))  # Get the single item from set
-                else:
-                    name_value = str(name_value).strip("{{}}").strip("''")  # Fallback conversion
+            # Use self.name directly (it's already a string)
+            name_value = self.name
             
             code_enc = modules[name_value]
             code = fernet.decrypt(code_enc.encode()).decode('utf-8')
@@ -114,13 +108,9 @@ class AESLoader(importlib.abc.Loader):
             else:
                 module.__file__ = name_value + ".py"
             
-            print("Executing module: " + name_value)
             exec(code, module.__dict__)
-            print("Successfully loaded module: " + name_value)
         except Exception as e:
-            print("Error loading module " + str({{self.name}}) + ": " + str(e))
-            print("Module name type: " + str(type({{self.name}})))
-            print("Module name value: " + str({{self.name}}))
+            print("Error loading module " + str(self.name) + ": " + str(e))
             traceback.print_exc()
             raise
     def get_code(self, fullname):
@@ -139,8 +129,10 @@ class AESFinder(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, AESFinder())
 
-# Set up environment for encrypted modules
-import os
+# Set __file__ if not defined (when running with exec)
+if '__file__' not in globals():
+    __file__ = sys.argv[0] if sys.argv[0] else os.path.join(os.getcwd(), 'launcher.py')
+
 # Ensure current directory is set correctly
 if not os.getcwd().endswith('CS2'):
     # Try to find the CS2 directory
@@ -153,7 +145,6 @@ if not os.getcwd().endswith('CS2'):
 if __name__ == '__main__':
     import runpy
     runpy.run_module('{module_name_from_path(MAIN_SCRIPT)}', run_name='__main__')
-    import sys
     sys.exit()
 '''
 
@@ -612,78 +603,30 @@ class LauncherGUI(QWidget):
             else:
                 logging.info("⚠ Running as User - Kernel mode unavailable")
 
-            # Test the launcher file first
-            logging.info("Testing launcher file before execution...")
+            # Quick validation test (syntax check only, no execution)
+            logging.info("Validating launcher file...")
             try:
-                # First, try to run a simpler test
-                test_code = f'''
-import sys
-import os
-try:
-    sys.path.insert(0, os.getcwd())
-    print("Testing basic imports...")
-    
-    # Test cryptography first
-    from cryptography.fernet import Fernet
-    print("Cryptography import: OK")
-    
-    # Test launcher file parsing
-    with open("{LAUNCHER_FILE}", "r", encoding="utf-8") as f:
-        content = f.read()
-    print("Launcher file read: OK")
-    
-    # Test compilation
-    compile(content, "{LAUNCHER_FILE}", "exec")
-    print("Launcher compilation: OK")
-    
-    print("Basic tests passed - trying full execution...")
-    exec(content)
-    
-except Exception as e:
-    print("Test failed:", str(e))
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-'''
+                with open(LAUNCHER_FILE, 'r', encoding='utf-8') as f:
+                    launcher_content = f.read()
                 
-                result = subprocess.run(
-                    [sys.executable, "-c", test_code],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    logging.error(f"Launcher test failed with return code: {result.returncode}")
-                    if result.stderr:
-                        logging.error(f"Error output: {result.stderr}")
-                    if result.stdout:
-                        logging.info(f"Standard output: {result.stdout}")
+                # Just compile it to check for syntax errors
+                compile(launcher_content, LAUNCHER_FILE, 'exec')
+                logging.info("✓ Launcher syntax validation passed")
                     
-                    QMessageBox.critical(
-                        self, 
-                        "Launcher Test Failed", 
-                        f"The launcher file has errors and cannot run:\n\n"
-                        f"Return code: {result.returncode}\n"
-                        f"Error: {result.stderr[:500]}..."
-                    )
-                    return
-                else:
-                    logging.info("✓ Launcher test successful")
-                    
-            except subprocess.TimeoutExpired:
-                logging.error("Launcher test timed out")
-                QMessageBox.warning(
-                    self, 
-                    "Launcher Test Timeout", 
-                    "The launcher test timed out. It may be working but took too long to start."
-                )
-            except Exception as e:
-                logging.error(f"Launcher test error: {e}")
+            except SyntaxError as e:
+                logging.error(f"Launcher has syntax errors: {e}")
                 QMessageBox.critical(
                     self, 
-                    "Launcher Test Error", 
-                    f"Could not test the launcher:\n\n{e}"
+                    "Launcher Syntax Error", 
+                    f"The launcher file has syntax errors:\n\n{e}"
+                )
+                return
+            except Exception as e:
+                logging.error(f"Launcher validation error: {e}")
+                QMessageBox.critical(
+                    self, 
+                    "Launcher Validation Error", 
+                    f"Could not validate launcher:\n\n{e}"
                 )
                 return
 
