@@ -18,42 +18,122 @@ For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
 [**GFusion V2.3**](https://www.youtube.com/watch?v=Bz0EKTYXF2k)<br>
 [**GFusion V2.5**](https://www.youtube.com/watch?v=ZjwLNJX-leY)
 
+```
 
-```markdown
+V1.8 7/30/2025
+- Huge improvements to aimbot & recoil control (more accurate, still legit)
+- Added aim visualization tab to GFusion
+- Integrated Weapon ESP & Weapon color
+- Fixed weird aimbot mouse movement
+- Re-integrated RCS toggle with new aimbot customization options
+```
+```
+
+V1.9 7/31/2025
+- Moved into Misc tab
+  - Grenade Prediction (simple)
+  - Enable No Flash
+  - Spectator List
+- Moved into AimBot tab
+  - Show Aimbot FOV Circle
+- Big updates to menu design
+- Update to Spectator List, now draggable with new design
+- Added GFusion watermark, also draggable
+- Fixed thread toggle with auto pistol issues
+- Added color customization for aim FOV
+- Added keyboard listener to change menu key
+- Added config setting for enemy/team only ESP
+- Added customization for external crosshair size
+- Added always-on Triggerbot
+- Added Auto Pistol
+
+## Bug
+- Crouching with aimbot causes bone position to be incorrect
+```
+```
+
+V2.0 8/1/2025
+- Added Money ESP
+- Added BHop Information Box
+- Fixed Aimbot tab not refreshing UI on config load
+- Added Trace ESP
+- Added Speed ESP
+- Added Velocity ESP
+- Added Coordinates ESP
+```
+```
+
+V2.1 8/3/2025
+- Fixed glow team & glow enemy not refreshing on config load
+- Fixed Aim Sensitivity & Invert Y not refreshing on config load
+```
+
+```
 V2.2 8/4/2025
 - Added OBS Proof for Screen Capture
 ```
 
-```markdown
+```
 V2.3 8/4/2025
 - Made menu OBS Proof for Screen Capture
 ```
 
-```markdown
+```
 V2.4 8/6/2025
 - Added walkbot
 - Update offset_update.py to use https://www.unknowncheats.me/forum/counter-strike-2-a/711462-updated-cs2-dumper.html
 ```
 
-```markdown
+```
 V2.5 8/8/2025
 - Tried to make some performance improvements to ESP overlay
 - Tried to make some performance improvements to Aimbot
 - Added player info box (shows all players info in match)
 - Added show drawing FPS for overlay
-
+ 
 - Changed GDI Windows Overlay to be DirectX11 instead (Huge performance boost in visuals!)
 ```
 
+```
+V2.6 8/13/2025
+- Fixed menu toggle key not working in MISC tab.
+```
 
-# GFusion Feature List
+```
+V2.7 9/7/2025
+- Added Panic Key to ESP with customizable key press.
+- Updated offset_update.py
+- Changed memory reading for Aimbot & ESP for stealth / speed.
+```
 
-<details>
-<summary><strong>Watermark</strong></summary>
+```
+V2.8 9/9/2025
+- Weapon ESP now reads faster
+- Changed memory reading for Aimbot again
+```
 
-- Watermark Toggle
+```
+V2.9 9/9/2025
+- Updated Velocity Prediction
+- Updated menu styling
+- Updated memory reading for BHop
+```
 
-</details>
+```
+V3.0 9/12/2025
+- Updated Aimbot Learning; now records all mouse movements instead of just at aim time.
+```
+
+```
+V3.1 9/14/2025
+- Raw Mouse movements are now visible in Visualize Aim (crashed game prior)
+- Fixed RCS with other aim keys causing compensation bug (aiming above or below player instead of on)
+- Also better recoil compensation for further targets now seems more accurate.
+- Updated start.pyw launcher to match menu styling.
+- Updated styling for the main menu some more.
+- Added rounded box ESP.
+- Added corner box ESP.
+```
 
 <details>
 <summary><strong>ESP Features</strong></summary>
