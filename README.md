@@ -3,6 +3,8 @@
 [UC Forum](https://www.unknowncheats.me/forum/counter-strike-2-releases/711867-gfusion-closet-cheat.html)
 [YouTube](https://www.youtube.com/@cr0mble)
 
+[How to Download and Install GFusion V3.5](https://www.youtube.com/watch?v=HJDb8FdCeRc)
+
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/26e1cd67-c1d9-4c3a-8c1a-97f980a3164b" width="850">
   <img src="https://github.com/user-attachments/assets/c5287c42-4d42-497f-8add-707a9b0a9bd7" width="400">
