@@ -3984,6 +3984,9 @@ class RecoilViewer(QWidget):
             self.canvas.draw()
             return
 
+        # Remember current selection before scanning
+        current_selection = self.dropdown.currentText() if self.dropdown.count() > 0 else None
+
         files = [f for f in os.listdir(path) if f.endswith(".json")]
         new_weapon_ids = set()
         merged_data = {}
@@ -4026,11 +4029,13 @@ class RecoilViewer(QWidget):
         self.dropdown.blockSignals(False)
 
         if self.weapon_ids:
-            cur = self.dropdown.currentText()
-            if cur in self.weapon_ids:
-                self.update_view(cur)
+            # Try to restore previous selection, otherwise use first item
+            if current_selection and current_selection in self.weapon_ids:
+                idx = self.weapon_ids.index(current_selection)
+                self.dropdown.setCurrentIndex(idx)
+                self.update_view(current_selection)
             else:
-                self.dropdown.setCurrentText(self.weapon_ids[0])
+                self.dropdown.setCurrentIndex(0)
                 self.update_view(self.weapon_ids[0])
         else:
             self._style_axes()
