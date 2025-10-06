@@ -69,7 +69,6 @@ SLEEP_INTERVAL = 0.005
 
 def walk_in_circle():
     key_pressed = False
-    print("[+] WalkBot: Running circle loop...")
 
     while Config.walkbot_enabled and not Config.walkbot_stop:
         proc_name = get_foreground_window_process_name()
@@ -89,5 +88,4 @@ def walk_in_circle():
 
     if key_pressed:
         press_key(VK_W, False)
-    print("[+] WalkBot: Circle loop stopped.")
     Config.walkbot_enabled = False

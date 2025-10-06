@@ -355,7 +355,7 @@ class MemoryInterface:
             except Exception as e:
                 print(f"[Memory] ✗ Failed to initialize kernel reader: {e}")
                 if getattr(self.config, 'kernel_fallback_to_usermode', True):
-                    print("[Memory] 🔄 Falling back to usermode...")
+                    print("[Memory] Falling back to usermode...")
                     self._current_reader = self.usermode_reader
                 else:
                     raise Exception(f"Kernel mode required but failed: {e}")
@@ -368,7 +368,7 @@ class MemoryInterface:
             
         # Final status report
         mode = "KERNEL MODE" if self._kernel_mode_active else "USERMODE"
-        print(f"[Memory] 📊 Final Status: {mode} - Ready for operations")
+        print(f"[Memory] Final Status: {mode} - Ready for operations")
     
     def is_kernel_mode_active(self) -> bool:
         """Check if kernel mode is currently active"""
