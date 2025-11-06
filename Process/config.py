@@ -1,40 +1,74 @@
 import json
 import os
+import shutil
+import time
 import win32con
 
-class Config:    
+class Config:
+    """
+    GFusion Configuration (with safe persistence)
+    - Atomic JSON save with backup
+    - Tuple<->list normalization for colors
+    - Runtime-only key filtering on save
+    - Backfill defaults for new fields on load
+    - Simple schema versioning
+    """
+
+    # ------------------------------
+    # Persistence meta
+    # ------------------------------
+    schema_version = 1
+    configs_dir = "config"
+    current_config_name = "default"
+
+    # ---- Config persistence (UI will read/write these) ----
+    autosave_enabled = True
+    autosave_minutes = 5
+
+    # ============================================================
+    #   GFusion Configuration
+    # ============================================================
+
     # ===========================
-    # Core Controls
+    #  Watermark / Overlay
     # ===========================
+    watermark_enabled = True
+    use_gpu_overlay = False
+    show_overlay_fps = False
+    obs_protection_enabled = False
+
+    team_list_enabled = False
+    color_box_t = (255, 200, 0)
+    color_box_ct = (255, 200, 255)
+    color_local_box_background = (30, 30, 30)
+    color_local_box_border = (100, 100, 100)
+
+    # Panic key
     panic_key_enabled = True
     panic_key = 0x2E  # VK_DELETE
     panic_mode_active = False
 
-    toggle_menu_key = 'insert'
-    use_gpu_overlay = False
-    obs_protection_enabled = False
-
     # ===========================
-    # Watermark
-    # ===========================
-    watermark_enabled = True
-
-    # ===========================
-    # Walk Bot
+    #  Walk Bot
     # ===========================
     circle_enabled = False
     circle_stop = False
+    walkbot_enabled = False
 
     # ===========================
-    # ESP Toggles
+    #  ESP Toggles
     # ===========================
+    show_map_status_box = False
+    visible_only_esp_enabled = False
+
     show_box_esp = True
-    box_esp_style = "normal"   # options: normal, rounded, corner
-    show_map_status_box = True
-    show_overlay_fps = False
-    show_local_info_box = False
+    box_esp_style = "normal"  # options: normal, rounded, corner
 
-    # Core ESP features
+    draw_dead_entities = False
+    
+    # World ESP master toggle
+    world_esp_enabled = False
+
     healthbar_enabled = False
     armorbar_enabled = False
     health_esp_enabled = False
@@ -44,142 +78,123 @@ class Config:
     spectator_list_enabled = False
     skeleton_esp_enabled = False
     head_esp_enabled = False
-    bone_dot_esp_enabled = False
-    line_esp_enabled = False
     distance_esp_enabled = False
     name_esp_enabled = False
-    velocity_esp = False
-    velocity_esp_text = False
-    speed_esp = False
-    coordinates_esp_enabled = False
-    trace_esp_enabled = False
-    money_esp_enabled = False
-
-    trace_esp_max_points = 150
-    draw_dead_entities = True
-
-    # Entity-specific ESP
-    dropped_weapon_esp_enabled = True
-    projectile_esp_enabled = True
-    chicken_esp_enabled = True
-    hostage_esp_enabled = True
-    bomb_esp_enabled = True
-    weapon_esp_enabled = False   # draws carried weapons (if supported)
-
-    # Filtering
+    bone_dot_esp_enabled = False
+    line_esp_enabled = False
+    bomb_esp_enabled = False
+    weapon_esp_enabled = False
     esp_show_enemies_only = True
     esp_show_team_only = False
-    visible_only_esp_enabled = False
 
-    # ESP Customization
-    crosshair_size = 6
-    crosshair_color = (255, 255, 255)
+    velocity_esp = False
+    speed_esp = False
+    velocity_esp_text = False
+    coordinates_esp_enabled = False
 
-    head_esp_size = 5
-    head_esp_shape = "circle"
+    trace_esp_enabled = False
+    trace_esp_max_points = 150
 
-    bone_dot_size = 6
-    bone_dot_shape = "circle"
-
-    line_esp_position = "bottom"
-
-    # World item stacking
-    dropped_weapon_stack_spacing = 14
-    dropped_weapon_stack_max = 6
-
-    # ===========================
-    # ESP Colors
-    # ===========================
-    # General boxes
-    color_box_visible_ct = (0, 200, 255)
-    color_box_invisible_ct = (0, 70, 120)
-    color_box_visible_t = (255, 200, 0)
-    color_box_invisible_t = (120, 70, 0)
-    color_box_t = (255, 0, 0)
-    color_box_ct = (0, 0, 255)
-
-    # Skeleton & bones
-    color_skeleton_visible_ct = (0, 200, 255)
-    color_skeleton_invisible_ct = (0, 70, 120)
-    color_skeleton_visible_t = (255, 200, 0)
-    color_skeleton_invisible_t = (120, 70, 0)
-    color_bone = (0, 255, 0)
-    color_head = (255, 255, 255)
-    bone_dot_color = (255, 0, 255)
-
-    # Bars & text
-    color_healthbar = (0, 255, 0)
-    color_armorbar = (173, 216, 230)
-    color_hp_text = (0, 255, 0)
-    color_armor_text = (173, 216, 230)
-    color_name = (255, 255, 255)
-    color_name_effects = (255, 215, 0)
-    color_distance = (255, 255, 255)
-    color_flash_scope = (255, 255, 0)
-    color_spectators = (255, 165, 0)
-    color_weapon_text = (200, 200, 255)
-    color_money_text = (0, 255, 0)
+    money_esp_enabled = False
 
     # Local info box
+    show_local_info_box = False
     color_local_box_background = (30, 30, 30)
     color_local_box_border = (100, 100, 100)
     color_local_velocity_text = (255, 255, 255)
     color_local_speed_text = (180, 255, 180)
     color_local_coords_text = (200, 200, 255)
 
-    # Velocity / trace
+    # Visibility Check ESP
+    visibility_esp_enabled = True
+    visibility_text_enabled = False
+    visibility_map_file = "de_mirage.opt"
+
+    # ===========================
+    #  ESP Customization
+    # ===========================
+    head_esp_size = 5
+    head_esp_shape = "circle"
+
+    bone_dot_shape = "circle"
+    bone_dot_size = 6
+
+    line_esp_position = "bottom"
+    color_line = (255, 255, 255)
+    crosshair_size = 6
+
+    # ===========================
+    #  ESP Colors
+    # ===========================
+    color_box_visible_ct = (0, 200, 255)
+    color_box_invisible_ct = (0, 70, 120)
+    color_box_visible_t = (255, 200, 0)
+    color_box_invisible_t = (120, 70, 0)
+
+    color_skeleton_visible_ct = (0, 200, 255)
+    color_skeleton_invisible_ct = (0, 70, 120)
+    color_skeleton_visible_t = (255, 200, 0)
+    color_skeleton_invisible_t = (120, 70, 0)
+
+    color_box_t = (255, 0, 0)
+    color_box_ct = (0, 0, 255)
+    color_bone = (0, 255, 0)
+    color_head = (255, 255, 255)
+    bone_dot_color = (255, 0, 255)
+
+    color_healthbar = (0, 255, 0)
+    color_armorbar = (173, 216, 230)
+    color_hp_text = (0, 255, 0)
+    color_armor_text = (173, 216, 230)
+
+    color_name = (255, 255, 255)
+    color_name_effects = (255, 215, 0)
+    color_distance = (255, 255, 255)
+    color_flash_scope = (255, 255, 0)
+    color_spectators = (255, 165, 0)
+
+    color_weapon_text = (200, 200, 255)
+    color_money_text = (0, 255, 0)
+
+    fov_overlay_color = (0, 255, 0)
+    crosshair_color = (255, 255, 255)
+
     trace_esp_color = (0, 255, 255)
     velocity_text_color = (255, 0, 0)
     velocity_esp_color = (255, 0, 0)
     speed_esp_color = (0, 255, 255)
     coordinates_esp_color = (0, 255, 255)
 
-    # Dead entities
-    color_dead_ct = (0, 0, 128)
-    color_dead_t = (128, 0, 0)
-
-    # Visibility
-    visibility_esp_enabled = True
-    visibility_text_enabled = True
-    visibility_map_file = "de_mirage.opt"
-    color_visible_text = (0, 255, 0)      # Green
-    color_not_visible_text = (255, 0, 0)  # Red
-
-    # World items
-    dropped_weapon_esp_color = (200, 200, 255)
-    projectile_esp_color = (255, 100, 100)
-    chicken_esp_color = (255, 255, 0)
-    hostage_box_color = (100, 200, 100)
-    hostage_esp_color = (0, 255, 0)
-
-    bomb_esp_color = (255, 200, 0)
-    dropped_bomb_esp_enabled = True
-    dropped_bomb_esp_color = (255, 200, 0)
-    planted_bomb_esp_enabled = True
-    planted_bomb_color = (255, 100, 0)
-    bomb_defuse_timer_enabled = True
+    # Visibility ESP Colors
+    color_visible_text = (0, 255, 0)
+    color_not_visible_text = (255, 0, 0)
 
     # ===========================
-    # FOV & Overlay
+    #  FOV & Overlay
     # ===========================
     fov_circle_enabled = False
-    fov_overlay_color = (0, 255, 0)
+    draw_crosshair_enabled = False
     fov_info_overlay_enabled = False
 
     # ===========================
-    # Misc Visuals
+    #  Misc Visuals
     # ===========================
     grenade_prediction_enabled = False
     noflash_enabled = False
 
     # ===========================
-    # Bunny Hop (BHop)
+    #  GUI
+    # ===========================
+    toggle_menu_key = 'insert'
+
+    # ===========================
+    #  Bunny Hop (BHop)
     # ===========================
     bhop_enabled = False
     bhop_stop = False
 
     # ===========================
-    # Glow ESP
+    #  Glow ESP
     # ===========================
     glow = False
     glow_stop = False
@@ -189,7 +204,7 @@ class Config:
     glow_color_team = (0, 0, 1, 1)
 
     # ===========================
-    # TriggerBot
+    #  TriggerBot
     # ===========================
     triggerbot_enabled = False
     triggerbot_stop = False
@@ -197,22 +212,28 @@ class Config:
     triggerbot_cooldown = 0.2
     shoot_teammates = False
     triggerbot_always_on = False
+    # Optional anti-detection fields used by new UI (safe if absent)
+    trigger_delay_min = 0.000
+    trigger_delay_max = 0.120
+    trigger_jitter = 0.0
+    trigger_burst_shots = 1
+    trigger_require_vischeck = True
 
     # ===========================
-    # Auto Pistol
+    #  Auto Pistol
     # ===========================
     auto_pistol_enabled = False
     activation_key = "alt"
     fire_rate = 1.0
 
     # ===========================
-    # FOV Changer
+    #  FOV Changer
     # ===========================
     fov_changer_enabled = False
     game_fov = 90
 
     # ===========================
-    # Aimbot Core Settings
+    #  Aimbot Core Settings
     # ===========================
     enabled = True
     aim_key = "mouse1"
@@ -226,11 +247,15 @@ class Config:
     aim_start_delay = 0
     downward_offset = 62
     DeathMatch = False
+
+    rcs_grace_after_damage = True
+    rcs_grace_time = 0.12  # renamed for clarity
+
     visibility_aim_enabled = True
     enable_logging = True
 
     # ===========================
-    # Aimbot Humanization
+    #  Aimbot Humanization
     # ===========================
     humanization_enabled = True
     aim_jitter_enabled = True
@@ -247,16 +272,16 @@ class Config:
     overshoot_amount = 1.2
 
     # ===========================
-    # Aimbot Learning & Prediction
+    #  Aimbot Learning & Prediction
     # ===========================
-    enable_learning = False
+    enable_learning = True
     learn_dir = "aimbot_data"
     enable_velocity_prediction = False
     velocity_prediction_factor = 0.1
     enable_mouse_recording = True
 
     # ===========================
-    # Aimbot Smooth / Sensitivity
+    #  Aimbot Smooth / Sensitivity
     # ===========================
     smooth_base = 0.24
     smooth_var = 0.00
@@ -265,116 +290,227 @@ class Config:
     max_mouse_move = 5
 
     # ===========================
-    # Recoil Control System (RCS)
+    #  Recoil Control System (RCS)
     # ===========================
-    rcs_enabled = False
+    rcs_enabled = True
     rcs_scale = 2.0
     rcs_smooth_base = 1.00
     rcs_smooth_var = 0.01
-    rcs_grace_after_damage = 0.12
 
     # ===========================
-    # Kernel Mode Driver
+    #  Kernel Mode Driver (NeacController)
     # ===========================
-    kernel_mode_enabled = True
-    kernel_driver_auto_start = True
-    kernel_fallback_to_usermode = True
+    kernel_mode_enabled = False
+    kernel_driver_auto_start = False
+    kernel_fallback_to_usermode = False
 
     # ===========================
-    # Utility
+    #  Utility
     # ===========================
     aim_stop = False
 
+    # ------------------------------
+    # Serialization helpers
+    # ------------------------------
+    @classmethod
+    def _json_safe(cls, value):
+        """Convert tuples -> lists (JSON), keep primitives, lists, dicts as-is."""
+        if isinstance(value, tuple):
+            return list(value)
+        return value
 
+    @classmethod
+    def _normalize_loaded_value(cls, key, loaded_value):
+        """Convert lists back to tuples when the default is a tuple; clamp color types."""
+        try:
+            default = getattr(cls, key)
+        except AttributeError:
+            return loaded_value
+
+        # tuple restoration
+        if isinstance(default, tuple) and isinstance(loaded_value, list):
+            loaded_value = tuple(loaded_value)
+
+        # basic color sanity (0..255 for rgb[a] ints; allow floats 0..1 in glow colors)
+        if "color" in key:
+            if isinstance(loaded_value, tuple):
+                if all(isinstance(x, (int, float)) for x in loaded_value):
+                    # if default is float rgba (like glow), keep floats in 0..1
+                    if all(isinstance(x, float) for x in default):
+                        loaded_value = tuple(max(0.0, min(1.0, float(x))) for x in loaded_value)
+                    else:
+                        loaded_value = tuple(max(0, min(255, int(x))) for x in loaded_value)
+        return loaded_value
 
     @classmethod
     def to_dict(cls):
-        result = {}
+        """Class -> plain dict suitable for JSON (filters dunders/callables)."""
+        result = {"schema_version": cls.schema_version}
         for key in dir(cls):
-            if key.startswith("__") or callable(getattr(cls, key)):
+            if key.startswith("_"):
                 continue
-            value = getattr(cls, key)
-            # Convert tuples to lists for JSON compatibility
-            if isinstance(value, tuple):
-                result[key] = list(value)
-            else:
-                result[key] = value
+            try:
+                value = getattr(cls, key)
+            except Exception:
+                continue
+            if callable(value):
+                continue
+            # Skip properties (rare)
+            if isinstance(value, property):
+                continue
+            result[key] = cls._json_safe(value)
         return result
 
     @classmethod
     def from_dict(cls, data: dict):
+        """Apply values conservatively; ignore unknown, normalize types."""
         for key, value in data.items():
+            if key == "schema_version":
+                continue
             if hasattr(cls, key):
                 try:
-                    current = getattr(cls, key)
-                    # Convert lists back to tuples if original was a tuple
-                    if isinstance(current, tuple) and isinstance(value, list):
-                        setattr(cls, key, tuple(value))
-                    else:
-                        setattr(cls, key, value)
+                    norm = cls._normalize_loaded_value(key, value)
+                    setattr(cls, key, norm)
                 except Exception as e:
-                    print(f"[Config] Warning: Could not set {key} = {value}: {e}")
+                    print(f"[Config] Warn: Could not set {key} = {value}: {e}")
             else:
-                print(f"[Config] Warning: Unknown config attribute '{key}' ignored")
+                # stay quiet or log once if you prefer
+                # print(f"[Config] Info: Unknown key '{key}' ignored")
+                pass
+
+        # Backfill new keys if missing (keeps older configs working)
+        if not hasattr(cls, "autosave_enabled"):
+            cls.autosave_enabled = False
+        if not hasattr(cls, "autosave_minutes"):
+            cls.autosave_minutes = 5
+        if not hasattr(cls, "configs_dir"):
+            cls.configs_dir = "config"
+        if not hasattr(cls, "current_config_name"):
+            cls.current_config_name = "default"
+
+    # ------------------------------
+    # Persistence API
+    # ------------------------------
+    @classmethod
+    def _config_path(cls, filename: str) -> str:
+        os.makedirs(cls.configs_dir, exist_ok=True)
+        return os.path.join(cls.configs_dir, f"{filename}.json")
 
     @classmethod
-    def save_to_file(cls, filename):
-        os.makedirs("config", exist_ok=True)
+    def save_to_file(cls, filename: str):
+        """
+        Atomic save:
+          - writes to <name>.json.tmp
+          - renames existing file to .bak (one backup)
+          - renames tmp -> final
+        Filters runtime-only keys if you add them below.
+        """
+        path = cls._config_path(filename)
+        tmp_path = path + ".tmp"
+        bak_path = path + ".bak"
+
         try:
-            config_data = cls.to_dict()
-            
-            # Remove runtime-only attributes that shouldn't be saved
-            runtime_only = [
-                'visibility_map_path',  # Current loaded map path (runtime)
-                'visibility_map_file',  # Specific map file (runtime, auto-detected)
-                'visibility_map_loaded',  # Map loaded status (runtime)
-                'visibility_map_reload_needed',  # Reload flag (runtime)
-            ]
-            for key in runtime_only:
-                config_data.pop(key, None)
-            
-            # Ensure visibility ESP settings are included (but NOT map file name)
-            if not any('visibility' in key for key in config_data.keys()):
-                print("[Config] Warning: Visibility ESP settings missing, adding defaults")
-                config_data['visibility_esp_enabled'] = getattr(cls, 'visibility_esp_enabled', False)
-                # Note: visibility_map_file is NOT saved - maps are auto-detected per session
-                config_data['color_visible_text'] = getattr(cls, 'color_visible_text', (0, 255, 0))
-                config_data['color_not_visible_text'] = getattr(cls, 'color_not_visible_text', (255, 0, 0))
-            
-            with open(f"config/{filename}.json", "w") as f:
-                json.dump(config_data, f, indent=4)
-            print(f"[Config] Saved {len(config_data)} settings to {filename}.json")
+            data = cls.to_dict()
+
+            # ---- strip runtime-only keys here if any appear in class namespace
+            runtime_only = {
+                # visibility runtime state (kept in-memory only)
+                "visibility_map_path",
+                "visibility_map_loaded",
+                "visibility_map_reload_needed",
+                # ephemeral flags
+                "panic_mode_active",
+            }
+            for k in runtime_only:
+                data.pop(k, None)
+
+            # DO NOT persist map file name if you prefer auto-detect per session:
+            # (If you actually want to persist it, comment out the next line.)
+            data.pop("visibility_map_file", None)
+
+            # write tmp
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+            # rotate backup (best-effort)
+            if os.path.exists(path):
+                try:
+                    # keep 1 .bak; overwrite
+                    shutil.copyfile(path, bak_path)
+                except Exception as e:
+                    print(f"[Config] Backup warn: {e}")
+
+            # commit
+            os.replace(tmp_path, path)
+            cls.current_config_name = filename
+            print(f"[Config] Saved {len(data)} settings to {os.path.basename(path)}")
+
         except Exception as e:
-            print(f"[Config] Error saving to {filename}.json: {e}")
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            print(f"[Config] Error saving '{filename}': {e}")
             raise
 
     @classmethod
-    def load_from_file(cls, filename):
-        path = f"config/{filename}.json"
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    data = json.load(f)
-                    cls.from_dict(data)
-                    
-                    # Ensure new visibility ESP settings have defaults if missing
-                    if not hasattr(cls, 'visibility_esp_enabled') or not hasattr(cls, 'visibility_map_file'):
-                        print("[Config] Adding missing visibility ESP defaults")
-                        if not hasattr(cls, 'visibility_esp_enabled'):
-                            cls.visibility_esp_enabled = False
-                        if not hasattr(cls, 'visibility_text_enabled'):
-                            cls.visibility_text_enabled = True
-                        if not hasattr(cls, 'visibility_map_file'):
-                            cls.visibility_map_file = 'de_mirage.opt'
-                        if not hasattr(cls, 'color_visible_text'):
-                            cls.color_visible_text = (0, 255, 0)
-                        if not hasattr(cls, 'color_not_visible_text'):
-                            cls.color_not_visible_text = (255, 0, 0)
-                    
-                    print(f"[Config] Loaded config from {filename}.json")
-            except json.JSONDecodeError as e:
-                print(f"[Config] Error: Invalid JSON in {filename}.json: {e}")
-            except Exception as e:
-                print(f"[Config] Error loading {filename}.json: {e}")
-        else:
-            print(f"[Config] Config file {filename}.json not found, using defaults")
+    def load_from_file(cls, filename: str):
+        """
+        Load config safely:
+          - reads JSON
+          - applies with type normalization
+          - backfills defaults for newly added fields
+        """
+        path = cls._config_path(filename)
+        if not os.path.exists(path):
+            print(f"[Config] {os.path.basename(path)} not found, using defaults")
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # migrate if older schemas appear (hook for future upgrades)
+            file_schema = data.get("schema_version", 0)
+            if file_schema < cls.schema_version:
+                data = cls._migrate_schema(data, file_schema)
+
+            cls.from_dict(data)
+
+            # Ensure visibility defaults exist even if older file lacked them
+            if not hasattr(cls, 'visibility_esp_enabled'):
+                cls.visibility_esp_enabled = False
+            if not hasattr(cls, 'visibility_text_enabled'):
+                cls.visibility_text_enabled = True
+            if not hasattr(cls, 'color_visible_text'):
+                cls.color_visible_text = (0, 255, 0)
+            if not hasattr(cls, 'color_not_visible_text'):
+                cls.color_not_visible_text = (255, 0, 0)
+
+            cls.current_config_name = filename
+            print(f"[Config] Loaded config from {os.path.basename(path)}")
+
+        except json.JSONDecodeError as e:
+            print(f"[Config] Error: Invalid JSON in {os.path.basename(path)}: {e}")
+        except Exception as e:
+            print(f"[Config] Error loading '{filename}': {e}")
+
+    @classmethod
+    def read_config_dict(cls, filename: str):
+        """Helper used by Export in the Config tab."""
+        path = cls._config_path(filename)
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    # ------------------------------
+    # Schema migration (stub)
+    # ------------------------------
+    @classmethod
+    def _migrate_schema(cls, data: dict, from_version: int) -> dict:
+        """If we bump schema_version later, transform older data -> new format."""
+        migrated = dict(data)
+        # Example: if from_version == 0: (perform mappings)
+        # migrated["schema_version"] = cls.schema_version
+        migrated["schema_version"] = cls.schema_version
+        return migrated

@@ -134,7 +134,7 @@ class CS2GlowManager:
             entry = self._read_ull(entities + 0x10)
             if not entry:
                 continue
-            ctrl = self._read_ull(entry + i * 0x78)
+            ctrl = self._read_ull(entry + i * 0x70)  # CS2 update: stride 0x78->0x70 (120->112)
             if not ctrl:
                 continue
             pawn_handle = self._read_i(ctrl + Offsets.m_hPlayerPawn)
@@ -142,7 +142,7 @@ class CS2GlowManager:
                 continue
 
             ent2 = self._read_ull(entities + 0x8 * ((pawn_handle & 0x7FFF) >> 9) + 0x10)
-            pawn = self._read_ull(ent2 + 0x78 * (pawn_handle & 0x1FF)) if ent2 else 0
+            pawn = self._read_ull(ent2 + 0x70 * (pawn_handle & 0x1FF)) if ent2 else 0  # CS2 update: stride 0x78->0x70
             if not pawn or pawn == local:
                 continue
             if self._read_u(pawn + Offsets.m_lifeState) != 256:

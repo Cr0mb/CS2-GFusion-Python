@@ -188,7 +188,7 @@ class TriggerBot:
                 return
 
             entEntry = self.memory.read_longlong(entList + 0x8 * (entityId >> 9) + 0x10)
-            entity = self.memory.read_longlong(entEntry + 120 * (entityId & 0x1FF))
+            entity = self.memory.read_longlong(entEntry + 112 * (entityId & 0x1FF))  # CS2 update: stride 120->112
             if not entity:
                 return
 

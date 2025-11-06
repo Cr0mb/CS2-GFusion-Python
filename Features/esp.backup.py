@@ -1,3 +1,5 @@
+
+# === Imports (preserved order) ===
 import math
 import time
 import win32api
@@ -14,9 +16,94 @@ import threading
 from Process.config import Config
 from Process.offsets import Offsets
 from Process.memory_interface import MemoryInterface
-from Features import worldesp
+
+
+# ---- Per-frame caching proxy for MemoryInterface (stable, drop-in) ----
+class CachingMemory:
+    """Per-frame cache for read_* calls. Clear via new_frame() once per render."""
+    def __init__(self, inner):
+        self._m = inner
+        self._cache = {}
+        # commonly accessed attributes are proxied directly
+        for attr in ("process_id", "process_handle", "client_base", "module_base"):
+            if hasattr(inner, attr):
+                setattr(self, attr, getattr(inner, attr))
+
+    def __getattr__(self, k):
+        # Delegate any non-cached attribute or method
+        return getattr(self._m, k)
+
+    def new_frame(self):
+        self._cache.clear()
+
+    # Key factory
+    def _k(self, kind, addr, extra=None):
+        try:
+            a = int(addr) & 0xFFFFFFFFFFFFFFFF
+        except Exception:
+            a = 0
+        return (kind, a, extra)
+
+    # Cached reads
+    def read_bytes(self, address, size):
+        key = self._k("bytes", address, int(size))
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_bytes(address, size)
+        self._cache[key] = v
+        return v
+
+    def read_uint64(self, address):
+        key = self._k("u64", address)
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_uint64(address)
+        self._cache[key] = v
+        return v
+
+    def read_uint32(self, address):
+        key = self._k("u32", address)
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_uint32(address)
+        self._cache[key] = v
+        return v
+
+    def read_int(self, address):
+        key = self._k("i32", address)
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_int(address)
+        self._cache[key] = v
+        return v
+
+    def read_float(self, address):
+        key = self._k("f32", address)
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_float(address)
+        self._cache[key] = v
+        return v
+
+    def read_vec3(self, address):
+        key = self._k("v3", address)
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_vec3(address)
+        self._cache[key] = v
+        return v
+
+    def read_matrix(self, address):
+        key = self._k("m4", address)
+        if key in self._cache:
+            return self._cache[key]
+        v = self._m.read_matrix(address)
+        self._cache[key] = v
+        return v
 
 # Add current directory to path for vischeck.pyd
+
+# === Globals / configuration (preserved) ===
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
@@ -72,88 +159,55 @@ current_detected_map = ""
 
 
 
+
+# ## Math & data primitives
+
 class Vec3(ctypes.Structure):
     _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
 
-class Grenade:
-    def __init__(self, position, velocity, gravity=800.0):
-        self.position = position
-        self.velocity = velocity
-        self.gravity = gravity
-        self.path = []
+# ## Math helpers
 
-    def simulate(self, steps=150, interval=0.015):
-        pos = Vec3(self.position.x, self.position.y, self.position.z)
-        vel = Vec3(self.velocity.x, self.velocity.y, self.velocity.z)
+def world_to_screen(matrix, pos, width, height):
+    if pos is None:
+        return None
 
-        for _ in range(steps):
-            # Save the current position
-            self.path.append(Vec3(pos.x, pos.y, pos.z))
+    x = matrix[0] * pos.x + matrix[1] * pos.y + matrix[2] * pos.z + matrix[3]
+    y = matrix[4] * pos.x + matrix[5] * pos.y + matrix[6] * pos.z + matrix[7]
+    w = matrix[12] * pos.x + matrix[13] * pos.y + matrix[14] * pos.z + matrix[15]
 
-            # Apply gravity
-            vel.z -= self.gravity * interval
+    if w < 0.1:
+        return None
 
-            # Update position
-            pos.x += vel.x * interval
-            pos.y += vel.y * interval
-            pos.z += vel.z * interval
+    inv_w = 1.0 / w
+    return {
+        "x": width / 2 + (x * inv_w) * width / 2,
+        "y": height / 2 - (y * inv_w) * height / 2
+    }
 
-            # Stop if grenade hits the ground (basic check)
-            if pos.z < 0:
-                break
+def clamp_box_to_screen(pos, w, h, screen_w, screen_h):
+    x = max(0, min(pos[0], screen_w - w))
+    y = max(0, min(pos[1], screen_h - h))
+    pos[0], pos[1] = x, y
 
-def estimate_grenade_velocity(view_angle, throw_strength=1.3, base_velocity=550.0):
-    pitch, yaw = math.radians(view_angle[0]), math.radians(view_angle[1])
-    velocity = base_velocity * throw_strength
+# === Drawing small UI blocks ===
 
-    out = Vec3(
-        math.cos(pitch) * math.cos(yaw),
-        math.cos(pitch) * math.sin(yaw),
-        -math.sin(pitch)
-    )
+def point_in_box(px, py, pos, w, h):
+    return pos[0] <= px <= pos[0] + w and pos[1] <= py <= pos[1] + h
 
-    out.x *= velocity
-    out.y *= velocity
-    out.z *= velocity
+spectator_list_pos = [20, 300]  # initial x,y position on screen
+spectator_list_dragging = False
+spectator_list_drag_offset = [0, 0]
 
-    return out
+watermark_pos = [20, 20]
+watermark_dragging = False
+watermark_drag_offset = [0, 0]
 
-# --- Memory Reading Utilities ---
-# Global memory interface - will be set in main()
-_memory_interface = None
+# NEW: Map status draggable globals
+map_status_pos = [20, 60]
+map_status_dragging = False
+map_status_drag_offset = [0, 0]
 
-def set_memory_interface(memory_interface):
-    """Set the global memory interface for this module"""
-    global _memory_interface
-    _memory_interface = memory_interface
-
-def get_weapon_name_from_entity(handle, weapon_entity):
-    """
-    - weapon_entity + 0x10 → entity identity
-    - identity + 0x20 → pDesignerName (string ptr)
-    - deref & read string
-    """
-    try:
-        entity_identity = safe_read_uint64(handle, weapon_entity + 0x10)
-        if not entity_identity:
-            return ""
-
-        designer_name_ptr = safe_read_uint64(handle, entity_identity + 0x20)
-        if not designer_name_ptr:
-            return ""
-
-        sBuffer = read_string(handle, designer_name_ptr, 64)
-        if not sBuffer:
-            return ""
-
-        # Strip "weapon_" prefix if present
-        if sBuffer.startswith("weapon_"):
-            return sBuffer[7:]
-        else:
-            return sBuffer  # leave skins, knives, gloves, etc untouched
-    except Exception as e:
-        print(f"[get_weapon_name_from_entity] Error: {e}")
-        return ""
+# ## Memory helpers
 
 def read_bytes(handle, addr, size):
     """Read bytes using unified memory interface"""
@@ -179,16 +233,6 @@ def read_bytes(handle, addr, size):
         return b"\x00" * size
 
     return buf.raw
-
-def read_string(handle, addr, max_len=64):
-    """Read a null-terminated string from memory"""
-    try:
-        raw = read_bytes(handle, addr, max_len)
-        if not raw:
-            return ""
-        return raw.split(b"\x00", 1)[0].decode("utf-8", errors="ignore")
-    except Exception:
-        return ""
 
 def unpack(fmt, data): return struct.unpack(fmt, data)[0]
 
@@ -231,43 +275,34 @@ WriteProcessMemory.argtypes = [
 ]
 WriteProcessMemory.restype = wintypes.BOOL
 
-def write_float(process_handle, address, value):
-    """Write float using unified memory interface"""
-    if _memory_interface:
-        return _memory_interface.write_float(address, value)
-    
-    # Fallback to original implementation
-    float_value = c_float(value)
-    bytes_written = c_size_t(0)
-    result = WriteProcessMemory(
-        process_handle,
-        ctypes.c_void_p(address),
-        ctypes.byref(float_value),
-        ctypes.sizeof(float_value),
-        byref(bytes_written)
-    )
-    if not result or bytes_written.value != ctypes.sizeof(float_value):
-        raise ctypes.WinError()
-    return True
+# ## Game models
 
-# --- Screen Projection ---
+class Grenade:
+    def __init__(self, position, velocity, gravity=800.0):
+        self.position = position
+        self.velocity = velocity
+        self.gravity = gravity
+        self.path = []
 
-def world_to_screen(matrix, pos, width, height):
-    if pos is None:
-        return None
+    def simulate(self, steps=150, interval=0.015):
+        pos = Vec3(self.position.x, self.position.y, self.position.z)
+        vel = Vec3(self.velocity.x, self.velocity.y, self.velocity.z)
 
-    x = matrix[0] * pos.x + matrix[1] * pos.y + matrix[2] * pos.z + matrix[3]
-    y = matrix[4] * pos.x + matrix[5] * pos.y + matrix[6] * pos.z + matrix[7]
-    w = matrix[12] * pos.x + matrix[13] * pos.y + matrix[14] * pos.z + matrix[15]
+        for _ in range(steps):
+            # Save the current position
+            self.path.append(Vec3(pos.x, pos.y, pos.z))
 
-    if w < 0.1:
-        return None
+            # Apply gravity
+            vel.z -= self.gravity * interval
 
-    inv_w = 1.0 / w
-    return {
-        "x": width / 2 + (x * inv_w) * width / 2,
-        "y": height / 2 - (y * inv_w) * height / 2
-    }
+            # Update position
+            pos.x += vel.x * interval
+            pos.y += vel.y * interval
+            pos.z += vel.z * interval
+
+            # Stop if grenade hits the ground (basic check)
+            if pos.z < 0:
+                break
 
 class Entity:
     def __init__(self, controller, pawn, handle):
@@ -318,12 +353,36 @@ class Entity:
         if not hasattr(self, 'name') or self.name is None:
             self.name = self.read_name()
 
-        # Avoid try/except by checking pointer validity
-        money = 0
-        money_services = safe_read_uint64(self.handle, self.controller + self._money_services_off)
-        if money_services:
-            money = read_int(self.handle, money_services + self._money_acc_off)
-        self.money = money
+
+        # Money changes infrequently; TTL refresh to cut RPM
+
+
+        now = time.time() if 'time' in globals() else __import__('time').time()
+
+
+        ttl_ok = not hasattr(self, '_money_ts') or (now - getattr(self, '_money_ts', 0)) >= 0.3
+
+
+        if ttl_ok:
+
+
+            money = 0
+
+
+            money_services = safe_read_uint64(self.handle, self.controller + self._money_services_off)
+
+
+            if money_services:
+
+
+                money = read_int(self.handle, money_services + self._money_acc_off)
+
+
+            self.money = money
+
+
+            self._money_ts = now
+
 
     def read_name(self):
         raw = read_bytes(self.handle, self.controller + self._player_name_off, 32)
@@ -341,42 +400,22 @@ class Entity:
         return None
 
     def wts(self, matrix, width, height):
-        feet2d = world_to_screen(matrix, self.pos, width, height)
-        head2d = world_to_screen(matrix, self.head, width, height)
-        self.feet2d, self.head2d = feet2d, head2d
-        return feet2d is not None and head2d is not None
+            # Project feet first; only read/project head if feet is visible
+            feet2d = world_to_screen(matrix, self.pos, width, height)
+            if not feet2d:
+                self.feet2d, self.head2d = None, None
+                return False
+            # Lazy head fetch if missing
+            if getattr(self, 'head', None) is None:
+                self.head = self.BonePos(6)
+            head2d = world_to_screen(matrix, self.head, width, height) if self.head else None
+            self.feet2d, self.head2d = feet2d, head2d
+            return head2d is not None
+
 
 # Map detection with caching
-def get_current_map_name_cached(handle, matchmaking_base):
-    """Get current map name with caching for performance"""
-    global current_detected_map
-    now = time.time()
-    
-    # Use cached value if recent (within 5 seconds)
-    if (hasattr(get_current_map_name_cached, 'last_check') and 
-        now - get_current_map_name_cached.last_check < 5.0 and 
-        current_detected_map):
-        return current_detected_map
-    
-    try:
-        # Read map name from memory
-        map_name_addr = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
-        raw_bytes = read_bytes(handle, map_name_addr, 64)
-        if raw_bytes:
-            map_name = raw_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore').strip()
-            if map_name and len(map_name) > 2:  # Valid map name
-                current_detected_map = map_name
-                get_current_map_name_cached.last_check = now
-                return map_name
-    except Exception as e:
-        pass
-    
-    get_current_map_name_cached.last_check = now
-    return current_detected_map
 
-# ---------------------------------------------
-# Spectator list & bomb status
-# ---------------------------------------------
+# ## Feature caches / models
 
 class SpectatorList:
     def __init__(self, handle, client_base):
@@ -407,7 +446,7 @@ class SpectatorList:
         entry = self._safe_read_uint64(entry_addr)
         if not entry:
             return 0
-        return self._safe_read_uint64(entry + 112 * lo)
+        return self._safe_read_uint64(entry + 112 * lo)  # CS2 update: stride changed from 120 to 112
 
     def GetSpectatorsCached(self):
         now = time.time()
@@ -422,7 +461,7 @@ class SpectatorList:
             local_controller = self._safe_read_uint64(self.client_base + Offsets.dwLocalPlayerController)
             if not local_controller:
                 return []
-            local_pawn_handle = self._safe_read_int(local_controller + Offsets.m_hPawn) & 0x7FFF
+            local_pawn_handle = self._safe_read_int(local_controller + Offsets.m_hPlayerPawn) & 0x7FFFFFFF
             local_pawn = self._get_entity(entity_list, local_pawn_handle)
             if not local_pawn:
                 return []
@@ -434,15 +473,16 @@ class SpectatorList:
                 controller = self._get_entity(entity_list, i)
                 if not controller or controller == local_controller:
                     continue
-                obs_pawn_handle = self._safe_read_int(controller + Offsets.m_hPawn) & 0x7FFF
-                observer_pawn = self._get_entity(entity_list, obs_pawn_handle)
-                if not observer_pawn:
+                # Read observer target directly from controller (not from observer services)
+                observer_target = self._safe_read_int(controller + Offsets.m_hObserverTarget)
+                if not observer_target or observer_target <= 0:
                     continue
-                observer_services = self._safe_read_uint64(observer_pawn + Offsets.m_pObserverServices)
-                if not observer_services:
+                target_index = observer_target & 0x7FFF
+                target_controller = self._get_entity(entity_list, target_index)
+                if not target_controller:
                     continue
-                target_handle = self._safe_read_int(observer_services + Offsets.m_hObserverTarget) & 0x7FFF
-                target_pawn = self._get_entity(entity_list, target_handle)
+                target_pawn_handle = self._safe_read_int(target_controller + Offsets.m_hPlayerPawn) & 0x7FFFFFFF
+                target_pawn = self._get_entity(entity_list, target_pawn_handle & 0x7FFF)
                 if target_pawn == local_pawn:
                     name = self._safe_read_string(controller + Offsets.m_iszPlayerName)
                     if name:
@@ -456,30 +496,169 @@ class SpectatorList:
 # Drawing helpers (shared UI style)
 # ---------------------------------------------
 
-def draw_info_box(overlay, x, y, w, h, title, lines, font_size=12, title_color=None, body_color=None):
-    """Generic styled info box used by Map Status, Spectators, and Watermark."""
-    bg = getattr(Config, "color_local_box_background", (30, 30, 30))
-    bd = getattr(Config, "color_local_box_border", (100, 100, 100))
-    tcol = title_color if title_color else (255, 255, 255)
-    bcol = body_color if body_color else (220, 220, 220)
+class BombStatus:
+    def __init__(self, handle, base):
+        self.handle = handle
+        self.base = base
+        self.offsets = Offsets()
+        self.bomb_plant_time = 0
+        self.bomb_defuse_time = 0
+        # Caching to reduce memory reads and improve FPS
+        self.cached_bomb_info = None
+        self.last_update_time = 0
+        self.update_interval = 0.05  # Update every 50ms (20 times per second) instead of every frame
 
-    overlay.draw_filled_rect(x, y, w, h, bg)
-    overlay.draw_box(x, y, w, h, bd)
+    def read_bomb(self):
+        # Use cached data if updated recently
+        current_time = time.time()
+        if self.cached_bomb_info is not None and (current_time - self.last_update_time) < self.update_interval:
+            # Just update the timers using cached plant/defuse times
+            try:
+                info = self.cached_bomb_info.copy()
+                if self.bomb_plant_time > 0:
+                    info["time_remaining"] = max(0, round(info["timer_length"] - (current_time - self.bomb_plant_time), 1))
+                if self.bomb_defuse_time > 0 and info.get("defuse_length"):
+                    info["defuse_time"] = max(0, round(info["defuse_length"] - (current_time - self.bomb_defuse_time), 1))
+                return info
+            except:
+                pass  # Fall through to full read
+        
+        # Full memory read (only every 50ms)
+        try:
+            c4_ptr = read_uint64(self.handle, self.base + self.offsets.dwPlantedC4)
+            planted_flag = read_bytes(self.handle, self.base + self.offsets.dwPlantedC4 - 0x8, 1)[0]
+            if not planted_flag:
+                self.bomb_plant_time = 0
+                self.bomb_defuse_time = 0
+                self.cached_bomb_info = None
+                self.last_update_time = current_time
+                return None
 
-    if title:
-        overlay.draw_text(str(title), x + 6, y + 6, tcol, font_size)
-    # Start body below title
-    ty = y + 6 + (font_size + 4)
-    if lines:
-        for i, line in enumerate(lines):
-            overlay.draw_text(str(line), x + 6, ty + i * (font_size + 2), bcol, font_size)
+            if self.bomb_plant_time == 0:
+                self.bomb_plant_time = current_time
 
-def clamp_box_to_screen(pos, w, h, screen_w, screen_h):
-    x = max(0, min(pos[0], screen_w - w))
-    y = max(0, min(pos[1], screen_h - h))
-    pos[0], pos[1] = x, y
+            c4class = read_uint64(self.handle, c4_ptr)
+            node = read_uint64(self.handle, c4class + self.offsets.m_pGameSceneNode)
+            pos = read_vec3(self.handle, node + self.offsets.m_vecAbsOrigin)
 
-# === Drawing small UI blocks ===
+            timer_length = read_float(self.handle, c4class + self.offsets.m_flTimerLength)
+            time_remaining = timer_length - (current_time - self.bomb_plant_time)
+            time_remaining = max(0, time_remaining)
+
+            defusing = read_bytes(self.handle, c4class + self.offsets.m_bBeingDefused, 1)[0]
+
+            defuse_time = None
+            defuse_length = None
+            if defusing:
+                if self.bomb_defuse_time == 0:
+                    self.bomb_defuse_time = current_time
+                defuse_length = read_float(self.handle, c4class + self.offsets.m_flDefuseLength)
+                defuse_time = defuse_length - (current_time - self.bomb_defuse_time)
+                defuse_time = max(0, defuse_time)
+            else:
+                self.bomb_defuse_time = 0
+
+            # Cache the result
+            self.cached_bomb_info = {
+                "position": pos,
+                "time_remaining": round(time_remaining, 1),
+                "defuse_time": round(defuse_time, 1) if defuse_time is not None else None,
+                "timer_length": timer_length,  # Store for interpolation
+                "defuse_length": defuse_length  # Store for interpolation
+            }
+            self.last_update_time = current_time
+            
+            return self.cached_bomb_info
+
+        except Exception as e:
+            # print(f"[BombStatus] Error: {e}")  # Reduced spam
+            return self.cached_bomb_info  # Return last known good data on error
+
+# ## Entity traversal & helpers
+
+def get_entities(handle, base):
+    try:
+        local = safe_read_uint64(handle, base + Offsets.dwLocalPlayerController)
+        entity_list = safe_read_uint64(handle, base + Offsets.dwEntityList)
+    except Exception as e:
+        print(f"[ESP] Failed to read entity list base: {e}")
+        return []
+    
+    result = []
+    max_entities = 64  # Safety limit
+
+    for i in range(1, min(65, max_entities + 1)):
+        # Precompute indices
+        i_mask_7FFF = i & 0x7FFF
+        i_mask_1FF = i & 0x1FF
+
+        list_offset = ((i_mask_7FFF) >> 9) * 8 + 16
+        try:
+            list_entry = entity_list + list_offset
+            entry = safe_read_uint64(handle, list_entry)
+            if not entry:
+                continue
+
+            ctrl_offset = 112 * i_mask_1FF  # CS2 update: stride changed from 120 to 112
+            ctrl = safe_read_uint64(handle, entry + ctrl_offset)
+            if not ctrl or ctrl == local:
+                continue
+
+            hPawn = read_int(handle, ctrl + Offsets.m_hPlayerPawn) & 0x7FFFFFFF  # Handles are 32-bit, not 64-bit
+            if not hPawn:
+                continue
+
+            pawn_list_offset = ((hPawn & 0x7FFF) >> 9) * 8 + 16
+            pawn_entry = safe_read_uint64(handle, entity_list + pawn_list_offset)
+            if not pawn_entry:
+                continue
+
+            pawn_offset = 112 * (hPawn & 0x1FF)  # CS2 update: stride changed from 120 to 112
+            pawn = safe_read_uint64(handle, pawn_entry + pawn_offset)
+            if not pawn:
+                continue
+
+            ent = Entity(ctrl, pawn, handle)
+            ent.read_data()
+            result.append(ent)
+
+        except Exception as e:
+            continue
+
+    return result
+
+# ## Visibility & map helpers
+
+def get_current_map_name_cached(handle, matchmaking_base):
+    """Get current map name with caching for performance"""
+    global current_detected_map
+    now = time.time()
+    
+    # Use cached value if recent (within 5 seconds)
+    if (hasattr(get_current_map_name_cached, 'last_check') and 
+        now - get_current_map_name_cached.last_check < 5.0 and 
+        current_detected_map):
+        return current_detected_map
+    
+    try:
+        # Read map name from memory
+        map_name_addr = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
+        raw_bytes = read_bytes(handle, map_name_addr, 64)
+        if raw_bytes:
+            map_name = raw_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore').strip()
+            if map_name and len(map_name) > 2:  # Valid map name
+                current_detected_map = map_name
+                get_current_map_name_cached.last_check = now
+                return map_name
+    except Exception as e:
+        pass
+    
+    get_current_map_name_cached.last_check = now
+    return current_detected_map
+
+# ---------------------------------------------
+# Spectator list & bomb status
+# ---------------------------------------------
 
 def draw_map_status_box(overlay, vis_checker):
     """Styled box: current map + VisCheck status + perf metrics."""
@@ -529,149 +708,245 @@ def draw_map_status_box(overlay, vis_checker):
     # colored status text override
     overlay.draw_text(f"VisCheck: {status}", x + 6, y + 6 + (12 + 4), scol, 12)
 
-def draw_spectator_list(overlay, spectators):
-    global spectator_list_pos
-    rows = spectators if spectators else ["None"]
-    font_size = 12
-    h = 6 + font_size + 4 + max(1, len(rows)) * (font_size + 2) + 6
-    w = 220
-    clamp_box_to_screen(spectator_list_pos, w, h, overlay.width, overlay.height)
-
-    # Cache the rows and size for drag hit-testing
-    overlay._last_spectator_rows = rows
-    # Save size on both overlay and its renderer
-    overlay._last_spectator_box = (w, h)
-    if hasattr(overlay, "renderer"):
-        overlay.renderer._last_spectator_box = (w, h)
-
-    draw_info_box(overlay, spectator_list_pos[0], spectator_list_pos[1], w, h, "Spectators", rows, font_size=font_size)
-
-
-def draw_watermark(overlay, version="GFusion v1"):
-    x, y = watermark_pos
-    font_size = 12
-    lines = [version, time.strftime("%H:%M:%S")]
-    h = 6 + font_size + 4 + len(lines) * (font_size + 2) + 6
-    w = 200
-    clamp_box_to_screen(watermark_pos, w, h, overlay.width, overlay.height)
-    draw_info_box(overlay, x, y, w, h, "Watermark", lines, font_size=font_size)
-	
-
-# Entity type mappings (from C++)
-ENTITY_TYPES = {
-    "chicken": "Chicken",
-    "hostage_entity": "Hostage",
-    "c4": "Bomb"
-}
-
-PROJECTILE_TYPES = {
-    "smokegrenade_projectile": "Smoke",
-    "flashbang_projectile": "Flash",
-    "hegrenade_projectile": "HE",
-    "molotov_projectile": "Molotov",
-    "incendiarygrenade_projectile": "Incendiary",
-    "decoy_projectile": "Decoy"
-}
-
-WEAPON_TYPES = {
-    "weapon_ak47": "AK-47",
-    "weapon_m4a1": "M4A1",
-    "weapon_awp": "AWP",
-    "weapon_elite": "Dual Berettas",
-    "weapon_famas": "FAMAS",
-    "weapon_g3sg1": "G3SG1",
-    "weapon_galilar": "Galil AR",
-    "weapon_m249": "M249",
-    "weapon_m4a1_silencer": "M4A1-S",
-    "weapon_mac10": "MAC-10",
-    "weapon_mag7": "MAG-7",
-    "weapon_mp5sd": "MP5-SD",
-    "weapon_mp7": "MP7",
-    "weapon_mp9": "MP9",
-    "weapon_negev": "Negev",
-    "weapon_nova": "Nova",
-    "weapon_p90": "P90",
-    "weapon_sawedoff": "Sawed-Off",
-    "weapon_scar20": "SCAR-20",
-    "weapon_sg556": "SG 553",
-    "weapon_ssg08": "SSG 08",
-    "weapon_ump45": "UMP-45",
-    "weapon_xm1014": "XM1014",
-    "weapon_aug": "AUG",
-    "weapon_bizon": "PP-Bizon",
-    "weapon_fiveseven": "Five-SeveN",
-    "weapon_hkp2000": "P2000",
-    "weapon_usp_silencer": "USP-S",
-    "weapon_p250": "P250",
-    "weapon_tec9": "Tec-9",
-    "weapon_cz75a": "CZ75-Auto",
-    "weapon_deagle": "Desert Eagle",
-    "weapon_revolver": "R8 Revolver",
-    "weapon_glock": "Glock-18"
-}
-
-def get_weapon_type(identifier):
-    """Get weapon display name from identifier"""
-    return WEAPON_TYPES.get(identifier, None)
-
-def get_projectile_type(identifier):
-    """Get projectile display name from identifier"""
-    return PROJECTILE_TYPES.get(identifier, None)
-
-def get_entity_type(identifier):
-    """Get entity display name from identifier"""
-    return ENTITY_TYPES.get(identifier, None)
-
-def get_entities(handle, base):
-    try:
-        local = safe_read_uint64(handle, base + Offsets.dwLocalPlayerController)
-        entity_list = safe_read_uint64(handle, base + Offsets.dwEntityList)
-    except Exception as e:
-        print(f"[ESP] Failed to read entity list base: {e}")
-        return []
+def check_player_visibility(local_pos, entity_pos, vis_checker):
+    """
+    Check if a player is visible using external map parsing with VisCheck module.
+    Returns True if the player is visible, False otherwise.
     
-    result = []
-    max_entities = 64  # Safety limit
+    Args:
+        local_pos: Local player position (Vec3)
+        entity_pos: Target entity position (Vec3)  
+        vis_checker: VisCheck module instance
+    """
+    try:
+        if not local_pos or not entity_pos or not vis_checker:
+            return False
+            
+        # Check if vis_checker has a map loaded
+        if not vis_checker.is_map_loaded():
+            # If no map is loaded or loading, default to visible to not break ESP
+            return True
+            
+        # Add small height offset to simulate eye level
+        eye_offset = 64.0  # CS2 player eye height offset
+        
+        local_eye_pos = (local_pos.x, local_pos.y, local_pos.z + eye_offset)
+        entity_eye_pos = (entity_pos.x, entity_pos.y, entity_pos.z + eye_offset)
+        
+        # Use VisCheck module to perform ray-triangle intersection
+        is_visible = vis_checker.is_visible(local_eye_pos, entity_eye_pos)
+        
+        # Debug output to see what's happening (uncomment for debugging)
+        # print(f"[VisCheck Debug] Map loaded: {vis_checker.is_map_loaded()}, Visibility: {is_visible}")
+        
+        # If vis_checker is not working properly, default to True (visible)
+        if is_visible is None:
+            print("[VisCheck Debug] Null result from vis_checker - defaulting to VISIBLE")
+            return True
+            
+        return bool(is_visible)  # Ensure boolean return
+        
+    except Exception as e:
+        print(f"[VisCheck Error] {e}")
+        print("[VisCheck Debug] Exception occurred - defaulting to VISIBLE")
+        return True
 
-    for i in range(1, min(65, max_entities + 1)):
-        # Precompute indices
-        i_mask_7FFF = i & 0x7FFF
-        i_mask_1FF = i & 0x1FF
+entity_traces = {}  # {entity_id: [Vec3, Vec3, ...]}
 
-        list_offset = ((i_mask_7FFF) >> 9) * 8 + 16
+# Team list draggable globals
+team_list_pos = [1700, 20]  # Top-right corner
+team_list_dragging = False
+team_list_drag_offset = [0, 0]
+team_list_box_size = [200, 300]
+
+local_info_box_pos = [100, 400]
+local_info_drag_offset = [0, 0]
+local_info_dragging = False
+
+def get_current_map_name(handle, matchmaking_base):
+    """
+    Read the current map name from matchmaking.dll using existing read_bytes function
+    The map name is stored as a pointer to string, so we need to dereference it
+    Returns the map name as string or None if failed
+    """
+    try:
+        if not handle or not matchmaking_base:
+            print(f"[Map Debug] Invalid handle ({handle}) or matchmaking_base ({hex(matchmaking_base) if matchmaking_base else 'None'})")
+            return None
+        
+        # Compute the address where the map name pointer is stored
+        map_name_ptr_address = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
+        # print(f"[Map Debug] Reading pointer from: {hex(map_name_ptr_address)}")
+        
+        # Read the pointer (8 bytes on 64-bit)
+        ptr_bytes = read_bytes(handle, map_name_ptr_address, 8)
+        if not ptr_bytes:
+            print(f"[Map Debug] Failed to read pointer")
+            return None
+            
+        # Convert bytes to pointer value
+        map_name_ptr = struct.unpack("Q", ptr_bytes)[0]  # Q = unsigned long long (64-bit)
+        
+        if map_name_ptr == 0 or map_name_ptr > 0x7FFFFFFFFFFF:
+            print(f"[Map Debug] Invalid pointer: {hex(map_name_ptr)}")
+            return None
+            
+        # print(f"[Map Debug] Following pointer to: {hex(map_name_ptr)}")
+        
+        # Now read the actual string from the pointer location
+        string_bytes = read_bytes(handle, map_name_ptr, 128)
+        if not string_bytes:
+            # print(f"[Map Debug] Failed to read string from pointer")
+            return None
+            
+        # Convert to string
+        map_name = string_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
+        
+        if map_name and len(map_name) >= 3 and not map_name.isspace():
+            # print(f"[Map Debug] Successfully read map name: {map_name}")
+            return map_name
+        else:
+            # Empty or invalid map name (probably not in game)
+            # print(f"[Map Debug] Successfully read map name: <empty>")
+            return "<empty>"
+            
+    except Exception as e:
+        print(f"[Map Debug] Error reading map name: {e}")
+        return None
+
+def auto_map_loader(handle, matchmaking_base, vis_checker):
+    """
+    Automatically loads the correct map when CS2 map changes
+    Only loads when detected map differs from currently loaded map
+    """
+    global last_map_check_time, current_detected_map
+    
+    current_time = time.time()
+    if current_time - last_map_check_time >= 3.0:  # Check every 3 seconds (less frequent)
+        last_map_check_time = current_time
+        
+        # Get current map from CS2 memory
+        detected_map = get_current_map_name(handle, matchmaking_base)
+        if not detected_map or detected_map == "<empty>":
+            # No valid map detected (probably not in game) - ignore silently
+            return
+        
+        # Get currently loaded map in VisCheck
+        if vis_checker and vis_checker.is_map_loaded():
+            loaded_map_path = vis_checker.get_current_map()
+            # Extract map name from path (e.g., "maps/de_mirage.opt" -> "de_mirage")
+            if loaded_map_path:
+                loaded_map_name = os.path.basename(loaded_map_path).replace('.opt', '')
+            else:
+                loaded_map_name = None
+        else:
+            loaded_map_name = None
+        
+        # Compare detected vs loaded
+        if detected_map != current_detected_map:
+            print(f"[Auto-Map] Detected map change: {current_detected_map} -> {detected_map}")
+            current_detected_map = detected_map
+        
+        if detected_map != loaded_map_name:
+            # Map mismatch - need to load correct map
+            target_map_file = f"{detected_map}.opt"
+            target_map_path = os.path.join("maps", target_map_file)
+            
+            if os.path.exists(target_map_path):
+                print(f"[Auto-Map] Auto-loading map: {detected_map} (was: {loaded_map_name})")
+                
+                # Trigger automatic map load through config
+                from Process.config import Config
+                setattr(Config, 'visibility_map_path', target_map_path)
+                setattr(Config, 'visibility_map_reload_needed', True)
+                
+            else:
+                print(f"[Auto-Map] Map file not found: {target_map_path}")
+                print(f"[Auto-Map] Detected: {detected_map}, Loaded: {loaded_map_name}")
+        else:
+            # Maps match - no action needed
+            if current_detected_map != detected_map:  # Only print on first detection
+                print(f"[Auto-Map] Map synchronized: {detected_map}")
+
+def debug_map_check(handle, matchmaking_base):
+    """
+    Debug function that checks and prints current map name every second  
+    """
+    global last_map_check_time, current_detected_map
+    
+    current_time = time.time()
+    if current_time - last_map_check_time >= 1.0:  # Check every second
+        last_map_check_time = current_time
+        
+        map_name = get_current_map_name(handle, matchmaking_base)
+        if map_name and map_name != "<empty>":
+            current_detected_map = map_name
+            # print(f"[Map Debug] Current map: {map_name}")
+        elif map_name == "<empty>":
+            # Silent when not in game
+            pass
+        else:
+            print(f"[Map Debug] Failed to read map name")
+
+def load_map_threaded(vis_checker, map_path):
+    """Load map in background thread to prevent GUI blocking"""
+    global map_loading_in_progress
+    
+    def load_worker():
+        global map_loading_in_progress
         try:
-            list_entry = entity_list + list_offset
-            entry = safe_read_uint64(handle, list_entry)
-            if not entry:
-                continue
-
-            ctrl_offset = 112 * i_mask_1FF
-            ctrl = safe_read_uint64(handle, entry + ctrl_offset)
-            if not ctrl or ctrl == local:
-                continue
-
-            hPawn = safe_read_uint64(handle, ctrl + Offsets.m_hPlayerPawn)
-            if not hPawn:
-                continue
-
-            pawn_list_offset = ((hPawn & 0x7FFF) >> 9) * 8 + 16
-            pawn_entry = safe_read_uint64(handle, entity_list + pawn_list_offset)
-            if not pawn_entry:
-                continue
-
-            pawn_offset = 112 * (hPawn & 0x1FF)
-            pawn = safe_read_uint64(handle, pawn_entry + pawn_offset)
-            if not pawn:
-                continue
-
-            ent = Entity(ctrl, pawn, handle)
-            ent.read_data()
-            result.append(ent)
-
+            map_loading_in_progress = True
+            print(f"[VisCheck] Background loading: {map_path}")
+            
+            # Add small delay to prevent issues
+            time.sleep(0.1)
+            
+            if vis_checker.load_map(map_path):
+                print(f"[VisCheck] Background load complete: {map_path}")
+            else:
+                print(f"[VisCheck] Background load failed: {map_path}")
+                    
         except Exception as e:
-            continue
+            print(f"[VisCheck] Background load error: {e}")
+        finally:
+            map_loading_in_progress = False
+            print(f"[VisCheck] Background loading finished for: {map_path}")
+    
+    # Start loading in background thread
+    thread = threading.Thread(target=load_worker, daemon=True)
+    thread.start()
+    print(f"[VisCheck] Started background thread for: {map_path}")
 
-    return result
+# ===========================
+# Projectile ESP
+# ===========================
+
+_item_type_cache = {}
+_TYPE_STR_TTL_SEC = 5.0
+
+def cleanup_vischeck_resources():
+    """Cleanup VisCheck resources on exit"""
+    global optimized_vischeck
+    if optimized_vischeck:
+        try:
+            optimized_vischeck.cleanup()
+        except:
+            pass
+        optimized_vischeck = None
+
+def get_vischeck_cache_stats():
+    """Get VisCheck cache statistics for display"""
+    if optimized_vischeck:
+        try:
+            return optimized_vischeck.get_cache_stats()
+        except:
+            pass
+    return {"total_entries": 0, "valid_entries": 0, "cache_dir_size_mb": 0.0}
+
+# Global vis_checker so aimbot can access it
+vis_checker = None
+
+# ## Rendering backends
 
 class GDIRenderer:
     BONE_POSITIONS = {"head": 6, "chest": 15, "left_hand": 10, "right_hand": 2, "left_leg": 23, "right_leg": 26}
@@ -943,14 +1218,20 @@ class GDIRenderer:
         global spectator_list_dragging, spectator_list_drag_offset, spectator_list_pos
         global map_status_dragging, map_status_drag_offset, map_status_pos
         global watermark_dragging, watermark_drag_offset, watermark_pos
+        global spectator_box_size  # Add this line
+        global team_list_dragging, team_list_drag_offset, team_list_pos
+        global team_list_box_size
 
         x = lparam & 0xFFFF
         y = (lparam >> 16) & 0xFFFF
 
         if msg == win32con.WM_LBUTTONDOWN:
-            # Use cached spectator list size if available
-            w, h = getattr(self, "_last_spectator_box", (220, 120))
-            if point_in_box(x, y, spectator_list_pos, w, h):
+            # Use global spectator box size
+            spec_w, spec_h = spectator_box_size
+            team_w, team_h = team_list_box_size
+
+            
+            if point_in_box(x, y, spectator_list_pos, spec_w, spec_h):
                 spectator_list_dragging = True
                 spectator_list_drag_offset = [x - spectator_list_pos[0], y - spectator_list_pos[1]]
             elif point_in_box(x, y, map_status_pos, 300, 86):
@@ -959,6 +1240,9 @@ class GDIRenderer:
             elif point_in_box(x, y, watermark_pos, 200, 60):
                 watermark_dragging = True
                 watermark_drag_offset = [x - watermark_pos[0], y - watermark_pos[1]]
+            elif point_in_box(x, y, team_list_pos, team_w, team_h):
+                team_list_dragging = True
+                team_list_drag_offset = [x - team_list_pos[0], y - team_list_pos[1]]
             return 0
 
         elif msg == win32con.WM_MOUSEMOVE and (wparam & win32con.MK_LBUTTON):
@@ -971,12 +1255,16 @@ class GDIRenderer:
             elif watermark_dragging:
                 watermark_pos[0] = x - watermark_drag_offset[0]
                 watermark_pos[1] = y - watermark_drag_offset[1]
+            elif team_list_dragging:
+                team_list_pos[0] = x - team_list_drag_offset[0]
+                team_list_pos[1] = y - team_list_drag_offset[1]
             return 0
 
         elif msg == win32con.WM_LBUTTONUP:
             spectator_list_dragging = False
             map_status_dragging = False
             watermark_dragging = False
+            team_list_dragging = False
             return 0
 
         elif msg == win32con.WM_DESTROY:
@@ -984,7 +1272,7 @@ class GDIRenderer:
             return 0
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
-
+    
     def get_module_base(self, pid, module_name):
         snapshot = windll.kernel32.CreateToolhelp32Snapshot(0x8, pid)  # TH32CS_SNAPMODULE = 0x8
 
@@ -1015,7 +1303,6 @@ class GDIRenderer:
                     break
         windll.kernel32.CloseHandle(snapshot)
         return None
-
 
 class DX11Renderer:
     def __init__(self, title="GHax", fps=144):
@@ -1230,9 +1517,6 @@ class DX11Renderer:
                 return False
         return False
 
-    
-
-
 class Overlay:
     def __init__(self, title="GHax", fps=144):
         from Process.config import Config
@@ -1244,8 +1528,265 @@ class Overlay:
     def __getattr__(self, name):
         return getattr(self.renderer, name)
 
+# ## ESP draw routines
 
+def draw_info_box(overlay, x, y, w, h, title, lines, font_size=12, title_color=None, body_color=None):
+    """Generic styled info box used by Map Status, Spectators, and Watermark."""
+    bg = getattr(Config, "color_local_box_background", (30, 30, 30))
+    bd = getattr(Config, "color_local_box_border", (100, 100, 100))
+    tcol = title_color if title_color else (255, 255, 255)
+    bcol = body_color if body_color else (220, 220, 220)
+
+    overlay.draw_filled_rect(x, y, w, h, bg)
+    overlay.draw_box(x, y, w, h, bd)
+
+    if title:
+        overlay.draw_text(str(title), x + 6, y + 6, tcol, font_size)
+    # Start body below title
+    ty = y + 6 + (font_size + 4)
+    if lines:
+        for i, line in enumerate(lines):
+            overlay.draw_text(str(line), x + 6, ty + i * (font_size + 2), bcol, font_size)
+
+def draw_team_list_box(overlay, entities, local_team):
+    """Draw an improved list of all players organized by team (T/CT)"""
+    global team_list_pos, team_list_box_size
+    
+    # Check if team list is enabled
+    if not getattr(Config, "team_list_enabled", True):
+        return
+    
+    x, y = team_list_pos
+    font_size = getattr(Config, "team_list_font_size", 11)
+    title_size = 14
+    header_size = 12
+    line_height = font_size + 3
+    padding = 8
+    
+    # Get config toggles
+    show_hp_bars = getattr(Config, "team_list_show_hp_bars", True)
+    show_counts = getattr(Config, "team_list_show_counts", True)
+    sort_by_hp = getattr(Config, "team_list_sort_by_hp", True)
+    
+    # Get color settings
+    bg_color = getattr(Config, "team_list_background", (18, 18, 22))
+    border_color = getattr(Config, "team_list_border", (70, 75, 85))
+    t_color = getattr(Config, "color_box_t", (255, 180, 0))
+    ct_color = getattr(Config, "color_box_ct", (100, 200, 255))
+    dead_t_color = getattr(Config, "team_list_dead_t", (100, 80, 60))
+    dead_ct_color = getattr(Config, "team_list_dead_ct", (60, 80, 100))
+    
+    # Separate players by team with health info
+    t_players = []
+    ct_players = []
+    
+    # Optional round-robin batching (off by default)
+
+    
+    entities_iter = entities
+
+    
+    try:
+
+    
+        _batch = int(getattr(Config, 'esp_batch_size', 0) or 0)
+
+    
+        if _batch > 0 and len(entities) > _batch:
+
+    
+            _cursor = getattr(main, '_esp_batch_cursor', 0) % len(entities)
+
+    
+            _end = _cursor + _batch
+
+    
+            if _end <= len(entities):
+
+    
+                entities_iter = entities[_cursor:_end]
+
+    
+            else:
+
+    
+                entities_iter = entities[_cursor:] + entities[:_end - len(entities)]
+
+    
+            setattr(main, '_esp_batch_cursor', (_cursor + _batch) % len(entities))
+
+    
+    except Exception:
+
+    
+        entities_iter = entities
+
+
+    
+    for ent in entities_iter:
+        if not hasattr(ent, 'name') or not ent.name:
+            continue
         
+        player_info = {
+            'name': ent.name,
+            'hp': getattr(ent, 'hp', 0),
+            'alive': getattr(ent, 'hp', 0) > 0
+        }
+        
+        if ent.team == 2:  # T side
+            t_players.append(player_info)
+        elif ent.team == 3:  # CT side
+            ct_players.append(player_info)
+    
+    # Sort by alive status and optionally by HP
+    if sort_by_hp:
+        t_players.sort(key=lambda p: (not p['alive'], -p['hp']))
+        ct_players.sort(key=lambda p: (not p['alive'], -p['hp']))
+    else:
+        t_players.sort(key=lambda p: not p['alive'])
+        ct_players.sort(key=lambda p: not p['alive'])
+    
+    # Calculate dimensions
+    num_t = len(t_players)
+    num_ct = len(ct_players)
+    
+    # Base lines: title (1) + optional counts (1) + separator (1) + T header (1) + CT header (1)
+    base_lines = 1 + (1 if show_counts else 0) + 1 + 1 + 1
+    total_content_lines = base_lines + num_t + num_ct
+    
+    h = padding * 2 + title_size + 6 + total_content_lines * line_height + padding
+    w = 220
+    
+    team_list_box_size = [w, h]
+    clamp_box_to_screen(team_list_pos, w, h, overlay.width, overlay.height)
+    
+    # Modern dark theme
+    title_bg = (25, 28, 35)
+    accent_color = (80, 140, 255)
+    
+    # Draw main background
+    overlay.draw_filled_rect(x, y, w, h, bg_color)
+    overlay.draw_box(x, y, w, h, border_color)
+    
+    # Draw title bar with accent
+    title_bar_height = title_size + 12
+    overlay.draw_filled_rect(x, y, w, title_bar_height, title_bg)
+    overlay.draw_filled_rect(x, y + title_bar_height - 2, w, 2, accent_color)
+    
+    # Draw title
+    overlay.draw_text("TEAM LIST", x + w // 2, y + 6, (200, 210, 255), title_size, centered=True)
+    
+    current_y = y + title_bar_height + padding
+    
+    # Draw team summary (optional)
+    if show_counts:
+        t_alive = sum(1 for p in t_players if p['alive'])
+        ct_alive = sum(1 for p in ct_players if p['alive'])
+        
+        summary_color = (160, 160, 180)
+        overlay.draw_text(f"T: {t_alive}/{num_t} alive", x + padding, current_y, summary_color, font_size)
+        overlay.draw_text(f"CT: {ct_alive}/{num_ct} alive", x + w - padding - 80, current_y, summary_color, font_size)
+        current_y += line_height + 4
+    
+    # Separator line
+    overlay.draw_filled_rect(x + padding, current_y, w - padding * 2, 1, (50, 50, 60))
+    current_y += 6
+    
+    # T Section Header
+    t_alive = sum(1 for p in t_players if p['alive'])
+    t_header_bg = (40, 30, 0)
+    overlay.draw_filled_rect(x + padding, current_y - 2, w - padding * 2, header_size + 4, t_header_bg)
+    header_text = f"TERRORISTS ({t_alive}/{num_t})" if show_counts else "TERRORISTS"
+    overlay.draw_text(header_text, x + padding + 4, current_y, t_color, header_size)
+    current_y += header_size + 6
+    
+    # T Players
+    for player in t_players:
+        if player['alive']:
+            name_color = (255, 255, 100) if local_team == 2 else (220, 220, 220)
+            
+            if show_hp_bars:
+                hp_color = get_hp_color(player['hp'])
+                
+                # Draw HP bar background
+                bar_x = x + padding + 4
+                bar_y = current_y + 2
+                bar_width = 30
+                bar_height = font_size - 2
+                overlay.draw_filled_rect(bar_x, bar_y, bar_width, bar_height, (30, 30, 30))
+                
+                # Draw HP bar fill
+                hp_fill = int(bar_width * (player['hp'] / 100))
+                if hp_fill > 0:
+                    overlay.draw_filled_rect(bar_x, bar_y, hp_fill, bar_height, hp_color)
+                
+                # Draw HP text
+                overlay.draw_text(f"{player['hp']}", bar_x + bar_width // 2, bar_y, (255, 255, 255), font_size - 2, centered=True)
+                
+                # Draw player name
+                overlay.draw_text(player['name'], x + padding + 40, current_y, name_color, font_size - 1)
+            else:
+                # No HP bar - just show name with HP text
+                overlay.draw_text(f"{player['name']} [{player['hp']}]", x + padding + 4, current_y, name_color, font_size - 1)
+        else:
+            # Dead player - use config color
+            overlay.draw_text(f"☠ {player['name']}", x + padding + 4, current_y, dead_t_color, font_size - 1)
+        
+        current_y += line_height
+    
+    current_y += 4
+    
+    # CT Section Header
+    ct_alive = sum(1 for p in ct_players if p['alive'])
+    ct_header_bg = (0, 20, 40)
+    overlay.draw_filled_rect(x + padding, current_y - 2, w - padding * 2, header_size + 4, ct_header_bg)
+    header_text = f"COUNTER-TERRORISTS ({ct_alive}/{num_ct})" if show_counts else "COUNTER-TERRORISTS"
+    overlay.draw_text(header_text, x + padding + 4, current_y, ct_color, header_size)
+    current_y += header_size + 6
+    
+    # CT Players
+    for player in ct_players:
+        if player['alive']:
+            name_color = (100, 200, 255) if local_team == 3 else (220, 220, 220)
+            
+            if show_hp_bars:
+                hp_color = get_hp_color(player['hp'])
+                
+                # Draw HP bar background
+                bar_x = x + padding + 4
+                bar_y = current_y + 2
+                bar_width = 30
+                bar_height = font_size - 2
+                overlay.draw_filled_rect(bar_x, bar_y, bar_width, bar_height, (30, 30, 30))
+                
+                # Draw HP bar fill
+                hp_fill = int(bar_width * (player['hp'] / 100))
+                if hp_fill > 0:
+                    overlay.draw_filled_rect(bar_x, bar_y, hp_fill, bar_height, hp_color)
+                
+                # Draw HP text
+                overlay.draw_text(f"{player['hp']}", bar_x + bar_width // 2, bar_y, (255, 255, 255), font_size - 2, centered=True)
+                
+                # Draw player name
+                overlay.draw_text(player['name'], x + padding + 40, current_y, name_color, font_size - 1)
+            else:
+                # No HP bar - just show name with HP text
+                overlay.draw_text(f"{player['name']} [{player['hp']}]", x + padding + 4, current_y, name_color, font_size - 1)
+        else:
+            # Dead player - use config color
+            overlay.draw_text(f"☠ {player['name']}", x + padding + 4, current_y, dead_ct_color, font_size - 1)
+        
+        current_y += line_height
+
+def draw_watermark(overlay, version="GFusion v1"):
+    x, y = watermark_pos
+    font_size = 12
+    lines = [version, time.strftime("%H:%M:%S")]
+    h = 6 + font_size + 4 + len(lines) * (font_size + 2) + 6
+    w = 200
+    clamp_box_to_screen(watermark_pos, w, h, overlay.width, overlay.height)
+    draw_info_box(overlay, x, y, w, h, "Watermark", lines, font_size=font_size)
+
 def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, flags):
     skeleton_enabled = flags.get("skeleton_esp_enabled", False)
     bone_dot_enabled = flags.get("bone_dot_esp_enabled", False)
@@ -1317,101 +1858,136 @@ def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, f
                 else:
                     overlay.draw_box(x - bone_dot_size, y - bone_dot_size, bone_dot_size * 2, bone_dot_size * 2, bone_dot_color)
 
-                 
-class BombStatus:
-    def __init__(self, handle, base):
-        self.handle = handle
-        self.base = base
-        self.offsets = Offsets()
-        self.bomb_plant_time = 0
-        self.bomb_defuse_time = 0
-        # Caching to reduce memory reads and improve FPS
-        self.cached_bomb_info = None
-        self.last_update_time = 0
-        self.update_interval = 0.05  # Update every 50ms (20 times per second) instead of every frame
+def draw_projectile_esp(handle, base, matrix, overlay, cfg):
+    """
+    Draw ESP labels for live projectiles (grenades, flashes, smokes, molotovs, etc.)
+    """
+    global last_proj_debug
+    if not getattr(cfg, "projectile_esp_enabled", True):
+        return
 
-    def read_bomb(self):
-        # Use cached data if updated recently
-        current_time = time.time()
-        if self.cached_bomb_info is not None and (current_time - self.last_update_time) < self.update_interval:
-            # Just update the timers using cached plant/defuse times
+    try:
+        entity_list = safe_read_uint64(handle, base + Offsets.dwEntityList)
+        if not entity_list:
+            return
+
+        width, height = overlay.width, overlay.height
+        max_entities = getattr(cfg, "max_projectile_entities", 2048)  # can raise to 4096 if needed
+
+        for i in range(64, max_entities):  # skip first 64 (players)
             try:
-                info = self.cached_bomb_info.copy()
-                if self.bomb_plant_time > 0:
-                    info["time_remaining"] = max(0, round(info["timer_length"] - (current_time - self.bomb_plant_time), 1))
-                if self.bomb_defuse_time > 0 and info.get("defuse_length"):
-                    info["defuse_time"] = max(0, round(info["defuse_length"] - (current_time - self.bomb_defuse_time), 1))
-                return info
-            except:
-                pass  # Fall through to full read
-        
-        # Full memory read (only every 50ms)
-        try:
-            c4_ptr = read_uint64(self.handle, self.base + self.offsets.dwPlantedC4)
-            planted_flag = read_bytes(self.handle, self.base + self.offsets.dwPlantedC4 - 0x8, 1)[0]
-            if not planted_flag:
-                self.bomb_plant_time = 0
-                self.bomb_defuse_time = 0
-                self.cached_bomb_info = None
-                self.last_update_time = current_time
-                return None
+                list_entry = safe_read_uint64(entity_list + (8 * ((i & 0x7FFF) >> 9) + 16))
+                if not list_entry:
+                    continue
 
-            if self.bomb_plant_time == 0:
-                self.bomb_plant_time = current_time
+                entity = safe_read_uint64(list_entry + (112 * (i & 0x1FF)))  # CS2 update: stride changed from 120 to 112
+                if not entity:
+                    continue
 
-            c4class = read_uint64(self.handle, c4_ptr)
-            node = read_uint64(self.handle, c4class + self.offsets.m_pGameSceneNode)
-            pos = read_vec3(self.handle, node + self.offsets.m_vecAbsOrigin)
+                # --- Identify type string (using working cached logic) ---
+                type_str = _read_type_str_cached(handle, entity)
+                if not type_str:
+                    continue
 
-            timer_length = read_float(self.handle, c4class + self.offsets.m_flTimerLength)
-            time_remaining = timer_length - (current_time - self.bomb_plant_time)
-            time_remaining = max(0, time_remaining)
+                proj_type = get_projectile_type(type_str)
+                if not proj_type:
+                    continue  # skip non-projectiles
 
-            defusing = read_bytes(self.handle, c4class + self.offsets.m_bBeingDefused, 1)[0]
+                # --- Get projectile position ---
+                scene_node = safe_read_uint64(handle, entity + Offsets.m_pGameSceneNode)
+                if scene_node:
+                    pos = read_vec3(handle, scene_node + Offsets.m_vecAbsOrigin)
+                else:
+                    pos = read_vec3(handle, entity + Offsets.m_vecAbsOrigin)
 
-            defuse_time = None
-            defuse_length = None
-            if defusing:
-                if self.bomb_defuse_time == 0:
-                    self.bomb_defuse_time = current_time
-                defuse_length = read_float(self.handle, c4class + self.offsets.m_flDefuseLength)
-                defuse_time = defuse_length - (current_time - self.bomb_defuse_time)
-                defuse_time = max(0, defuse_time)
-            else:
-                self.bomb_defuse_time = 0
+                if not pos:
+                    continue
 
-            # Cache the result
-            self.cached_bomb_info = {
-                "position": pos,
-                "time_remaining": round(time_remaining, 1),
-                "defuse_time": round(defuse_time, 1) if defuse_time is not None else None,
-                "timer_length": timer_length,  # Store for interpolation
-                "defuse_length": defuse_length  # Store for interpolation
-            }
-            self.last_update_time = current_time
-            
-            return self.cached_bomb_info
+                # --- Project world → screen ---
+                screen = world_to_screen(matrix, pos, width, height)
+                if not screen:
+                    continue
 
-        except Exception as e:
-            # print(f"[BombStatus] Error: {e}")  # Reduced spam
-            return self.cached_bomb_info  # Return last known good data on error
+                # --- Draw label ---
+                overlay.draw_text(
+                    proj_type,
+                    int(screen["x"]),
+                    int(screen["y"]),
+                    color=(255, 255, 0),  # bright yellow for projectiles
+                    size=12,
+                    centered=True
+                )
 
-def point_in_box(px, py, pos, w, h):
-    return pos[0] <= px <= pos[0] + w and pos[1] <= py <= pos[1] + h
+                # Debug log (every 3s max)
+                now = time.time()
+                if now - last_proj_debug > 3:
+                    print(f"[ProjectileESP] Found {proj_type} at {pos.x:.1f},{pos.y:.1f},{pos.z:.1f}")
+                    last_proj_debug = now
 
-spectator_list_pos = [20, 300]  # initial x,y position on screen
-spectator_list_dragging = False
-spectator_list_drag_offset = [0, 0]
+            except Exception:
+                continue
 
+    except Exception as e:
+        print(f"[ProjectileESP] Error: {e}")
 
-watermark_pos = [20, 20]
-watermark_dragging = False
-watermark_drag_offset = [0, 0]
+# ## Misc helpers
 
-# NEW: Map status draggable globals
-map_status_pos = [20, 60]
-map_status_dragging = False
-map_status_drag_offset = [0, 0]
+def estimate_grenade_velocity(view_angle, throw_strength=1.3, base_velocity=550.0):
+    pitch, yaw = math.radians(view_angle[0]), math.radians(view_angle[1])
+    velocity = base_velocity * throw_strength
+
+    out = Vec3(
+        math.cos(pitch) * math.cos(yaw),
+        math.cos(pitch) * math.sin(yaw),
+        -math.sin(pitch)
+    )
+
+    out.x *= velocity
+    out.y *= velocity
+    out.z *= velocity
+
+    return out
+
+# --- Memory Reading Utilities ---
+# Global memory interface - will be set in main()
+_memory_interface = None
+
+def set_memory_interface(memory_interface):
+    """Set the global memory interface for this module"""
+    global _memory_interface
+    _memory_interface = memory_interface
+
+def write_float(process_handle, address, value):
+    """Write float using unified memory interface"""
+    if _memory_interface:
+        return _memory_interface.write_float(address, value)
+    
+    # Fallback to original implementation
+    float_value = c_float(value)
+    bytes_written = c_size_t(0)
+    result = WriteProcessMemory(
+        process_handle,
+        ctypes.c_void_p(address),
+        ctypes.byref(float_value),
+        ctypes.sizeof(float_value),
+        byref(bytes_written)
+    )
+    if not result or bytes_written.value != ctypes.sizeof(float_value):
+        raise ctypes.WinError()
+    return True
+
+# --- Screen Projection ---
+
+def get_hp_color(hp):
+    """Return RGB color based on HP value"""
+    if hp > 75:
+        return (0, 255, 0)  # Green
+    elif hp > 50:
+        return (200, 255, 0)  # Yellow-green
+    elif hp > 25:
+        return (255, 200, 0)  # Orange
+    else:
+        return (255, 50, 50)  # Red
 
 def calculate_speed(vel):
     return math.sqrt(vel['x']**2 + vel['y']**2 + vel['z']**2)
@@ -1420,229 +1996,11 @@ def is_in_game(handle, base):
     pawn = safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn)
     return pawn != 0
 
-def check_player_visibility(local_pos, entity_pos, vis_checker):
-    """
-    Check if a player is visible using external map parsing with VisCheck module.
-    Returns True if the player is visible, False otherwise.
-    
-    Args:
-        local_pos: Local player position (Vec3)
-        entity_pos: Target entity position (Vec3)  
-        vis_checker: VisCheck module instance
-    """
-    try:
-        if not local_pos or not entity_pos or not vis_checker:
-            return False
-            
-        # Check if vis_checker has a map loaded
-        if not vis_checker.is_map_loaded():
-            # If no map is loaded or loading, default to visible to not break ESP
-            return True
-            
-        # Add small height offset to simulate eye level
-        eye_offset = 64.0  # CS2 player eye height offset
-        
-        local_eye_pos = (local_pos.x, local_pos.y, local_pos.z + eye_offset)
-        entity_eye_pos = (entity_pos.x, entity_pos.y, entity_pos.z + eye_offset)
-        
-        # Use VisCheck module to perform ray-triangle intersection
-        is_visible = vis_checker.is_visible(local_eye_pos, entity_eye_pos)
-        
-        # Debug output to see what's happening (uncomment for debugging)
-        # print(f"[VisCheck Debug] Map loaded: {vis_checker.is_map_loaded()}, Visibility: {is_visible}")
-        
-        # If vis_checker is not working properly, default to True (visible)
-        if is_visible is None:
-            print("[VisCheck Debug] Null result from vis_checker - defaulting to VISIBLE")
-            return True
-            
-        return bool(is_visible)  # Ensure boolean return
-        
-    except Exception as e:
-        print(f"[VisCheck Error] {e}")
-        print("[VisCheck Debug] Exception occurred - defaulting to VISIBLE")
-        return True
-
-entity_traces = {}  # {entity_id: [Vec3, Vec3, ...]}
-
-local_info_box_pos = [100, 400]
-local_info_drag_offset = [0, 0]
-local_info_dragging = False
-
-def get_current_map_name(handle, matchmaking_base):
-    """
-    Read the current map name from matchmaking.dll using existing read_bytes function
-    The map name is stored as a pointer to string, so we need to dereference it
-    Returns the map name as string or None if failed
-    """
-    try:
-        if not handle or not matchmaking_base:
-            print(f"[Map Debug] Invalid handle ({handle}) or matchmaking_base ({hex(matchmaking_base) if matchmaking_base else 'None'})")
-            return None
-        
-        # Compute the address where the map name pointer is stored
-        map_name_ptr_address = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
-        # print(f"[Map Debug] Reading pointer from: {hex(map_name_ptr_address)}")
-        
-        # Read the pointer (8 bytes on 64-bit)
-        ptr_bytes = read_bytes(handle, map_name_ptr_address, 8)
-        if not ptr_bytes:
-            print(f"[Map Debug] Failed to read pointer")
-            return None
-            
-        # Convert bytes to pointer value
-        map_name_ptr = struct.unpack("Q", ptr_bytes)[0]  # Q = unsigned long long (64-bit)
-        
-        if map_name_ptr == 0 or map_name_ptr > 0x7FFFFFFFFFFF:
-            print(f"[Map Debug] Invalid pointer: {hex(map_name_ptr)}")
-            return None
-            
-        # print(f"[Map Debug] Following pointer to: {hex(map_name_ptr)}")
-        
-        # Now read the actual string from the pointer location
-        string_bytes = read_bytes(handle, map_name_ptr, 128)
-        if not string_bytes:
-            # print(f"[Map Debug] Failed to read string from pointer")
-            return None
-            
-        # Convert to string
-        map_name = string_bytes.split(b'\x00')[0].decode('utf-8', errors='ignore')
-        
-        if map_name and len(map_name) >= 3 and not map_name.isspace():
-            # print(f"[Map Debug] Successfully read map name: {map_name}")
-            return map_name
-        else:
-            # Empty or invalid map name (probably not in game)
-            # print(f"[Map Debug] Successfully read map name: <empty>")
-            return "<empty>"
-            
-    except Exception as e:
-        print(f"[Map Debug] Error reading map name: {e}")
-        return None
-
-def auto_map_loader(handle, matchmaking_base, vis_checker):
-    """
-    Automatically loads the correct map when CS2 map changes
-    Only loads when detected map differs from currently loaded map
-    """
-    global last_map_check_time, current_detected_map
-    
-    current_time = time.time()
-    if current_time - last_map_check_time >= 3.0:  # Check every 3 seconds (less frequent)
-        last_map_check_time = current_time
-        
-        # Get current map from CS2 memory
-        detected_map = get_current_map_name(handle, matchmaking_base)
-        if not detected_map or detected_map == "<empty>":
-            # No valid map detected (probably not in game) - ignore silently
-            return
-        
-        # Get currently loaded map in VisCheck
-        if vis_checker and vis_checker.is_map_loaded():
-            loaded_map_path = vis_checker.get_current_map()
-            # Extract map name from path (e.g., "maps/de_mirage.opt" -> "de_mirage")
-            if loaded_map_path:
-                loaded_map_name = os.path.basename(loaded_map_path).replace('.opt', '')
-            else:
-                loaded_map_name = None
-        else:
-            loaded_map_name = None
-        
-        # Compare detected vs loaded
-        if detected_map != current_detected_map:
-            print(f"[Auto-Map] Detected map change: {current_detected_map} -> {detected_map}")
-            current_detected_map = detected_map
-        
-        if detected_map != loaded_map_name:
-            # Map mismatch - need to load correct map
-            target_map_file = f"{detected_map}.opt"
-            target_map_path = os.path.join("maps", target_map_file)
-            
-            if os.path.exists(target_map_path):
-                print(f"[Auto-Map] Auto-loading map: {detected_map} (was: {loaded_map_name})")
-                
-                # Trigger automatic map load through config
-                from Process.config import Config
-                setattr(Config, 'visibility_map_path', target_map_path)
-                setattr(Config, 'visibility_map_reload_needed', True)
-                
-            else:
-                print(f"[Auto-Map] Map file not found: {target_map_path}")
-                print(f"[Auto-Map] Detected: {detected_map}, Loaded: {loaded_map_name}")
-        else:
-            # Maps match - no action needed
-            if current_detected_map != detected_map:  # Only print on first detection
-                print(f"[Auto-Map] Map synchronized: {detected_map}")
-
-def debug_map_check(handle, matchmaking_base):
-    """
-    Debug function that checks and prints current map name every second  
-    """
-    global last_map_check_time, current_detected_map
-    
-    current_time = time.time()
-    if current_time - last_map_check_time >= 1.0:  # Check every second
-        last_map_check_time = current_time
-        
-        map_name = get_current_map_name(handle, matchmaking_base)
-        if map_name and map_name != "<empty>":
-            current_detected_map = map_name
-            # print(f"[Map Debug] Current map: {map_name}")
-        elif map_name == "<empty>":
-            # Silent when not in game
-            pass
-        else:
-            print(f"[Map Debug] Failed to read map name")
-
-def load_map_threaded(vis_checker, map_path):
-    """Load map in background thread to prevent GUI blocking"""
-    global map_loading_in_progress
-    
-    def load_worker():
-        global map_loading_in_progress
-        try:
-            map_loading_in_progress = True
-            print(f"[VisCheck] Background loading: {map_path}")
-            
-            # Add small delay to prevent issues
-            time.sleep(0.1)
-            
-            if vis_checker.load_map(map_path):
-                print(f"[VisCheck] Background load complete: {map_path}")
-            else:
-                print(f"[VisCheck] Background load failed: {map_path}")
-                    
-        except Exception as e:
-            print(f"[VisCheck] Background load error: {e}")
-        finally:
-            map_loading_in_progress = False
-            print(f"[VisCheck] Background loading finished for: {map_path}")
-    
-    # Start loading in background thread
-    thread = threading.Thread(target=load_worker, daemon=True)
-    thread.start()
-    print(f"[VisCheck] Started background thread for: {map_path}")
-
-# === World-items FPS optimizer ==============================================
-# Drop this near the other globals in esp.py
-
-_WORLD_SCAN_INTERVAL_SEC = 0.15   # rescan every 150ms
-_OWNER_RESOLVE_TTL_SEC   = 0.30   # cache owner result for 300ms
-_TYPE_STR_TTL_SEC        = 5.00   # refresh designer names occasionally
-
-_world_items_cache = []           # [(screen_pos, origin, type_str)]
-_world_items_cache_until = 0.0
-
-_item_type_cache = {}             # {entity_addr: (type_str, expiry_time)}
-_owner_resolve_cache = {}         # {entity_addr: (is_equipped_bool, expiry_time)}
-
-
 def _cached_now():
-    return time.perf_counter()
-
+    return time.time()
 
 def _read_type_str_cached(handle, entity_addr):
-    """Read designer name once per 5s per entity."""
+    """Read designer name once per 5s per entity (works for projectiles)."""
     now = _cached_now()
     hit = _item_type_cache.get(entity_addr)
     if hit and hit[1] > now:
@@ -1654,229 +2012,108 @@ def _read_type_str_cached(handle, entity_addr):
         if item_info:
             type_ptr = safe_read_uint64(handle, item_info + 0x20)
             if type_ptr:
-                raw = read_bytes(handle, type_ptr, 64)
-                s = raw.split(b'\x00', 1)[0].decode('utf-8', 'ignore')
+                raw = read_bytes(handle, type_ptr, 128)
+                s = raw.split(b"\x00", 1)[0].decode("utf-8", "ignore")
                 if s:
                     type_str = s
     except Exception:
         pass
 
     if not type_str:
-        # cache negative result briefly to avoid spamming reads
-        _item_type_cache[entity_addr] = ("", _cached_now() + 0.75)
+        _item_type_cache[entity_addr] = ("", now + 0.75)
         return ""
 
     _item_type_cache[entity_addr] = (type_str, now + _TYPE_STR_TTL_SEC)
     return type_str
 
+PROJECTILE_TYPES = {
+    "smokegrenade_projectile": "Smoke",
+    "flashbang_projectile": "Flash",
+    "hegrenade_projectile": "HE",
+    "molotov_projectile": "Molotov",
+    "incendiarygrenade_projectile": "Incendiary",
+    "decoy_projectile": "Decoy",
+}
 
-def _is_equipped_weapon_cached(handle, entity_list, entity_addr):
-    """Return True if this weapon is clearly owned by a valid pawn. Cached for 300ms."""
-    now = _cached_now()
-    hit = _owner_resolve_cache.get(entity_addr)
-    if hit and hit[1] > now:
-        return hit[0]
+def get_projectile_type(identifier):
+    return PROJECTILE_TYPES.get(identifier, None)
 
-    equipped = False
+# ===========================
+# Projectile ESP
+# ===========================
+
+last_proj_debug = 0
+
+def debug_print_entities(handle, base, max_entities=1024):
+    """Debug: Print entity type strings from entity list"""
     try:
-        owner_handle = read_int(handle, entity_addr + Offsets.m_hOwnerPawn) & 0x7FFF
-        if owner_handle != 0x7FFF:
-            pawn_list_entry = safe_read_uint64(handle, entity_list + ((owner_handle >> 9) * 8) + 16)
-            if pawn_list_entry:
-                pawn = safe_read_uint64(handle, pawn_list_entry + (112 * (owner_handle & 0x1FF)))
-                if pawn:
-                    equipped = True
-    except Exception:
-        equipped = False
-
-    _owner_resolve_cache[entity_addr] = (equipped, now + _OWNER_RESOLVE_TTL_SEC)
-    return equipped
-
-
-def _features_active(cfg):
-    """If nothing is enabled, skip scanning altogether."""
-    return any([
-        getattr(cfg, "dropped_weapon_esp_enabled", True),
-        getattr(cfg, "projectile_esp_enabled", True),
-        getattr(cfg, "chicken_esp_enabled", True),
-        getattr(cfg, "hostage_esp_enabled", True),
-        getattr(cfg, "bomb_esp_enabled", True),
-    ])
-
-
-def _scan_world_items_once(handle, base, matrix, overlay, cfg):
-    """One heavy scan pass, called at most every WORLD_SCAN_INTERVAL_SEC."""
-    entity_list = safe_read_uint64(handle, base + Offsets.dwEntityList)
-    if not entity_list:
-        return []
-
-    items = []
-
-    # Dynamic cap: trim work if some features are off
-    max_entities = getattr(cfg, "max_entities_esp", 1024)
-    if not getattr(cfg, "projectile_esp_enabled", True):
-        max_entities = min(max_entities, 512)
-    if not getattr(cfg, "dropped_weapon_esp_enabled", True):
-        max_entities = min(max_entities, 768)
-
-    # Local aliases and rotating scan window to distribute cost
-    o = Offsets
-    sru64 = safe_read_uint64
-    rvec3 = read_vec3
-    w2s = world_to_screen
-    W, H = overlay.width, overlay.height
-    start_idx = 64
-    end_idx = max_entities
-    phase = getattr(_scan_world_items_once, "phase", 0)
-    mid_idx = start_idx + max(0, (end_idx - start_idx) // 2)
-    if end_idx > start_idx:
-        scan_start, scan_end = (start_idx, mid_idx) if phase == 0 else (mid_idx, end_idx)
-        _scan_world_items_once.phase = 1 - phase
-    else:
-        scan_start, scan_end = (start_idx, end_idx)
-
-    # Scan only a slice per call (rest will be scanned next refresh)
-    for i in range(scan_start, scan_end):
-        try:
-            list_entry = sru64(handle, entity_list + (8 * ((i & 0x7FFF) >> 9) + 16))
-            if not list_entry:
-                continue
-
-            ent = sru64(handle, list_entry + (112 * (i & 0x1FF)))
-            if not ent:
-                continue
-
-            # Read scene node and position
-            node = sru64(handle, ent + o.m_pGameSceneNode)
-            if not node:
-                continue
-            pos = rvec3(handle, node + o.m_vecAbsOrigin)
-            if not pos or not pos.x:
-                continue
-
-            # Compute once; skip offscreen early
-            scr = w2s(matrix, pos, W, H)
-            if not scr:
-                continue
-
-            # Type string with cache (read only for on-screen items)
-            t = _read_type_str_cached(handle, ent)
-            if not t:
-                t = f"entity_{i}"
-
-            # If it's a weapon, skip equipped ones
-            if t.startswith("weapon_"):
-                if _is_equipped_weapon_cached(handle, entity_list, ent):
-                    continue
-
-            items.append((scr, pos, t))
-        except Exception:
-            continue
-
-    return items
-# ============================================================================
-
-
-def draw_bomb_carrier_esp(handle, base, entities, overlay, cfg):
-    """Draw ESP indicator on players carrying the bomb"""
-    try:
-        if not getattr(cfg, "bomb_carrier_esp_enabled", True):
-            return
-        
         entity_list = safe_read_uint64(handle, base + Offsets.dwEntityList)
         if not entity_list:
+            print("[EntityDebug] No entity list found")
             return
-        
-        for ent in entities:
+
+        print(f"[EntityDebug] Scanning first {max_entities} entities...")
+        found = 0
+
+        for i in range(max_entities):
             try:
-                if not ent or not hasattr(ent, 'pawn') or not ent.pawn:
+                list_entry = safe_read_uint64(entity_list + (8 * ((i & 0x7FFF) >> 9) + 16))
+                if not list_entry:
                     continue
-                
-                # Check if player has the bomb in their inventory
-                # Read weapon services
-                weapon_services = safe_read_uint64(handle, ent.pawn + Offsets.m_pWeaponServices)
-                if not weapon_services:
+
+                entity = safe_read_uint64(list_entry + (112 * (i & 0x1FF)))  # CS2 update: stride changed from 120 to 112
+                if not entity:
                     continue
-                
-                # Read weapon handles array (MyWeapons offset)
-                # Typically at weapon_services + 0x8 or nearby
-                has_bomb = False
-                
-                # Check multiple weapon slots (0-4 typically covers all weapons)
-                for slot in range(5):
-                    try:
-                        weapon_handle = read_int(handle, weapon_services + 0x8 + (slot * 0x4))
-                        if not weapon_handle or weapon_handle == -1:
-                            continue
-                        
-                        # Read weapon entity
-                        weapon_index = weapon_handle & 0x7FFF
-                        weapon_entry = safe_read_uint64(handle, entity_list + (8 * ((weapon_index >> 9) & 0x3F) + 16))
-                        if not weapon_entry:
-                            continue
-                        
-                        weapon_entity = safe_read_uint64(handle, weapon_entry + (112 * (weapon_index & 0x1FF)))
-                        if not weapon_entity:
-                            continue
-                        
-                        # Check if it's the bomb
-                        weapon_name = get_weapon_name_from_entity(handle, weapon_entity)
-                        if weapon_name and "c4" in weapon_name.lower():
-                            has_bomb = True
-                            break
-                    except:
-                        continue
-                
-                if has_bomb and hasattr(ent, 'head2d') and ent.head2d:
-                    # Player has the bomb! Draw indicator
-                    color = getattr(cfg, "bomb_carrier_esp_color", (255, 200, 0))
-                    text_y = ent.head2d["y"] - 30  # Above head
-                    overlay.draw_text("💣 BOMB", ent.head2d["x"], text_y, color, 14, centered=True)
-                
-            except Exception:
+
+                # Try to read type string
+                type_str = _read_type_str_cached(handle, entity)
+                if not type_str:
+                    continue
+
+                found += 1
+                print(f"  [{i}] {type_str}")
+
+            except Exception as e:
                 continue
-                
+
+        print(f"[EntityDebug] Found {found} entities with type strings")
+
     except Exception as e:
-        print(f"[Bomb Carrier ESP Error] {e}")
+        print(f"[EntityDebug] Error: {e}")
 
 def esp_weapon(handle, pawn_addr):
     try:
         weapon_pointer = safe_read_uint64(handle, pawn_addr + Offsets.m_pClippingWeapon)
         if not weapon_pointer:
             return None
-
-        # New way: read weapon name directly from entity
-        return get_weapon_name_from_entity(handle, weapon_pointer)
+        weapon_index = read_int(handle, weapon_pointer + Offsets.m_AttributeManager + Offsets.m_Item + Offsets.m_iItemDefinitionIndex)
+        return get_weapon_name(weapon_index)
     except Exception as e:
         print(f"[esp_weapon] Error: {e}")
         return None
 
+def get_weapon_name(weapon_id):
+    if weapon_id > 262100:
+        weapon_id = weapon_id - 262144
+    weapon_name = {
+        1: 'deagle', 2: 'elite', 3: 'fiveseven', 4: 'glock', 7: 'ak47', 8: 'aug', 9: 'awp',
+        10: 'famas', 11: 'g3sg1', 13: 'galil', 14: 'm249', 16: 'm4a1', 17: 'mac10', 19: 'p90',
+        23: 'ump45', 24: 'ump45', 25: 'xm1014', 26: 'bizon', 27: 'mag7', 28: 'negev', 29: 'sawedoff',
+        30: 'tec9', 31: 'taser', 32: 'hkp2000', 33: 'mp7', 34: 'mp9', 35: 'nova', 36: 'p250',
+        38: 'scar20', 39: 'sg556', 40: 'ssg08', 42: 'knife_ct', 43: 'flashbang', 44: 'hegrenade',
+        45: 'smokegrenade', 46: 'molotov', 47: 'decoy', 48: 'incgrenade', 49: 'c4', 57: 'deagle',
+        59: 'knife_t', 60: 'm4a1_silencer', 61: 'usp_silencer', 63: 'cz75a', 64: 'revolver',
+        500: 'bayonet', 505: 'knife_flip', 506: 'knife_gut', 507: 'knife_karambit',
+        508: 'knife_m9_bayonet', 509: 'knife_tactical', 512: 'knife_falchion',
+        514: 'knife_survival_bowie', 515: 'knife_butterfly', 516: 'knife_push', 526: 'knife_kukri'
+    }
+    return weapon_name.get(weapon_id, f"Weapon ID: {weapon_id}")
 
-def cleanup_vischeck_resources():
-    """Cleanup VisCheck resources on exit"""
-    global optimized_vischeck
-    if optimized_vischeck:
-        try:
-            optimized_vischeck.cleanup()
-        except:
-            pass
-        optimized_vischeck = None
-
-def get_vischeck_cache_stats():
-    """Get VisCheck cache statistics for display"""
-    if optimized_vischeck:
-        try:
-            return optimized_vischeck.get_cache_stats()
-        except:
-            pass
-    return {"total_entries": 0, "valid_entries": 0, "cache_dir_size_mb": 0.0}
-
-# Global vis_checker so aimbot can access it
-vis_checker = None
+# ## Entry point
 
 def main():
-    global vis_checker  # Make it accessible to other modules
-    
+    global vis_checker
+
     hwnd = windll.user32.FindWindowW(None, "Counter-Strike 2")
     if not hwnd:
         return print("[!] CS2 not running.")
@@ -1884,12 +2121,13 @@ def main():
     pid = wintypes.DWORD()
     windll.user32.GetWindowThreadProcessId(hwnd, byref(pid))
     handle = windll.kernel32.OpenProcess(PROCESS_PERMISSIONS, False, pid.value)
-    
-    # Initialize unified memory interface with kernel mode support
+
     print(f"[Memory] Initializing memory interface for PID {pid.value}")
     try:
         memory = MemoryInterface(pid.value, handle, Config)
-        set_memory_interface(memory)  # Set global memory interface
+        memory = CachingMemory(memory)  # per-frame cached reads
+
+        set_memory_interface(memory)
         if memory.is_kernel_mode_active():
             print("[Memory] ✓ Kernel mode active via NeacController")
         else:
@@ -1897,7 +2135,21 @@ def main():
     except Exception as e:
         print(f"[Memory] Failed to initialize memory interface: {e}")
         return
-    
+
+    # 🔥 FIX: get client.dll base before calling debug_print_entities
+    base = None
+    for module_name in ["client.dll", "client"]:
+        base = GDIRenderer().get_module_base(pid.value, module_name)
+        if base:
+            break
+
+    if not base:
+        print("[ESP] Failed to locate client.dll base")
+        return
+
+    debug_print_entities(handle, base, 512)
+
+
     # ESP state tracking
     esp_active_count = 0
     last_entity_count = 0
@@ -1923,7 +2175,6 @@ def main():
                 if not base:
                     # Try to get it from the renderer or use a different method
                     import win32process
-                    import win32api
                     try:
                         modules = win32process.EnumProcessModules(handle)
                         for module in modules:
@@ -2123,6 +2374,13 @@ def main():
             watermark_dragging, watermark_pos, watermark_drag_offset, box_width, 24
         )
 
+    def handle_team_list_drag():
+        global team_list_dragging, team_list_drag_offset
+        team_w, team_h = team_list_box_size
+        team_list_dragging, team_list_drag_offset = handle_dragging(
+            team_list_dragging, team_list_pos, team_list_drag_offset, team_w, team_h
+        )
+
     def handle_map_status_drag():
         global map_status_dragging, map_status_drag_offset
         map_status_dragging, map_status_drag_offset = handle_dragging(
@@ -2145,6 +2403,9 @@ def main():
     error_cooldown = 5.0  # seconds between error resets
     
     while True:
+    
+        if hasattr(memory, 'new_frame'): memory.new_frame()
+
         try:
             # Windows message pump every tick
             msg = wintypes.MSG()
@@ -2217,10 +2478,7 @@ def main():
             # Cache all config flags once
             flags = {
                 "color_box_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),   # Dark red
-                "color_box_dead_ct": getattr(cfg, "color_box_dead_ct", (0, 0, 128)), # Dark blue
-                # Synonyms used by other code paths to avoid KeyErrors
-                "color_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),
-                "color_dead_ct": getattr(cfg, "color_box_dead_ct", (0, 0, 128)),
+                "color_dead_ct": getattr(cfg, "color_dead_ct", (0, 0, 128)), # Dark blue
                 "color_box_visible_ct": getattr(cfg, "color_box_visible_ct", getattr(cfg, "color_box_visible", (0, 255, 0))),
                 "color_box_visible_t": getattr(cfg, "color_box_visible_t", getattr(cfg, "color_box_visible", (0, 255, 0))),
                 "color_box_invisible_ct": getattr(cfg, "color_box_invisible_ct", getattr(cfg, "color_box_not_visible", (255, 0, 0))),
@@ -2298,65 +2556,86 @@ def main():
             matrix = read_matrix(handle, base + Offsets.dwViewMatrix)
             local_pos = get_local_player()
 
+            # ================================
+            # Panic toggle
+            # ================================
             if getattr(cfg, "panic_key_enabled", True):
                 if win32api.GetAsyncKeyState(int(cfg.panic_key)) & 0x1:
                     cfg.panic_mode_active = not cfg.panic_mode_active
                     print(f"[PANIC] Panic mode {'ENABLED' if cfg.panic_mode_active else 'DISABLED'}")
 
-
-
             if cfg.panic_mode_active:
-                for key in flags.keys():
+                for key in flags:
                     if key.endswith("_enabled"):
                         flags[key] = False
-                        
-            if getattr(cfg, "show_overlay_fps", False):
-                fps_text = f"FPS: {overlay.current_fps}"
-                overlay.draw_text(fps_text, overlay.width - 100, 20, (0, 255, 0), 16)
 
-            # Watermark
-            if flags["watermark_enabled"]:
-                handle_watermark_drag()
-                x, y = watermark_pos
-
-                # Adjust height for extra text line
-                overlay.draw_filled_rect(x, y, 260, 40, getattr(cfg, "color_local_box_background", (30, 30, 30)))
-                overlay.draw_box(x, y, 260, 40, getattr(cfg, "color_local_box_border", (100, 100, 100)))
-
-                # First line: FPS
-                overlay.draw_text(f"GFusion | FPS: {overlay.current_fps}", x + 6, y + 4, (255, 255, 255), 14)
-
-                # Second line: Credit
-                overlay.draw_text("Made by Cr0mb & SameOldMistakes", x + 6, y + 20, (200, 200, 200), 12)
-
+            # ================================
+            # Local Info Box
+            # ================================
             if flags.get("show_local_info_box", True) and local_pos:
                 handle_local_info_drag()
-                box_x, box_y = local_info_box_pos
-                box_w, box_h = 240, 72
-                velocity = read_vec3(handle, safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn) + Offsets.m_vecVelocity)
+                
+                font_size = 13
+                title_font_size = 14
+                
+                # Get data
+                local_pawn = safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn)
+                velocity = read_vec3(handle, local_pawn + Offsets.m_vecVelocity) if local_pawn else (0, 0, 0)
                 speed = math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
+                
+                # Build rows
+                rows = [
+                    f"Coords: {local_pos.x:.1f}, {local_pos.y:.1f}, {local_pos.z:.1f}",
+                    f"Velocity: {velocity.x:.1f}, {velocity.y:.1f}, {velocity.z:.1f}",
+                    f"Speed: {speed:.1f} u/s"
+                ]
+                
+                # Calculate box dimensions
+                line_height = font_size + 6
+                title_height = title_font_size + 12
+                h = title_height + len(rows) * line_height + 8
+                w = 240
+                
+                # Update global size cache
+                local_info_box_size = [w, h]
+                
+                clamp_box_to_screen(local_info_box_pos, w, h, overlay.width, overlay.height)
+                
+                box_x, box_y = local_info_box_pos
+                
+                # Modern sleek design (RGB only, no alpha)
+                # Main background - dark blue-gray
+                overlay.draw_filled_rect(box_x, box_y, w, h, (15, 15, 18))
+                
+                # Subtle border with accent color
+                overlay.draw_box(box_x, box_y, w, h, (60, 65, 75))
+                
+                # Title bar - darker gradient-like top
+                overlay.draw_filled_rect(box_x, box_y, w, title_height, (25, 28, 35))
+                
+                # Accent line under title
+                overlay.draw_filled_rect(box_x, box_y + title_height - 1, w, 1, (80, 140, 255))
+                
+                # Title text with modern styling
+                overlay.draw_text("BHOP INFO", box_x + w // 2, box_y + 8, (180, 200, 255), title_font_size, centered=True)
+                
+                # Draw info rows with consistent spacing
+                y_offset = box_y + title_height + 6
+                overlay.draw_text(rows[0], box_x + 10, y_offset, flags["color_local_coords_text"], font_size)
+                overlay.draw_text(rows[1], box_x + 10, y_offset + line_height, flags["color_local_velocity_text"], font_size)
+                overlay.draw_text(rows[2], box_x + 10, y_offset + line_height * 2, flags["color_local_speed_text"], font_size)
 
-                # Background and border
-                overlay.draw_filled_rect(box_x, box_y, box_w, box_h, flags.get("color_local_box_background", (30, 30, 30)))
-                overlay.draw_box(box_x, box_y, box_w, box_h, flags.get("color_local_box_border", (100, 100, 100)))
-                overlay.draw_filled_rect(box_x, box_y, box_w, 24, (50, 50, 50))
-                overlay.draw_text("BHop Info", box_x + box_w // 2, box_y + 4, (200, 200, 255), 16, centered=True)
-
-                # Text lines
-                overlay.draw_text(f"Coords: {local_pos.x:.1f}, {local_pos.y:.1f}, {local_pos.z:.1f}",
-                                  box_x + 6, box_y + 26, flags["color_local_coords_text"], 14)
-
-                overlay.draw_text(f"Velocity: {velocity.x:.1f}, {velocity.y:.1f}, {velocity.z:.1f}",
-                                  box_x + 6, box_y + 42, flags["color_local_velocity_text"], 14)
-
-                overlay.draw_text(f"Speed: {speed:.1f} u/s", box_x + 6, box_y + 58, flags["color_local_speed_text"], 14)
-
-            # NEW: Map/VisCheck status
+    # ================================
+            # Map/VisCheck status
+            # ================================
             if getattr(cfg, "show_map_status_box", True):
                 handle_map_status_drag()
                 draw_map_status_box(overlay, vis_checker)
 
-            if flags["noflash_enabled"]:
+            # ================================
+            # NoFlash
+            # ================================
+            if flags.get("noflash_enabled", False):
                 try:
                     local_pawn = safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn)
                     if local_pawn:
@@ -2364,7 +2643,10 @@ def main():
                 except Exception as e:
                     print(f"[NoFlash Error] {e}")
 
-            if flags["grenade_prediction_enabled"]:
+            # ================================
+            # Grenade Prediction
+            # ================================
+            if flags.get("grenade_prediction_enabled", False):
                 local_pawn = safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn)
                 if local_pawn:
                     view_angles = [read_float(handle, base + Offsets.dwViewAngles + i * 4) for i in range(2)]
@@ -2375,9 +2657,9 @@ def main():
                     right_click = win32api.GetAsyncKeyState(win32con.VK_RBUTTON) & 0x8000
 
                     if left_click:
-                        vel = estimate_grenade_velocity(view_angles, throw_strength=1.3, base_velocity=1350.0)
+                        vel = estimate_grenade_velocity(view_angles, 1.3, 1350.0)
                     elif right_click:
-                        vel = estimate_grenade_velocity(view_angles, throw_strength=1.3, base_velocity=550.0)
+                        vel = estimate_grenade_velocity(view_angles, 1.3, 550.0)
                     else:
                         vel = None
 
@@ -2388,13 +2670,21 @@ def main():
                             try:
                                 screen = world_to_screen(matrix, pos, overlay.width, overlay.height)
                                 overlay.draw_circle(screen["x"], screen["y"], 2, (255, 255, 0))
-                            except: pass
+                            except:
+                                pass
 
-            if flags["fov_circle_enabled"]:
+            # ================================
+            # Aimbot FOV Circle
+            # ================================
+            if flags.get("fov_circle_enabled", False):
                 draw_aimbot_fov(overlay, flags["FOV"])
 
-            if flags["draw_crosshair_enabled"]:
+            # ================================
+            # Crosshair
+            # ================================
+            if flags.get("draw_crosshair_enabled", False):
                 draw_crosshair(overlay, size=flags["crosshair_size"], color=flags["crosshair_color"])
+
 
             # Get local team safely
             try:
@@ -2419,14 +2709,14 @@ def main():
                                 target_index = observer_target & 0x7FFF
                                 target_list_entry = safe_read_uint64(handle, entity_list + (8 * ((target_index >> 9) & 0x3F) + 16))
                                 if target_list_entry:
-                                    target_controller = safe_read_uint64(handle, target_list_entry + (112 * (target_index & 0x1FF)))
+                                    target_controller = safe_read_uint64(handle, target_list_entry + (112 * (target_index & 0x1FF)))  # CS2 update: stride changed from 120 to 112
                                     if target_controller:
-                                        spectated_pawn_handle = safe_read_uint64(handle, target_controller + Offsets.m_hPlayerPawn)
+                                        spectated_pawn_handle = read_int(handle, target_controller + Offsets.m_hPlayerPawn) & 0x7FFFFFFF  # Handles are 32-bit
                                         if spectated_pawn_handle:
                                             spectated_index = spectated_pawn_handle & 0x7FFF
                                             spectated_list_entry = safe_read_uint64(handle, entity_list + (8 * ((spectated_index >> 9) & 0x3F) + 16))
                                             if spectated_list_entry:
-                                                spectated_pawn = safe_read_uint64(handle, spectated_list_entry + (112 * (spectated_index & 0x1FF)))
+                                                spectated_pawn = safe_read_uint64(handle, spectated_list_entry + (112 * (spectated_index & 0x1FF)))  # CS2 update: stride changed from 120 to 112
                 except:
                     pass  # Not spectating or error reading
                 
@@ -2455,6 +2745,29 @@ def main():
                 esp_enabled_count = sum(esp_enabled_flags)
                 print(f"[ESP Status] Entities: {len(entities)}, ESP features enabled: {esp_enabled_count}/4")
                 last_esp_status_time = current_time
+
+            # ================================
+            # Overlay FPS
+            # ================================
+            if getattr(cfg, "show_overlay_fps", False):
+                overlay.draw_text(
+                    f"FPS: {overlay.current_fps}",
+                    overlay.width - 100, 20,
+                    (0, 255, 0), 16
+                )
+
+            # ================================
+            # Watermark
+            # ================================
+            if flags.get("watermark_enabled", False):
+                handle_watermark_drag()
+                x, y = watermark_pos
+
+                overlay.draw_filled_rect(x, y, 260, 40, getattr(cfg, "color_local_box_background", (30, 30, 30)))
+                overlay.draw_box(x, y, 260, 40, getattr(cfg, "color_local_box_border", (100, 100, 100)))
+
+                overlay.draw_text(f"GFusion | FPS: {overlay.current_fps}", x + 6, y + 4, (255, 255, 255), 14)
+                overlay.draw_text("Made by Cr0mb & SameOldMistakes", x + 6, y + 20, (200, 200, 200), 12)
 
             for ent in entities:
                 try:
@@ -2614,9 +2927,7 @@ def main():
                 if flags["weapon_esp_enabled"]:
                     weapon_name = esp_weapon(handle, ent.pawn)
                     if weapon_name:
-                        # Use the line_index system for proper spacing
-                        overlay.draw_text(weapon_name, text_x, text_y + line_spacing * line_index, cfg.color_weapon_text, font_size)
-                        line_index += 1
+                        overlay.draw_text(weapon_name, x + w/2, y + h + 4, cfg.color_weapon_text, font_size, centered=True)
 
 
                 if flags["line_esp_enabled"]:
@@ -2727,22 +3038,46 @@ def main():
                                 color = (255, 255, 0)
                             overlay.draw_text(text, scr["x"], scr["y"], color, 14, centered=True)
                     except: pass
-            
-            # === World Items ESP (module) ===
-            if worldesp.features_active(Config):
-                worldesp.render_world_items(
-                    handle, base, matrix, overlay, Config,
-                    safe_read_uint64, read_vec3, read_int, read_bytes, world_to_screen,
-                    get_weapon_type, get_projectile_type
+                    
+            if getattr(Config, "projectile_esp_enabled", True):
+                draw_projectile_esp(handle, base, matrix, overlay, Config)
+
+
+
+            if flags["spectator_list_enabled"]:
+                handle_spectator_list_drag()
+                spectators = spectator_list.GetSpectatorsCached()
+                
+                font_size = 12
+                rows = spectators if spectators else ["None"]
+                
+                # Calculate box dimensions
+                h = 6 + font_size + 4 + len(rows) * (font_size + 2) + 6
+                w = 200
+                
+                # Update global size cache (so _wnd_proc can access it)
+                spectator_box_size = [w, h]
+                
+                clamp_box_to_screen(spectator_list_pos, w, h, overlay.width, overlay.height)
+                
+                # Draw the info box
+                draw_info_box(
+                    overlay,
+                    spectator_list_pos[0],
+                    spectator_list_pos[1],
+                    w,
+                    h,
+                    "Spectators",
+                    rows,
+                    font_size=font_size
                 )
 
-            # Bomb Carrier ESP (shows who has the bomb)
-            draw_bomb_carrier_esp(handle, base, entities, overlay, cfg)
-
-            # Spectator list
-            if getattr(Config, "spectator_list_enabled", False):
-                specs = spectator_list.GetSpectatorsCached()
-                draw_spectator_list(overlay, specs)
+            # ================================
+            # Team List Box
+            # ================================
+            if getattr(cfg, "team_list_enabled", True):
+                handle_team_list_drag()
+                draw_team_list_box(overlay, entities, local_team)
 
         except Exception as e:
             consecutive_errors += 1
@@ -2802,3 +3137,78 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# === Module tail (preserved) ===
+import math
+import time
+import win32api
+import win32gui
+import win32con
+import win32ui
+import ctypes
+import struct
+from ctypes import windll, wintypes, byref, c_float, c_size_t
+from ctypes.wintypes import RECT
+import sys
+import os
+import threading
+from Process.config import Config
+from Process.offsets import Offsets
+from Process.memory_interface import MemoryInterface
+
+# Add current directory to path for vischeck.pyd
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Import performance optimizer
+try:
+    from Performance.vischeck_optimizer import AsyncVisCheck, get_global_vischeck, PerformanceMetrics
+    OPTIMIZER_AVAILABLE = True
+except ImportError:
+    OPTIMIZER_AVAILABLE = False
+    print("[Warning] VisCheck optimizer not available")
+
+try:
+    import vischeck
+    VISCHECK_AVAILABLE = True
+    print("[VisCheck] Module loaded successfully")
+except ImportError as e:
+    VISCHECK_AVAILABLE = False
+    print(f"[Warning] VisCheck module import error: {e}")
+    print("[Info] Make sure vischeck.pyd is in the main directory and compiled for your Python version")
+except Exception as e:
+    VISCHECK_AVAILABLE = False
+    print(f"[Error] VisCheck module unexpected error: {e}")
+
+PROCESS_PERMISSIONS = 0x0010 | 0x0400  # PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
+
+# Global variables for threaded map loading
+map_loading_in_progress = False
+map_load_lock = threading.Lock()
+
+# Performance monitoring
+performance_metrics = PerformanceMetrics() if OPTIMIZER_AVAILABLE else None
+last_performance_update = time.time()
+# Global VisCheck instance with optimization
+optimized_vischeck = None
+if OPTIMIZER_AVAILABLE:
+    try:
+        optimized_vischeck = get_global_vischeck()
+        print("[ESP] VisCheck optimizer initialized successfully")
+    except Exception as e:
+        print(f"[ESP] VisCheck optimizer failed to initialize: {e}")
+        print("[ESP] Falling back to standard VisCheck")
+        optimized_vischeck = None
+
+# Map detection offsets (hardcoded)
+DW_GAME_TYPES = 1793760  # absolute offset in matchmaking.dll
+DW_GAME_TYPES_MAP_NAME = 0x120  # field offset inside GameTypes
+
+# Global variables for map name checking
+last_map_check_time = time.time()
+current_detected_map = ""
+
+
+

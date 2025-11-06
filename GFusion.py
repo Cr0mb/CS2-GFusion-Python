@@ -2624,6 +2624,7 @@ class ESPTab(QWidget):
             ("Weapon ESP", "weapon_esp_enabled"),
             ("Armor Text", "armor_esp_enabled"),
             ("Distance ESP", "distance_esp_enabled"),
+            ("World ESP", "world_esp_enabled"),
         ]
         for i, (label, attr) in enumerate(features):
             self.add_checkbox_to_grid(basic_grid, i // 3, i % 3, label, attr)
@@ -2864,37 +2865,36 @@ class MainWindow(QWidget):
             outerL.setSpacing(2)
             logger.debug("Layout structure created", category="UI")
 
-            # Tabs (make instances attributes so refresh_all_tabs can see them)
-            logger.info("Creating tab widgets", category="UI")
-            self.aimbot_tab     = AimbotTab()
-            logger.debug("Aimbot tab created", category="UI")
-            self.trigger_tab    = TriggerBotTab()
-            logger.debug("Triggerbot tab created", category="UI")
-            self.esp_tab        = ESPTab()
-            self.esp_tab.main_window = self
-            logger.debug("ESP tab created", category="UI")
-            self.misc_tab       = MiscTab()
-            logger.debug("Misc tab created", category="UI")
-            self.config_tab     = ConfigTab()
-            logger.debug("Config tab created", category="UI")
-            self.recoil_tab     = RecoilViewer()
-            logger.debug("Recoil tab created", category="UI")
-            self.console_tab    = ConsoleTab()
-            logger.debug("Console tab created", category="UI")
-
+            # Tabs with LAZY LOADING - only create when first accessed
+            logger.info("Initializing lazy-loaded tab system", category="UI")
+            
+            # Tab cache (None = not yet created)
+            self._aimbot_tab = None
+            self._trigger_tab = None
+            self._esp_tab = None
+            self._misc_tab = None
+            self._config_tab = None
+            self._recoil_tab = None
+            self._console_tab = None
+            
+            # Create placeholder widgets for tabs
             self.tabs = QTabWidget()
-            self.tabs.addTab(self.aimbot_tab,       "Aimbot")
-            self.tabs.addTab(self.trigger_tab,      "Trigger")
-            self.tabs.addTab(self.esp_tab,          "ESP")
-            self.tabs.addTab(self.misc_tab,         "Misc")
-            self.tabs.addTab(self.config_tab,       "Config")
-            self.tabs.addTab(self.recoil_tab,       "Recoil")
-            self.tabs.addTab(self.console_tab,      "Console")
-            logger.info("All tabs added to tab widget", category="UI")
+            self.tabs.addTab(self._create_placeholder("Aimbot"), "Aimbot")
+            self.tabs.addTab(self._create_placeholder("Trigger"), "Trigger")
+            self.tabs.addTab(self._create_placeholder("ESP"), "ESP")
+            self.tabs.addTab(self._create_placeholder("Misc"), "Misc")
+            self.tabs.addTab(self._create_placeholder("Config"), "Config")
+            self.tabs.addTab(self._create_placeholder("Recoil"), "Recoil")
+            self.tabs.addTab(self._create_placeholder("Console"), "Console")
+            
+            # Connect tab change to lazy loader
+            self.tabs.currentChanged.connect(self._on_tab_changed)
+            
+            logger.info("Tab placeholders created (lazy loading enabled)", category="UI")
 
-            # Connect config_loaded signal to refresh all tabs
-            self.config_tab.config_loaded.connect(self.refresh_all_tabs_on_config_load)
-            logger.debug("Config loaded signal connected", category="UI")
+            # Defer signal connection until config tab is created
+            self._config_signal_connected = False
+            logger.debug("Config signal will be connected when tab is loaded", category="UI")
 
             outerL.addWidget(self.tabs, 1)
 
@@ -2917,6 +2917,9 @@ class MainWindow(QWidget):
             QTimer.singleShot(100, lambda: self.set_obs_protection(
                 bool(getattr(Config, "obs_protection_enabled", False))
             ))
+            # Load first tab after window is shown (deferred)
+            QTimer.singleShot(10, lambda: self._on_tab_changed(0))
+            
         except Exception as e:
             logger.error(f"Error initializing MainWindow: {e}", category="UI", exc_info=True)
             raise
@@ -3100,23 +3103,135 @@ class MainWindow(QWidget):
         stop_triggerbot_thread()
         QApplication.quit()
 
+    def _create_placeholder(self, name):
+        """Create a simple placeholder widget for lazy-loaded tabs."""
+        placeholder = QWidget()
+        layout = QVBoxLayout(placeholder)
+        layout.setAlignment(Qt.AlignCenter)
+        label = QLabel(f"Loading {name} tab...")
+        label.setStyleSheet("color: #000000; font-size: 10pt;")
+        layout.addWidget(label)
+        return placeholder
+    
+    def _on_tab_changed(self, index):
+        """Lazy load tab when it's first accessed."""
+        try:
+            tab_names = ["aimbot", "trigger", "esp", "misc", "config", "recoil", "console"]
+            if index < 0 or index >= len(tab_names):
+                return
+            
+            tab_name = tab_names[index]
+            cache_attr = f"_{tab_name}_tab"
+            
+            # Check if already loaded
+            if getattr(self, cache_attr) is not None:
+                return
+            
+            logger.info(f"Lazy loading {tab_name} tab", category="UI")
+            
+            # Create the actual tab
+            if tab_name == "aimbot":
+                self._aimbot_tab = AimbotTab()
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._aimbot_tab, "Aimbot")
+            elif tab_name == "trigger":
+                self._trigger_tab = TriggerBotTab()
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._trigger_tab, "Trigger")
+            elif tab_name == "esp":
+                self._esp_tab = ESPTab()
+                self._esp_tab.main_window = self
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._esp_tab, "ESP")
+            elif tab_name == "misc":
+                self._misc_tab = MiscTab()
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._misc_tab, "Misc")
+            elif tab_name == "config":
+                self._config_tab = ConfigTab()
+                # Connect config_loaded signal now
+                if not self._config_signal_connected:
+                    self._config_tab.config_loaded.connect(self.refresh_all_tabs_on_config_load)
+                    self._config_signal_connected = True
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._config_tab, "Config")
+            elif tab_name == "recoil":
+                self._recoil_tab = RecoilViewer()
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._recoil_tab, "Recoil")
+            elif tab_name == "console":
+                self._console_tab = ConsoleTab()
+                # Console tab registers itself with logger in __init__
+                self.tabs.removeTab(index)
+                self.tabs.insertTab(index, self._console_tab, "Console")
+            
+            # Set the tab to be current again
+            self.tabs.setCurrentIndex(index)
+            logger.debug(f"{tab_name} tab loaded successfully", category="UI")
+            
+        except Exception as e:
+            logger.error(f"Error lazy loading tab {index}: {e}", category="UI", exc_info=True)
+    
+    # Property accessors for backward compatibility
+    @property
+    def aimbot_tab(self):
+        if self._aimbot_tab is None:
+            self._on_tab_changed(0)
+        return self._aimbot_tab
+    
+    @property
+    def trigger_tab(self):
+        if self._trigger_tab is None:
+            self._on_tab_changed(1)
+        return self._trigger_tab
+    
+    @property
+    def esp_tab(self):
+        if self._esp_tab is None:
+            self._on_tab_changed(2)
+        return self._esp_tab
+    
+    @property
+    def misc_tab(self):
+        if self._misc_tab is None:
+            self._on_tab_changed(3)
+        return self._misc_tab
+    
+    @property
+    def config_tab(self):
+        if self._config_tab is None:
+            self._on_tab_changed(4)
+        return self._config_tab
+    
+    @property
+    def recoil_tab(self):
+        if self._recoil_tab is None:
+            self._on_tab_changed(5)
+        return self._recoil_tab
+    
+    @property
+    def console_tab(self):
+        if self._console_tab is None:
+            self._on_tab_changed(6)
+        return self._console_tab
+    
     def refresh_all_tabs_on_config_load(self):
         """Refresh all tab UIs when config is loaded/applied."""
         logger.info("Refreshing all tabs after config load", category="UI")
         try:
             tab_names = []
-            # Refresh all tabs that have a refresh_ui method
-            for tab in [self.aimbot_tab, self.trigger_tab, self.esp_tab, 
-                       self.misc_tab, self.recoil_tab, self.console_tab]:
-                if hasattr(tab, "refresh_ui") and callable(getattr(tab, "refresh_ui")):
+            # Only refresh tabs that have been loaded
+            for tab_name in ["aimbot", "trigger", "esp", "misc", "recoil", "console"]:
+                cache_attr = f"_{tab_name}_tab"
+                tab = getattr(self, cache_attr)
+                if tab is not None and hasattr(tab, "refresh_ui") and callable(getattr(tab, "refresh_ui")):
                     try:
-                        tab_name = tab.__class__.__name__
                         logger.debug(f"Refreshing {tab_name}", category="UI")
                         tab.refresh_ui()
                         tab_names.append(tab_name)
                     except Exception as e:
-                        logger.error(f"Error refreshing {tab.__class__.__name__}: {e}", category="UI", exc_info=True)
-            logger.info(f"Refreshed {len(tab_names)} tabs: {', '.join(tab_names)}", category="UI")
+                        logger.error(f"Error refreshing {tab_name}: {e}", category="UI", exc_info=True)
+            logger.info(f"Refreshed {len(tab_names)} loaded tabs: {', '.join(tab_names)}", category="UI")
         except Exception as e:
             logger.exception("Error in refresh_all_tabs_on_config_load", category="UI")
 

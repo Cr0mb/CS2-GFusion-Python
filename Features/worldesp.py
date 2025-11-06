@@ -27,6 +27,10 @@ def _now():
 
 def features_active(cfg):
     """Return True if any world-item ESP feature is enabled."""
+    # Check master toggle first
+    if not getattr(cfg, "world_esp_enabled", True):
+        return False
+    
     return any([
         getattr(cfg, "dropped_weapon_esp_enabled", True),
         getattr(cfg, "projectile_esp_enabled", True),
@@ -79,7 +83,7 @@ def _is_equipped_weapon_cached(handle, entity_list, entity_addr, safe_read_uint6
         if owner_handle != 0x7FFF:
             pawn_list_entry = safe_read_uint64(handle, entity_list + ((owner_handle >> 9) * 8) + 16)
             if pawn_list_entry:
-                pawn = safe_read_uint64(handle, pawn_list_entry + (120 * (owner_handle & 0x1FF)))
+                pawn = safe_read_uint64(handle, pawn_list_entry + (112 * (owner_handle & 0x1FF)))  # CS2 update: stride 120->112
                 if pawn:
                     equipped = True
     except Exception:
@@ -123,7 +127,7 @@ def _scan_world_items_once(handle, base, matrix, overlay, cfg,
             if not list_entry:
                 continue
 
-            ent = safe_read_uint64(handle, list_entry + (120 * (i & 0x1FF)))
+            ent = safe_read_uint64(handle, list_entry + (112 * (i & 0x1FF)))  # CS2 update: stride 120->112
             if not ent:
                 continue
 
@@ -131,8 +135,17 @@ def _scan_world_items_once(handle, base, matrix, overlay, cfg,
             node = safe_read_uint64(handle, ent + Offsets.m_pGameSceneNode)
             if not node:
                 continue
-            pos = read_vec3(handle, node + Offsets.m_vecAbsOrigin)
-            if not pos or not getattr(pos, 'x', None):
+            pos_raw = read_vec3(handle, node + Offsets.m_vecAbsOrigin)
+            if not pos_raw:
+                continue
+            # Handle both list [x,y,z] and object with .x/.y/.z attributes
+            if isinstance(pos_raw, (list, tuple)):
+                if len(pos_raw) < 3:
+                    continue
+                pos = _SimpleVec3(pos_raw[0], pos_raw[1], pos_raw[2])
+            elif hasattr(pos_raw, 'x'):
+                pos = _SimpleVec3(pos_raw.x, pos_raw.y, pos_raw.z)
+            else:
                 continue
 
             # Compute once; skip offscreen early
@@ -162,6 +175,10 @@ def render_world_items(handle, base, matrix, overlay, cfg,
                        weapon_lookup, projectile_lookup):
     """Render world items: direct-scan for fast items and cached draw for the rest."""
     global _world_items_cache, _world_items_cache_until
+
+    # Check master toggle first
+    if not getattr(cfg, "world_esp_enabled", True):
+        return
 
     # Refresh cached scan periodically (for heavy/rare items)
     try:
@@ -200,14 +217,23 @@ def render_world_items(handle, base, matrix, overlay, cfg,
                     list_entry = safe_read_uint64(handle, entity_list + (8 * ((i & 0x7FFF) >> 9) + 16))
                     if not list_entry:
                         continue
-                    ent = safe_read_uint64(handle, list_entry + (120 * (i & 0x1FF)))
+                    ent = safe_read_uint64(handle, list_entry + (112 * (i & 0x1FF)))  # CS2 update: stride 120->112
                     if not ent:
                         continue
                     node = safe_read_uint64(handle, ent + Offsets.m_pGameSceneNode)
                     if not node:
                         continue
-                    pos = read_vec3(handle, node + Offsets.m_vecAbsOrigin)
-                    if not pos or not getattr(pos, 'x', None):
+                    pos_raw = read_vec3(handle, node + Offsets.m_vecAbsOrigin)
+                    if not pos_raw:
+                        continue
+                    # Handle both list [x,y,z] and object with .x/.y/.z attributes
+                    if isinstance(pos_raw, (list, tuple)):
+                        if len(pos_raw) < 3:
+                            continue
+                        pos = _SimpleVec3(pos_raw[0], pos_raw[1], pos_raw[2])
+                    elif hasattr(pos_raw, 'x'):
+                        pos = _SimpleVec3(pos_raw.x, pos_raw.y, pos_raw.z)
+                    else:
                         continue
                     scr = world_to_screen(matrix, pos, W, H)
                     if not scr or 'x' not in scr or 'y' not in scr:

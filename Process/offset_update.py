@@ -14,19 +14,6 @@ class Offsets:
     @classmethod
     def update_offsets_py(cls):
         try:
-            dumper_url = "https://github.com/a2x/cs2-dumper/releases/download/0.1.2/cs2-dumper.exe"
-            dumper_path = "cs2-dumper.exe"
-
-            if not os.path.exists(dumper_path):
-                print("[INFO] Downloading cs2-dumper.exe...")
-                urllib.request.urlretrieve(dumper_url, dumper_path)
-                print("[INFO] Download complete.")
-
-            # === Step 2: Run cs2-dumper.exe ===
-            print("[INFO] Running cs2-dumper.exe...")
-            subprocess.run([dumper_path], check=True)
-            print("[INFO] cs2-dumper.exe finished.")
-
             output_dir = "output"
             for file_name in ["offsets.json", "client_dll.json"]:
                 src = os.path.join(output_dir, file_name)
