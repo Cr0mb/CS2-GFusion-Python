@@ -11,6 +11,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFusion.ps1 | iex
 ```
 
+- After install command is done, go into ``.\CS2-GFusion-Python-main\NeacController-main\NeacDriver``, right click ``NeacSafe64.inf`` and click install for kernel driver.
+
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/26e1cd67-c1d9-4c3a-8c1a-97f980a3164b" width="850">
   <img src="https://github.com/user-attachments/assets/c5287c42-4d42-497f-8add-707a9b0a9bd7" width="400">
