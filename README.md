@@ -5,7 +5,7 @@
 
 [How to Download and Install GFusion V3.5](https://www.youtube.com/watch?v=HJDb8FdCeRc)
 
-Install setup command:
+Install setup command (run this in powershell as admin):
 ```
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFusion.ps1 | iex
