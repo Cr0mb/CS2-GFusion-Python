@@ -25,7 +25,7 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 </div>
 
 ```
-2025-12-2
+12/2/2025
 V3.5.3
 [+] Fixed Error Code 1 by forcing win32api to use the global scope with a global win32api declaration inside main(), resolving the UnboundLocalError and preventing ESP crashes during panic-key checks.
 [+] Fixed Error code 1 in start.pyw, updated launcher to remove invalid CS2 directory switching and added full crash handling with traceback + error logging for cleaner, non-silent failures.
@@ -33,7 +33,7 @@ V3.5.3
 ```
 
 ```
-2025-09-30
+10/01/2025
 [+] Standardized on RPMReader (removed duplicate MemoryReader + consolidated fallback logic).
 [+] Added logging/error handling for SendInput and memory reads (invalid offsets now warn instead of silent returns).
 [+] Made process/module names configurable via Config.
