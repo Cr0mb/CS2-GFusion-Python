@@ -2541,7 +2541,7 @@ def main():
                     w = h / 2
                     x, y = ent.head2d["x"] - w / 2, ent.head2d["y"] - h * 0.08
                     text_x, text_y = x + w + 6, y + 2
-                    line_spacing, line_index = 16, 0
+                    line_spacing = 16  # shared spacing for all stacked texts
                     font_color = flags["color_name"]
                     font_size = max(12, min(12, int(h * 0.14)))
                 except Exception as e:
@@ -2549,10 +2549,20 @@ def main():
                     continue
 
                 try:
-                    if flags["money_esp_enabled"]:
-                        overlay.draw_text(f"${ent.money}", text_x, text_y + line_spacing * line_index, flags["color_money_text"], font_size)
-                        line_index += 1
+                    # --- Right-side stacked info: money + weapon name ---
+                    side_line_index = 0
 
+                    if flags["money_esp_enabled"]:
+                        overlay.draw_text(
+                            f"${ent.money}",
+                            text_x,
+                            text_y + line_spacing * side_line_index,
+                            flags["color_money_text"],
+                            font_size,
+                        )
+                        side_line_index += 1
+
+                    # --- Head ESP (unchanged) ---
                     if flags["head_esp_enabled"]:
                         radius = int(getattr(cfg, "head_esp_size", int(h * 0.15)))
                         color = flags["color_head"]
@@ -2560,9 +2570,16 @@ def main():
                             overlay.draw_circle(ent.head2d["x"], ent.head2d["y"], radius, color)
                         else:
                             side = radius * 2
-                            overlay.draw_box(ent.head2d["x"] - radius, ent.head2d["y"] - radius, side, side, color)
+                            overlay.draw_box(
+                                ent.head2d["x"] - radius,
+                                ent.head2d["y"] - radius,
+                                side,
+                                side,
+                                color,
+                            )
                 except Exception as e:
-                    print(f"[ESP Error] Drawing error (money/head): {e}")
+                    print(f"[ESP Error] Drawing error (money/weapon/head): {e}")
+
 
                 try:
                     if flags["box_esp_enabled"]:
@@ -2624,31 +2641,65 @@ def main():
 
                 if flags["velocity_esp"] or flags["speed_esp"] or flags["velocity_esp_text"]:
                     try:
-                        velocity = read_vec3(handle, ent.pawn + Offsets.m_vecVelocity) or Vec3(0,0,0)
+                        velocity = read_vec3(handle, ent.pawn + Offsets.m_vecVelocity) or Vec3(0, 0, 0)
                         speed = math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
                         start = world_to_screen(matrix, ent.pos, overlay.width, overlay.height)
 
                         if flags["velocity_esp"]:
                             scale = 0.1
-                            end_pos = Vec3(ent.pos.x + velocity.x*scale, ent.pos.y + velocity.y*scale, ent.pos.z + velocity.z*scale)
+                            end_pos = Vec3(
+                                ent.pos.x + velocity.x * scale,
+                                ent.pos.y + velocity.y * scale,
+                                ent.pos.z + velocity.z * scale,
+                            )
                             end = world_to_screen(matrix, end_pos, overlay.width, overlay.height)
                             overlay.draw_line(start["x"], start["y"], end["x"], end["y"], cfg.velocity_esp_color)
                             overlay.draw_filled_rect(end["x"] - 2, end["y"] - 2, 4, 4, cfg.velocity_esp_color)
 
-                        if flags["velocity_esp_text"]:
-                            overlay.draw_text(f"V: {velocity.x:.1f} {velocity.y:.1f} {velocity.z:.1f}", start["x"], start["y"] - 14, cfg.velocity_text_color, 14, centered=True)
+                        # Velocity / Speed text stacked under the box
+                        if (flags["velocity_esp_text"] or flags["speed_esp"]) and 'velocity' in locals():
+                            try:
+                                if flags["velocity_esp_text"]:
+                                    txt = f"V: {velocity.x:.1f} {velocity.y:.1f} {velocity.z:.1f}"
+                                    overlay.draw_text(
+                                        txt,
+                                        base_x,
+                                        base_y + line_index * line_spacing,
+                                        getattr(cfg, "velocity_text_color", cfg.velocity_text_color),
+                                        14,
+                                        centered=True,
+                                    )
+                                    line_index += 1
 
-                        if flags["speed_esp"]:
-                            overlay.draw_text(f"{int(speed)} u/s", ent.head2d["x"], ent.head2d["y"] - 35, cfg.speed_esp_color, font_size, centered=True)
+                                if flags["speed_esp"]:
+                                    txt = f"Speed: {speed:.1f} u/s"
+                                    overlay.draw_text(
+                                        txt,
+                                        base_x,
+                                        base_y + line_index * line_spacing,
+                                        getattr(cfg, "speed_esp_color", cfg.speed_esp_color),
+                                        14,
+                                        centered=True,
+                                    )
+                                    line_index += 1
+                            except Exception as e:
+                                print(f"[Velocity/Speed Text ESP Error] {e}")
+
                     except Exception as e:
                         print(f"[Velocity/Speed ESP Error] {e}")
+
 
                 if flags["weapon_esp_enabled"]:
                     weapon_name = esp_weapon(handle, ent.pawn)
                     if weapon_name:
-                        # Use the line_index system for proper spacing
-                        overlay.draw_text(weapon_name, text_x, text_y + line_spacing * line_index, cfg.color_weapon_text, font_size)
-                        line_index += 1
+                        overlay.draw_text(
+                            weapon_name,
+                            text_x,
+                            text_y + line_spacing * side_line_index,
+                            cfg.color_weapon_text,
+                            font_size,
+                        )
+                        side_line_index += 1
 
 
                 if flags["line_esp_enabled"]:
@@ -2690,7 +2741,7 @@ def main():
                     except Exception as e:
                         if flags["visibility_esp_enabled"] and vis_checker:
                             is_visible = check_player_visibility(handle, base, vis_checker, local_pos, ent.pos)
-                    
+
                     if is_visible is not None and flags["visibility_text_enabled"]:
                         visibility_text = "VISIBLE" if is_visible else "NOT VISIBLE"
                         visibility_color = (
@@ -2704,7 +2755,6 @@ def main():
                             font_size,
                             centered=True
                         )
-                        line_index += 1
 
 
                 # Skeleton ESP
