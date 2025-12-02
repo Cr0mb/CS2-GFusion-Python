@@ -31,9 +31,21 @@ V3.5.3
 [+] Fixed Error code 1 in start.pyw, updated launcher to remove invalid CS2 directory switching and added full crash handling with traceback + error logging for cleaner, non-silent failures.
 [+] Added full read-write process permissions in ESP to fix NoFlash not applying by enabling proper WriteProcessMemory access
 ```
+```
+10/06/2025
+V3.5.2
+[+] Updated to prevent crashing and added more logging
+```
+
+```
+10/03/2025
+V3.5.1
+[+] Integrated Team List, moved drawing fps and map status box to misc tab
+```
 
 ```
 10/01/2025
+V3.5
 [+] Standardized on RPMReader (removed duplicate MemoryReader + consolidated fallback logic).
 [+] Added logging/error handling for SendInput and memory reads (invalid offsets now warn instead of silent returns).
 [+] Made process/module names configurable via Config.
