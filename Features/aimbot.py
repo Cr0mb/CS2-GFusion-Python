@@ -28,6 +28,15 @@ from Process.memory_interface import MemoryInterface
 
 import logging
 
+# Import ESP's visibility checking system
+try:
+    from Features.esp import check_player_visibility, get_current_map_name_cached
+    ESP_VISCHECK_AVAILABLE = True
+    print("[Aimbot] Using ESP's visibility checking system")
+except Exception as e:
+    ESP_VISCHECK_AVAILABLE = False
+    print(f"[Aimbot] ESP visibility import failed: {e}")
+
 logging.basicConfig(
     filename="aimbot.log",
     level=logging.INFO,
@@ -38,6 +47,9 @@ def log(msg):
     if getattr(Config, "enable_logging", True):
         logging.info(msg)
         print(msg)
+
+
+# Map detection constants removed - using ESP's system
 
 
 # -------------------------------
@@ -146,6 +158,9 @@ def move_mouse(dx, dy):
     inp = INPUT(type=INPUT_MOUSE, ii=INPUT._INPUT(mi=mi))
     if SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp)) == 0:
         print("[Aimbot] Warning: SendInput failed")
+
+
+# Map Detection removed - using ESP's get_current_map_name_cached
 
 
 # -------------------------------
@@ -381,25 +396,9 @@ class AimbotRCS:
         self.stickiness_timer = 0.0
         self.smooth_ramp = 0.0
 
-        # Visibility
+        # Visibility - using ESP's global vis_checker (shared between ESP and aimbot)
         self.vis_checker = None
-        self.optimized_vischeck = None
-        if getattr(self.cfg, "visibility_aim_enabled", False):
-            if OPTIMIZER_AVAILABLE:
-                try:
-                    self.optimized_vischeck = get_global_vischeck()
-                    print("[Aimbot] Using optimized VisCheck with caching")
-                except Exception as e:
-                    print(f"[Aimbot] Failed to init optimized VisCheck: {e}")
-                    self.optimized_vischeck = None
-            if not self.optimized_vischeck:
-                try:
-                    import vischeck
-                    self.vis_checker = vischeck.VisCheck()  # allow lazy/no-map mode
-                except Exception as e:
-                    print(f"[VisCheck Error] Failed to init: {e}")
-                    self.vis_checker = None
-                    self.optimized_vischeck = None
+        self.use_esp_vischeck = ESP_VISCHECK_AVAILABLE
 
         self.weapon_tracker = CS2WeaponTracker(cfg)
 
@@ -416,6 +415,8 @@ class AimbotRCS:
             threading.Thread(target=self.mouse_recorder_thread, daemon=True).start()
         if OPTIMIZER_AVAILABLE:
             threading.Thread(target=self.performance_monitor_thread, daemon=True).start()
+        
+        # No map loading thread needed - ESP handles all map detection and loading
 
     # -----------------------------
     # Easing
@@ -761,31 +762,55 @@ class AimbotRCS:
         return self.should_overshoot and not self.overshoot_completed
 
     # -----------------------------
-    # Visibility
+    # Visibility (using ESP's check_player_visibility directly)
     # -----------------------------
     def is_target_visible(self, local_pos, target_pos):
+        """
+        Check if target is visible using ESP's check_player_visibility function
+        
+        Args:
+            local_pos: Local player position (list/tuple [x, y, z])
+            target_pos: Target entity position (list/tuple [x, y, z])
+        """
         if not getattr(self.cfg, "visibility_aim_enabled", False):
             return True
+            
+        if not self.use_esp_vischeck:
+            return True  # ESP visibility not available
+            
         if not local_pos or not target_pos:
             return True
-
-        checker = self.optimized_vischeck or self.vis_checker
-        if checker:
-            try:
-                # If checker exposes readiness, honor it. Otherwise assume OK.
-                ready = True
-                if hasattr(checker, "is_map_loaded"): ready = checker.is_map_loaded()
-                elif hasattr(checker, "is_loaded"):  ready = checker.is_loaded()
-                if not ready:
+        
+        try:
+            # Import ESP's vis_checker global if not already cached
+            if not self.vis_checker:
+                try:
+                    import Features.esp as esp_module
+                    # Get ESP's global vis_checker
+                    self.vis_checker = getattr(esp_module, 'vis_checker', None)
+                except Exception:
                     return True
-                eye_offset = 64.0
-                local_eye  = (local_pos[0],  local_pos[1],  local_pos[2]  + eye_offset)
-                target_eye = (target_pos[0], target_pos[1], target_pos[2] + eye_offset)
-                vis = checker.is_visible(local_eye, target_eye)
-                return True if vis is None else bool(vis)
-            except Exception:
-                return True
-        return True
+            
+            if not self.vis_checker:
+                return True  # ESP's vis_checker not initialized yet
+            
+            # Create simple Vec3-like objects for ESP's function
+            class Vec3:
+                def __init__(self, x, y, z):
+                    self.x = x
+                    self.y = y
+                    self.z = z
+            
+            local_vec = Vec3(local_pos[0], local_pos[1], local_pos[2])
+            target_vec = Vec3(target_pos[0], target_pos[1], target_pos[2])
+            
+            # Use ESP's check_player_visibility function directly
+            return check_player_visibility(local_vec, target_vec, self.vis_checker)
+            
+        except Exception as e:
+            # On error, default to not visible for safety
+            return False
+
 
     # -----------------------------
     # Recorder & perf monitor
