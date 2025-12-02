@@ -31,6 +31,7 @@ V3.5.3
 [+] Fixed Error code 1 in start.pyw, updated launcher to remove invalid CS2 directory switching and added full crash handling with traceback + error logging for cleaner, non-silent failures.
 [+] Added full read-write process permissions in ESP to fix NoFlash not applying by enabling proper WriteProcessMemory access
 [+] Fixed a crash caused by an undefined ui_refresher during menu setting changes by adding a safe global refresher and protected UI-update handling.
+[+] Added a thread-safe menu toggle system using a Qt signal bridge to fix cursor focus issues and ensure the menu reliably opens and closes. (before you had to click once on the cheat window for the cursor to work; otherwise, it couldn't be controlled.)
 ```
 ```
 10/06/2025
