@@ -1,6 +1,18 @@
 import math
 import time
-import win32api
+
+# ---------------------------------------------
+# FORCE SAFE GLOBAL IMPORT FOR win32api
+# ---------------------------------------------
+try:
+    import win32api as _win32api
+except Exception:
+    _win32api = None
+
+# expose it globally under the expected name
+win32api = _win32api
+del _win32api
+
 import win32gui
 import win32con
 import win32ui
@@ -1876,6 +1888,7 @@ vis_checker = None
 
 def main():
     global vis_checker  # Make it accessible to other modules
+    global win32api
     
     hwnd = windll.user32.FindWindowW(None, "Counter-Strike 2")
     if not hwnd:
@@ -2155,12 +2168,12 @@ def main():
             # Begin a new frame when the renderer's pacing allows it.
             if not overlay.begin_scene():
                 # Not time to render yet; yield to avoid busy-wait and try again.
-                win32api.Sleep(0)
+                time.sleep(0)
                 continue
 
             if not is_in_game(handle, base):
                 overlay.end_scene()
-                win32api.Sleep(1)
+                time.sleep(1)
                 continue
             
             # Reset error counter on successful iteration
@@ -2767,7 +2780,7 @@ def main():
                 try:
                     print("[ESP] Attempting to reinitialize overlay...")
                     overlay.end_scene()
-                    win32api.Sleep(500)  # Longer pause for recovery
+                    time.sleep(500)  # Longer pause for recovery
                     
                     # Try to clear any stuck resources
                     try:
@@ -2792,13 +2805,13 @@ def main():
                 pass
             
             # Brief pause to prevent error spam and allow recovery
-            win32api.Sleep(100)
+            time.sleep(100)
             continue
 
         overlay.end_scene()
         # Avoid capping framerate to ~60-65 FPS due to Windows default 15.6ms timer granularity.
         # DX11Renderer already handles precise frame pacing; yield without enforcing a minimum sleep.
-        win32api.Sleep(0)
+        time.sleep(0)
 
 if __name__ == "__main__":
     main()
