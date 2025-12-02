@@ -32,6 +32,7 @@ V3.5.3
 [+] Added full read-write process permissions in ESP to fix NoFlash not applying by enabling proper WriteProcessMemory access
 [+] Fixed a crash caused by an undefined ui_refresher during menu setting changes by adding a safe global refresher and protected UI-update handling.
 [+] Added a thread-safe menu toggle system using a Qt signal bridge to fix cursor focus issues and ensure the menu reliably opens and closes. (before you had to click once on the cheat window for the cursor to work; otherwise, it couldn't be controlled.)
+[+] Aimbot vischeck fixed
 ```
 ```
 10/06/2025
