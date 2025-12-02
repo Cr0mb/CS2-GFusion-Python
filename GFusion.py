@@ -202,6 +202,41 @@ class GFusionLogger(QObject):
 # Global logger instance
 logger = GFusionLogger()
 
+# ----------------------------------------
+# UI refresher: safely update all tabs
+# ----------------------------------------
+class UIRefresher(QObject):
+    """
+    Small helper that exposes a Qt signal we can emit from anywhere
+    (console commands, background threads, etc.) and then perform
+    a safe, main-thread UI refresh of all registered tabs.
+    """
+    trigger_refresh = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.trigger_refresh.connect(self._on_trigger_refresh)
+
+    def _on_trigger_refresh(self):
+        try:
+            # Uses global TAB_REGISTRY / refresh_all_tabs
+            refresh_all_tabs()
+        except Exception as e:
+            print(f"[UIRefresher] UI refresh failed: {e}")
+
+
+# Global instance used by console / other helpers
+ui_refresher = UIRefresher()
+
+class MenuToggleBridge(QObject):
+    toggle_menu = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+
+menu_toggle_bridge = MenuToggleBridge()
+
 def safe_thread_wrapper(func, thread_name="UnknownThread"):
     """
     Wrapper for thread functions to catch and log all exceptions.
@@ -359,8 +394,15 @@ def handle_console_command(cmd_line: str):
             print(f"[Console] Unknown command: {cmd}")
 
     finally:
-                                                      
-        ui_refresher.trigger_refresh.emit()
+        # Always try to refresh the UI after a console command,
+        # but never let a refresh failure crash the app.
+        try:
+            refresher = globals().get("ui_refresher", None)
+            if refresher is not None and hasattr(refresher, "trigger_refresh"):
+                refresher.trigger_refresh.emit()
+        except Exception as e:
+            print(f"[Console] UI refresh failed: {e}")
+
 
 def key_to_vk(key_name):
     return VK_CODES.get(key_name.lower(), 0x7B)               
@@ -623,14 +665,41 @@ def start_glow_thread():
         logger.error(f"Failed to start glow thread: {e}", category="Threading", exc_info=True)
 
 def start_toggle_listener(main_window):
+    def _toggle_menu():
+        """Runs on the Qt (GUI) thread via signal."""
+        try:
+            if main_window.isVisible():
+                # Close menu
+                main_window.hide()
+            else:
+                # Open menu and grab mouse/keyboard focus immediately
+                main_window.show()
+                main_window.activateWindow()
+                main_window.raise_()
+                main_window.setFocus()
+        except Exception as e:
+            logger.exception(f"Toggle menu failed: {e}", category="MenuToggle")
+
+    # Connect the bridge signal to our GUI-side toggle slot
+    try:
+        menu_toggle_bridge.toggle_menu.disconnect()
+    except TypeError:
+        # No previous connections
+        pass
+    menu_toggle_bridge.toggle_menu.connect(_toggle_menu)
+
     def listen():
         logger.info("Menu toggle listener started", category="MenuToggle")
         while True:
             try:
                 if keyboard.is_pressed(cfg.toggle_menu_key):
-                    main_window.setVisible(not main_window.isVisible())
+                    # Ask GUI thread to toggle the menu
+                    menu_toggle_bridge.toggle_menu.emit()
+
+                    # Debounce: wait until key released so it only toggles once
                     while keyboard.is_pressed(cfg.toggle_menu_key):
-                        pass
+                        time.sleep(0.05)
+
                 time.sleep(0.016)
             except Exception as e:
                 logger.exception(f"Toggle listener error: {e}", category="MenuToggle")
