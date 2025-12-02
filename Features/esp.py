@@ -54,7 +54,21 @@ except Exception as e:
     VISCHECK_AVAILABLE = False
     print(f"[Error] VisCheck module unexpected error: {e}")
 
-PROCESS_PERMISSIONS = 0x0010 | 0x0400  # PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
+# Old:
+# PROCESS_PERMISSIONS = 0x0010 | 0x0400  # PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
+
+# New: add VM_OPERATION + VM_WRITE
+PROCESS_VM_OPERATION   = 0x0008
+PROCESS_VM_READ        = 0x0010
+PROCESS_VM_WRITE       = 0x0020
+PROCESS_QUERY_INFORMATION = 0x0400
+
+PROCESS_PERMISSIONS = (
+    PROCESS_VM_OPERATION |
+    PROCESS_VM_READ |
+    PROCESS_VM_WRITE |
+    PROCESS_QUERY_INFORMATION
+)
 
 # Global variables for threaded map loading
 map_loading_in_progress = False
@@ -244,11 +258,12 @@ WriteProcessMemory.argtypes = [
 WriteProcessMemory.restype = wintypes.BOOL
 
 def write_float(process_handle, address, value):
-    """Write float using unified memory interface"""
-    if _memory_interface:
+    """Write float using unified memory interface when in kernel mode; fallback to usermode WriteProcessMemory."""
+    # Only use memory_interface if it actually supports kernel writes
+    if _memory_interface and getattr(_memory_interface, "is_kernel_mode_active", lambda: False)():
         return _memory_interface.write_float(address, value)
-    
-    # Fallback to original implementation
+
+    # Pure usermode fallback
     float_value = c_float(value)
     bytes_written = c_size_t(0)
     result = WriteProcessMemory(
@@ -2373,7 +2388,11 @@ def main():
                 try:
                     local_pawn = safe_read_uint64(handle, base + Offsets.dwLocalPlayerPawn)
                     if local_pawn:
-                        write_float(handle, local_pawn + Offsets.m_flFlashDuration, 0.0)
+                        flash_addr = local_pawn + Offsets.m_flFlashDuration
+                        cur_val = read_float(handle, flash_addr)
+                        write_float(handle, flash_addr, 0.0)
+                        new_val = read_float(handle, flash_addr)
+                        print(f"[NoFlash] FlashDuration before={cur_val:.3f} after={new_val:.3f}")
                 except Exception as e:
                     print(f"[NoFlash Error] {e}")
 
