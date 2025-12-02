@@ -1,5 +1,4 @@
 ## GFusion V3.5
-[Discord](https://discord.gg/qKfmaA7FFJ)
 [UC Forum](https://www.unknowncheats.me/forum/counter-strike-2-releases/711867-gfusion-closet-cheat.html)
 [YouTube](https://www.youtube.com/@cr0mble)
 
