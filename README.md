@@ -3,10 +3,6 @@ GFusion is a fully external Python-based cheat framework for Counter-Strike 2. I
 
 <img width="1169" height="711" alt="image" src="https://github.com/user-attachments/assets/041e5b72-3454-4b4b-851c-cf8a6e9eb0c8" />
 
-For active support & community join the discord: https://discord.gg/qKfmaA7FFJ
-
-**Donate:** https://paypal.me/GHaxLegit?country.x=US&locale.x=en_US
-
 **Videos**  
 [**GFusion V1**](https://www.youtube.com/watch?v=vk7iz4ZaDlY)  
 [**GFusion V1.2**](https://www.youtube.com/watch?v=qhYLK4H8oOQ)  
