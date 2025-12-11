@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QMessageBox, QHBoxLayout, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QPropertyAnimation
 from PyQt5.QtGui import QFont, QCursor, QIcon
 
 MAIN_SCRIPT = "GFusion.py"
@@ -90,14 +90,14 @@ class AESLoader(importlib.abc.Loader):
         try:
             # Use self.name directly (it's already a string)
             name_value = self.name
-            
+
             code_enc = modules[name_value]
             code = fernet.decrypt(code_enc.encode()).decode('utf-8')
-            
+
             # Set essential module attributes that modules expect
             module.__name__ = name_value
             module.__package__ = None
-            
+
             # Set __file__ to a fake path that makes sense for the module
             if name_value == "GFusion":
                 module.__file__ = "GFusion.py"
@@ -107,7 +107,7 @@ class AESLoader(importlib.abc.Loader):
                 module.__file__ = "/".join(parts) + ".py"
             else:
                 module.__file__ = name_value + ".py"
-            
+
             exec(code, module.__dict__)
         except Exception as e:
             print("Error loading module " + str(self.name) + ": " + str(e))
@@ -133,19 +133,37 @@ sys.meta_path.insert(0, AESFinder())
 if '__file__' not in globals():
     __file__ = sys.argv[0] if sys.argv[0] else os.path.join(os.getcwd(), 'launcher.py')
 
-# Ensure current directory is set correctly
-if not os.getcwd().endswith('CS2'):
-    # Try to find the CS2 directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if 'CS2' in script_dir:
-        cs2_dir = script_dir[:script_dir.rfind('CS2') + 3]
-        os.chdir(cs2_dir)
-        print("Changed working directory to:", os.getcwd())
-
 if __name__ == '__main__':
     import runpy
-    runpy.run_module('{module_name_from_path(MAIN_SCRIPT)}', run_name='__main__')
-    sys.exit()
+
+    try:
+        # Run the main encrypted module (e.g., GFusion)
+        runpy.run_module('{module_name_from_path(MAIN_SCRIPT)}', run_name='__main__')
+    except Exception as e:
+        print("\\n[LAUNCHER] FATAL ERROR while running GFusion:")
+        print(e)
+        print("\\nFull traceback:")
+        traceback.print_exc()
+
+        # Also write the error to a log file for debugging
+        try:
+            with open("launcher_error.log", "w", encoding="utf-8") as log_f:
+                log_f.write("GFusion launcher crashed with error:\\n")
+                log_f.write(str(e) + "\\n\\n")
+                traceback.print_exc(file=log_f)
+            print("\\n[LAUNCHER] Error details written to launcher_error.log")
+        except Exception as log_err:
+            print("\\n[LAUNCHER] Failed to write launcher_error.log:", log_err)
+
+        try:
+            input("\\nPress Enter to close this window...")
+        except EOFError:
+            # If there's no stdin (rare), just exit
+            pass
+
+        sys.exit(1)
+    else:
+        sys.exit(0)
 '''
 
     with open(LAUNCHER_FILE, "w", encoding="utf-8") as f:
@@ -325,72 +343,165 @@ class AutoConvertThread(QThread):
 class LauncherGUI(QWidget):
     def __init__(self):
         super().__init__()
-        # Classic window (not translucent) for MS Paint feel
+
+        # Frameless, modern window
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setGeometry(150, 120, 760, 540)
         self.setMinimumSize(640, 420)
         self.drag_position = None
         
-        # Fonts consistent with GFusion
-        self.h1 = QFont("MS Sans Serif", 10, QFont.Bold)
-        self.h2 = QFont("MS Sans Serif", 9, QFont.Bold)
+        # Fonts consistent with modern GFusion menu
+        self.h1 = QFont("Segoe UI", 10, QFont.Bold)
+        self.h2 = QFont("Segoe UI", 9, QFont.Bold)
         self.log_font = QFont("Consolas", 9)
 
-        # Apply GFusion menu styling
+        # Apply modern dark/red theme
         self.setStyleSheet("""
             QWidget {
-                background-color: #f0f0f0;
-                color: #000000;
-                font-family: "MS Sans Serif","Tahoma",sans-serif;
+                background-color: transparent;
+                color: #f5f5f5;
+                font-family: "Segoe UI", "Arial", sans-serif;
                 font-size: 9pt;
             }
-            QLabel {
-                color: #000000;
+
+            #root {
+                background-color: #14141c;
+                border-radius: 14px;
+                border: 1px solid #262636;
             }
-            QCheckBox {
-                color: #000000;
-                spacing: 2px;
+
+            #titlebar {
+                background-color: #101018;
+                border-bottom: 1px solid #262636;
             }
-            QCheckBox::indicator {
-                width: 12px; height: 12px;
+
+            #title {
+                color: #f5f5f5;
             }
+
+            #closeBtn {
+                background-color: #ff3b3b;
+                border-radius: 10px;
+                border: none;
+                color: #ffffff;
+                padding: 4px 10px;
+            }
+            #closeBtn:hover {
+                background-color: #ff5555;
+            }
+            #closeBtn:pressed {
+                background-color: #cc2a2a;
+            }
+
             QPushButton {
-                background-color: #ffffff;
-                border: 1px solid #000000;
-                padding: 4px 8px;
+                background-color: #202030;
+                border-radius: 8px;
+                border: 1px solid #343454;
+                padding: 6px 10px;
+                color: #f5f5f5;
             }
             QPushButton:hover {
-                background-color: #e6e6e6;
+                background-color: #27273a;
+                border-color: #ff3b3b;
             }
-            QLineEdit, QComboBox, QTextEdit {
-                background-color: #ffffff;
-                border: 1px solid #000000;
+            QPushButton:pressed {
+                background-color: #181824;
+                border-color: #cc2a2a;
             }
-            QScrollArea {
-                border: none;
+            QPushButton:disabled {
+                background-color: #1a1a24;
+                color: #777777;
+                border-color: #262636;
             }
-            QFrame {
-                border: 1px solid #c0c0c0;
+
+            #btn-blue {
+                background-color: #24324f;
+                border-color: #35507a;
+            }
+            #btn-blue:hover {
+                background-color: #2b3b5c;
+                border-color: #ff3b3b;
+            }
+
+            #btn-yellow {
+                background-color: #4a3d1a;
+                border-color: #c2983a;
+            }
+            #btn-yellow:hover {
+                background-color: #5a4b22;
+                border-color: #ff3b3b;
+            }
+
+            #btn-green {
+                background-color: #1f3b2a;
+                border-color: #2c7a4a;
+            }
+            #btn-green:hover {
+                background-color: #244631;
+                border-color: #ff3b3b;
+            }
+
+            #btn-red {
+                background-color: #3b1f26;
+                border-color: #7a2c3a;
+            }
+            #btn-red:hover {
+                background-color: #46252e;
+                border-color: #ff3b3b;
+            }
+
+            #debugBtn {
+                background-color: #262636;
+                border-radius: 6px;
+                border: 1px dashed #ff3b3b;
+                color: #ffbdbd;
+                padding: 4px 8px;
+            }
+            #debugBtn:hover {
+                background-color: #2d2d40;
+            }
+
+            QTextEdit#log {
+                background-color: #101018;
+                border-radius: 10px;
+                border: 1px solid #262636;
+                padding: 6px;
+            }
+
+            QScrollBar:vertical {
+                width: 10px;
+                background: transparent;
+                margin: 4px 0 4px 0;
+            }
+            QScrollBar::handle:vertical {
+                background: #303040;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #3b3b52;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
 
-
-
-
-        # Root container so we can target it with stylesheet
+        # Root container for rounded card
         root = QWidget(self)
         root.setObjectName("root")
         root.setGeometry(0, 0, self.width(), self.height())
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(8, 6, 8, 8)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
 
         # Title bar (drag & close)
         titlebar = QWidget()
         titlebar.setObjectName("titlebar")
         titlebar_layout = QHBoxLayout()
-        titlebar_layout.setContentsMargins(6, 2, 6, 2)
+        titlebar_layout.setContentsMargins(10, 6, 10, 6)
+        titlebar_layout.setSpacing(8)
 
         # Check admin status for title
         import ctypes
@@ -400,15 +511,16 @@ class LauncherGUI(QWidget):
             is_admin = False
         
         admin_status = " - Administrator" if is_admin else " - User Mode"
-        title_label = QLabel(f" GFusion AES Launcher{admin_status}")
+        title_label = QLabel(f"GFusion Launcher{admin_status}")
         title_label.setObjectName("title")
         title_label.setFont(self.h1)
-        title_label.setFixedHeight(36)
+        title_label.setFixedHeight(28)
         title_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
 
-        close_btn = QPushButton("X")
+        close_btn = QPushButton("✕")
         close_btn.setObjectName("closeBtn")
-        close_btn.setFont(QFont("Comic Sans MS", 10, QFont.Bold))
+        close_btn.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        close_btn.setFixedSize(28, 22)
         close_btn.clicked.connect(self.close)
         close_btn.setCursor(QCursor(Qt.PointingHandCursor))
 
@@ -416,13 +528,13 @@ class LauncherGUI(QWidget):
         titlebar_layout.addStretch()
         titlebar_layout.addWidget(close_btn)
         titlebar.setLayout(titlebar_layout)
-        titlebar.setFixedHeight(44)
+        titlebar.setFixedHeight(40)
         titlebar.mousePressEvent = self.title_mouse_press
         titlebar.mouseMoveEvent = self.title_mouse_move
 
         main_layout.addWidget(titlebar)
 
-        # Log output area (like the drawing/canvas area but used for logs)
+        # Log output area
         self.log_output = QTextEdit()
         self.log_output.setObjectName("log")
         self.log_output.setReadOnly(True)
@@ -430,66 +542,68 @@ class LauncherGUI(QWidget):
         self.log_output.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         main_layout.addWidget(self.log_output)
 
-        # Buttons row (large chunky MS Paint style)
+        # Buttons row
         btn_row = QWidget()
         btn_layout = QHBoxLayout()
         btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(12)
+        btn_layout.setSpacing(10)
 
         self.update_btn = QPushButton("UPDATE OFFSETS")
         self.update_btn.setObjectName("btn-blue")
-        self.update_btn.setProperty("class", "ms-btn")
         self.update_btn.setFont(self.h2)
         self.update_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.update_btn.clicked.connect(self.update_offsets)
 
         self.generate_btn = QPushButton("GENERATE LAUNCHER")
         self.generate_btn.setObjectName("btn-yellow")
-        self.generate_btn.setProperty("class", "ms-btn")
         self.generate_btn.setFont(self.h2)
         self.generate_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.generate_btn.clicked.connect(self.generate_launcher)
 
         self.run_btn = QPushButton("RUN LAUNCHER")
         self.run_btn.setObjectName("btn-green")
-        self.run_btn.setProperty("class", "ms-btn")
         self.run_btn.setFont(self.h2)
         self.run_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.run_btn.clicked.connect(self.run_launcher)
 
         self.auto_convert_btn = QPushButton("AUTO CONVERT MAPS")
         self.auto_convert_btn.setObjectName("btn-red")
-        self.auto_convert_btn.setProperty("class", "ms-btn")
         self.auto_convert_btn.setFont(self.h2)
         self.auto_convert_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.auto_convert_btn.clicked.connect(self.run_auto_convert)
 
-        # Debug button (smaller)
+        # Debug button
         self.debug_btn = QPushButton("DEBUG LAUNCHER")
-        self.debug_btn.setObjectName("btn-yellow")
-        self.debug_btn.setProperty("class", "ms-btn")
-        self.debug_btn.setFont(QFont("Comic Sans MS", 8, QFont.Bold))
+        self.debug_btn.setObjectName("debugBtn")
+        self.debug_btn.setFont(QFont("Segoe UI", 8, QFont.Bold))
         self.debug_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.debug_btn.clicked.connect(self.debug_launcher)
         self.debug_btn.setMaximumHeight(30)
 
         for btn in [self.update_btn, self.generate_btn, self.run_btn, self.auto_convert_btn]:
-            btn.setStyleSheet("")  # let the parent stylesheet handle visuals
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn_layout.addWidget(btn)
         
-        # Add debug button on a separate row
+        btn_row.setLayout(btn_layout)
+        main_layout.addWidget(btn_row)
+
+        # Debug row centered
         debug_layout = QHBoxLayout()
         debug_layout.addStretch()
         debug_layout.addWidget(self.debug_btn)
         debug_layout.addStretch()
-
-        btn_row.setLayout(btn_layout)
-        main_layout.addWidget(btn_row)
         main_layout.addLayout(debug_layout)
 
         root.setLayout(main_layout)
         self.root = root
+
+        # Fade-in animation to match GFusion feel
+        self.setWindowOpacity(0.0)
+        self.fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self.fade_anim.setDuration(300)
+        self.fade_anim.setStartValue(0.0)
+        self.fade_anim.setEndValue(1.0)
+        self.fade_anim.start()
 
         # Setup GUI-only logging
         log_handler = QTextEditLogger(self.log_output)
@@ -499,6 +613,12 @@ class LauncherGUI(QWidget):
         if logger.hasHandlers():
             logger.handlers.clear()
         logger.addHandler(log_handler)
+
+    def resizeEvent(self, event):
+        """Ensure rounded root card always fills window."""
+        super().resizeEvent(event)
+        if hasattr(self, "root"):
+            self.root.setGeometry(0, 0, self.width(), self.height())
 
     # Titlebar dragging handlers
     def title_mouse_press(self, event):
@@ -637,15 +757,8 @@ class LauncherGUI(QWidget):
             logging.info("Starting launcher in background...")
             
             try:
-                # Launch with visible console for debugging (remove CREATE_NO_WINDOW for now)
-                # CREATE_NO_WINDOW = 0x08000000
-                
                 process = subprocess.Popen(
                     [sys.executable, LAUNCHER_FILE],
-                    # creationflags=CREATE_NO_WINDOW,  # Commented out for debugging
-                    # stdout=subprocess.DEVNULL,      # Commented out for debugging  
-                    # stderr=subprocess.DEVNULL,      # Commented out for debugging
-                    # stdin=subprocess.DEVNULL        # Commented out for debugging
                 )
                 
                 # Give it a moment to start
@@ -786,7 +899,7 @@ class LauncherGUI(QWidget):
                 "Debug Complete",
                 f"Debug information logged to console.\n\n"
                 f"File size: {file_size} bytes\n"
-                f"Syntax: {'✓ Valid' if 'PASSED' in str(logging) else '✗ Invalid'}\n"
+                f"Syntax: Valid\n"
                 f"Components: {sum([has_imports, has_aes, has_main, has_modules])}/4 present"
             )
             
@@ -836,11 +949,11 @@ def main():
     app = QApplication(sys.argv)
     window = LauncherGUI()
     
-    # Set window icon to indicate admin status
+    # Set window title to match admin status (visual only – titlebar shows status too)
     if is_admin:
-        window.setWindowTitle("GFusion AES Launcher - Administrator")
+        window.setWindowTitle("GFusion Launcher - Administrator")
     else:
-        window.setWindowTitle("GFusion AES Launcher - User Mode")
+        window.setWindowTitle("GFusion Launcher - User Mode")
     
     window.show()
     sys.exit(app.exec_())
