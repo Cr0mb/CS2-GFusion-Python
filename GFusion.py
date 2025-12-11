@@ -2943,7 +2943,6 @@ class ESPTab(QWidget):
             ("Dead Players", "draw_dead_entities"),
             ("Flash ESP", "flash_esp_enabled"),
             ("Scope ESP", "scope_esp_enabled"),
-            ("Head ESP", "head_esp_enabled"),
             ("Skeleton ESP", "skeleton_esp_enabled"),
             ("Bomb ESP", "bomb_esp_enabled"),
             ("Money ESP", "money_esp_enabled"),
@@ -2998,11 +2997,18 @@ class ESPTab(QWidget):
         bone_layout.addStretch()
         
                        
-        size_group = self.create_group_box("Size Settings")
+        size_group = self.create_group_box("Head ESP")
         size_layout = QVBoxLayout(size_group)
         size_layout.setSpacing(3)
+
+        # --- Head ESP Toggle (fixed: no default= param) ---
+        self.add_checkbox(size_layout, "Enable Head ESP", "head_esp_enabled")
+
+        # --- Head ESP Size Slider ---
         self.add_slider(size_layout, "Head ESP Size", "head_esp_size", 1, 50)
+
         size_layout.addStretch()
+
         
         row4.addWidget(bone_group, 1)
         row4.addWidget(size_group, 1)
