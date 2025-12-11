@@ -1,34 +1,58 @@
 import json
 import os
-import shutil
-import subprocess
 import sys
 import urllib.request
+import urllib.error
 
 # === Ensure correct working directory ===
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 print(f"[DEBUG] Running in: {os.getcwd()}")
 
+
 class Offsets:
+    # Raw GitHub URLs for latest CS2 dumper output
+    OFFSETS_URL = "https://raw.githubusercontent.com/a2x/cs2-dumper/refs/heads/main/output/offsets.json"
+    CLIENT_DLL_URL = "https://raw.githubusercontent.com/a2x/cs2-dumper/refs/heads/main/output/client_dll.json"
+
+    @classmethod
+    def _download_json(cls, url: str, name: str) -> dict:
+        """
+        Download JSON from the given URL and return it as a Python dict.
+        """
+        print(f"[INFO] Downloading {name} from {url}")
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Python offsets-updater)"
+                },
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"HTTP {resp.status} while downloading {name}")
+                raw = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"Network error while downloading {name}: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error while downloading {name}: {e}") from e
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Failed to parse JSON for {name}: {e}") from e
+
+        print(f"[INFO] Successfully downloaded and parsed {name}")
+        return data
+
     @classmethod
     def update_offsets_py(cls):
         try:
-            output_dir = "output"
-            for file_name in ["offsets.json", "client_dll.json"]:
-                src = os.path.join(output_dir, file_name)
-                dst = os.path.join(".", file_name)
-                if os.path.exists(src):
-                    shutil.move(src, dst)
-                    print(f"[INFO] Moved {file_name} to current directory.")
-                else:
-                    raise FileNotFoundError(f"{file_name} not found in {output_dir}")
+            # 1) Download the latest JSON blobs directly from GitHub
+            offset = cls._download_json(cls.OFFSETS_URL, "offsets.json")
+            client = cls._download_json(cls.CLIENT_DLL_URL, "client_dll.json")
 
-            with open("offsets.json", "r", encoding="utf-8") as f:
-                offset = json.load(f)
-            with open("client_dll.json", "r", encoding="utf-8") as f:
-                client = json.load(f)
-
+            # 2) Manual offsets you explicitly care about (stable names)
             manual_offsets = {
                 "dwEntityList": offset["client.dll"]["dwEntityList"],
                 "dwViewMatrix": offset["client.dll"]["dwViewMatrix"],
@@ -45,27 +69,43 @@ class Offsets:
                 "m_iItemDefinitionIndex": client["client.dll"]["classes"]["C_EconItemView"]["fields"]["m_iItemDefinitionIndex"],
             }
 
+            # 3) Flatten everything into one big dict
             all_offsets = {}
 
+            # 3a) From offsets.json (top-level is modules, e.g. "client.dll")
             for module_name, offsets_dict in offset.items():
+                if not isinstance(offsets_dict, dict):
+                    continue
                 for offset_name, offset_value in offsets_dict.items():
                     all_offsets[offset_name] = offset_value
 
+            # 3b) From client_dll.json (classes/fields)
             for module_name, module_data in client.items():
-                if "classes" not in module_data:
+                if not isinstance(module_data, dict):
                     continue
-                for class_name, class_data in module_data["classes"].items():
-                    if "fields" not in class_data:
+                classes = module_data.get("classes")
+                if not isinstance(classes, dict):
+                    continue
+
+                for class_name, class_data in classes.items():
+                    fields = class_data.get("fields")
+                    if not isinstance(fields, dict):
                         continue
-                    for field_name, field_value in class_data["fields"].items():
+
+                    for field_name, field_value in fields.items():
+                        # Special-case: m_modelState in CSkeletonInstance -> m_pBoneArray + 128
                         if field_name == "m_modelState" and class_name == "CSkeletonInstance":
                             field_name = "m_pBoneArray"
-                            field_value += 128
+                            field_value = field_value + 128
+
                         all_offsets[field_name] = field_value
 
+            # 3c) Ensure manual offsets override anything else
             all_offsets.update(manual_offsets)
 
-            with open("offsets.py", "w", encoding="utf-8") as f:
+            # 4) Emit offsets.py
+            output_path = os.path.join(script_dir, "offsets.py")
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.write("class Offsets:\n")
                 if not all_offsets:
                     f.write("    pass\n")
@@ -73,22 +113,7 @@ class Offsets:
                     for name in sorted(all_offsets):
                         f.write(f"    {name} = {all_offsets[name]}\n")
 
-            print("[SUCCESS] offsets.py updated successfully.")
-
-            files_to_delete = [
-                "cs2-dumper.exe",
-                "offsets.json",
-                "client_dll.json",
-                "cs2-dumper.log"
-            ]
-            for file in files_to_delete:
-                if os.path.exists(file):
-                    os.remove(file)
-                    print(f"[CLEANUP] Deleted {file}")
-
-            if os.path.exists(output_dir):
-                shutil.rmtree(output_dir)
-                print(f"[CLEANUP] Removed {output_dir} directory")
+            print(f"[SUCCESS] offsets.py updated successfully at {output_path}")
 
         except Exception as e:
             print(f"[ERROR] Failed to update offsets.py: {e}")
