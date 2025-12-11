@@ -267,14 +267,226 @@ def safe_call(func, *args, error_msg="Operation failed", category="", **kwargs):
 
                             
 def _apply_global_qss(app):
-    """Apply a single, lightweight global stylesheet to avoid repeated per-widget setStyleSheet() calls."""
+    """
+    Apply a modern dark + red global stylesheet.
+    All custom widgets rely on this instead of per-widget Win95 QSS.
+    """
     qss = """
-    QWidget { font-size: 12px; }
-    QPushButton { border-radius: 8px; padding: 6px 10px; }
-    QCheckBox, QRadioButton { padding: 2px; }
+    /* === Global base === */
+    QWidget {
+        background-color: #0f0f17;
+        color: #f5f5f7;
+        font-family: "Segoe UI", "Inter", "Tahoma", sans-serif;
+        font-size: 11px;
+    }
+
+    QLabel {
+        color: #f5f5f7;
+    }
+
+    /* === Outer shell === */
+    #outerPanel {
+        background-color: #151520;
+        border-radius: 14px;
+        border: 1px solid #26263a;
+    }
+
+    /* === Tabs === */
+    QTabWidget::pane {
+        border: none;
+        top: 0px;
+    }
+    QTabBar::tab {
+        background: transparent;
+        padding: 8px 14px;
+        margin-right: 4px;
+        color: #8a8fa2;
+        border-bottom: 2px solid transparent;
+    }
+    QTabBar::tab:selected {
+        color: #ffffff;
+        border-bottom: 2px solid #ff3b4a;
+    }
+    QTabBar::tab:hover {
+        color: #ffffff;
+        border-bottom: 2px solid #ff3b4a88;
+    }
+
+    /* === Group boxes / cards === */
+    QGroupBox {
+        background-color: #181828;
+        border-radius: 10px;
+        border: 1px solid #26263a;
+        margin-top: 10px;
+        padding: 10px;
+        font-weight: 600;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        left: 12px;
+        padding: 0 4px;
+        color: #ffffff;
+        background-color: transparent;
+    }
+
+    /* === Buttons === */
+    QPushButton {
+        background-color: #1f1f2b;
+        border-radius: 8px;
+        border: 1px solid #2b2b3c;
+        padding: 8px 8px;        /* ← more vertical space */
+        min-height: 12px;          /* ← ensures text is never clipped */
+        color: #f5f5f7;
+    }
+    QPushButton:hover {
+        background-color: #282838;
+        border-color: #ff3b4a;
+    }
+    QPushButton:pressed {
+        background-color: #ff3b4a;
+        border-color: #ff3b4a;
+        color: #ffffff;
+    }
+    QPushButton:disabled {
+        background-color: #101018;
+        color: #5c5f74;
+        border-color: #202030;
+    }
+
+    /* === Checkboxes === */
+    QCheckBox {
+        spacing: 6px;
+    }
+    QCheckBox::indicator {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 1px solid #3a3a4d;
+        background-color: #151520;
+    }
+    QCheckBox::indicator:hover {
+        border-color: #ff3b4a;
+    }
+    QCheckBox::indicator:checked {
+        background-color: #ff3b4a;
+        border-color: #ff3b4a;
+    }
+
+    /* === Combobox === */
+    QComboBox {
+        background-color: #151520;
+        border-radius: 6px;
+        border: 1px solid #2b2b3c;
+        padding: 4px 8px;
+        color: #f5f5f7;
+    }
+    QComboBox:hover {
+        border-color: #ff3b4a;
+    }
+    QComboBox::drop-down {
+        border: none;
+        width: 18px;
+    }
+    QComboBox::down-arrow {
+        image: none;
+        width: 0;
+        height: 0;
+        border-left: 5px solid #f5f5f7;
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+        margin-right: 4px;
+    }
+
+    /* === Sliders === */
+    QSlider::groove:horizontal {
+        height: 6px;
+        background: #2a2a3a;
+        border-radius: 3px;
+        margin: 0px 0;
+    }
+
+    QSlider::sub-page:horizontal {
+        background: qlineargradient(
+            x1:0, y1:0, x2:1, y2:0,
+            stop:0 #ff3b4a,
+            stop:1 #ff5164
+        );
+        border-radius: 3px;
+    }
+
+    QSlider::add-page:horizontal {
+        background: #202030;
+        border-radius: 3px;
+    }
+
+    QSlider::handle:horizontal {
+        width: 16px;
+        height: 16px;
+        margin: -6px 0;
+        border-radius: 8px;
+        background-color: #ff3b4a;
+        border: 1px solid #ff6b75;
+    }
+
+    QSlider::handle:horizontal:hover {
+        background-color: #ff4e5c;
+        border: 1px solid #ff7f89;
+    }
+
+    QSlider::handle:horizontal:pressed {
+        background-color: #ff2e3b;
+        border: 1px solid #ff606b;
+    }
+
+
+    /* === Scroll areas === */
+    QScrollArea {
+        background: transparent;
+        border: none;
+    }
+
+    /* === Edits === */
+    QLineEdit, QTextEdit, QPlainTextEdit {
+        background-color: #151520;
+        border-radius: 6px;
+        border: 1px solid #2b2b3c;
+        padding: 4px 8px;
+        color: #f5f5f7;
+    }
+    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+        border-color: #ff3b4a;
+    }
+
+    /* === Tables === */
+    QTableWidget {
+        background-color: #151520;
+        gridline-color: #26263a;
+        border-radius: 8px;
+        border: 1px solid #26263a;
+    }
+    QHeaderView::section {
+        background-color: #1c1c28;
+        color: #f5f5f7;
+        padding: 4px 8px;
+        border: none;
+        border-bottom: 1px solid #26263a;
+    }
+
+    /* Startup overlay */
+    #startupOverlay {
+        background-color: rgba(7, 7, 12, 230);
+        border-radius: 14px;
+    }
+    #startupTitle {
+        font-size: 20px;
+        font-weight: 700;
+    }
+    #startupSubtitle {
+        font-size: 11px;
+        color: #b0b2c8;
+    }
     """
     app.setStyleSheet(qss)
-
 def check_admin_privileges():
     """Check if running as administrator and request elevation if not"""
     import ctypes
@@ -935,27 +1147,9 @@ class AimbotTab(QWidget):
 
                                                                
     def create_group_box(self, title: str) -> QGroupBox:
+        """Create a modern card-style group box that uses the global theme."""
         g = QGroupBox(title)
-        g.setStyleSheet("""
-            QGroupBox {
-                background: #C0C0C0;
-                border-top: 1px solid #FFFFFF;
-                border-left: 1px solid #FFFFFF;
-                border-right: 1px solid #404040;
-                border-bottom: 1px solid #404040;
-                margin-top: 8px;
-                padding-top: 8px;
-                font-weight: bold;
-                font-size: 8pt;
-                color: #000000;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                background: #C0C0C0;
-            }
-        """)
+        g.setObjectName("cardGroup")
         return g
 
     def add_checkbox(self, layout, label, cfg_key, on_toggle=None):
@@ -975,7 +1169,7 @@ class AimbotTab(QWidget):
     def add_combo_row(self, layout, label, options, cfg_key, to_lower=True, width=100):
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+        lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         row.addWidget(lbl)
         combo = CheatComboBox(items=options, width=width)
         cur = getattr(Config, cfg_key, options[0])
@@ -993,7 +1187,7 @@ class AimbotTab(QWidget):
     def add_float_slider(self, layout, label, cfg_key, min_v, max_v, step_mult):
         val = float(getattr(Config, cfg_key, min_v))
         lab = QLabel(f"{label}: {val:.2f}")
-        lab.setStyleSheet("color: #000000; font-size: 8pt;")
+        lab.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         sld = NoScrollSlider(Qt.Horizontal)
         sld.setMinimum(int(min_v*step_mult)); sld.setMaximum(int(max_v*step_mult))
         sld.setValue(int(val*step_mult))
@@ -1009,7 +1203,7 @@ class AimbotTab(QWidget):
     def add_int_slider(self, layout, label, cfg_key, min_v, max_v):
         val = int(getattr(Config, cfg_key, min_v))
         lab = QLabel(f"{label}: {val}")
-        lab.setStyleSheet("color: #000000; font-size: 8pt;")
+        lab.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         sld = NoScrollSlider(Qt.Horizontal)
         sld.setMinimum(min_v); sld.setMaximum(max_v); sld.setValue(val)
         def on_change(v):
@@ -1022,7 +1216,7 @@ class AimbotTab(QWidget):
 
     def _section_title(self, text):
         lbl = QLabel(text)
-        lbl.setStyleSheet("font-weight: bold; font-size: 9pt; color: #000000;")
+        lbl.setStyleSheet("font-weight: bold; font-size: 9pt; color: #f5f5f7;")
         return lbl
 
                               
@@ -1032,9 +1226,9 @@ class AimbotTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background: #C0C0C0; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
-        content = QWidget(); content.setStyleSheet("background: #C0C0C0;")
+        content = QWidget(); content.setStyleSheet("background-color: #151520;")
         root = QVBoxLayout(content)
         root.setSpacing(8); root.setContentsMargins(8, 8, 8, 8)
 
@@ -1151,7 +1345,7 @@ class AimbotTab(QWidget):
                                 
         sens_row = QHBoxLayout()
         self.sens_label = QLabel(f"Sensitivity: {getattr(Config,'sensitivity',0.1):.3f}")
-        self.sens_label.setStyleSheet("color:#000000; font-size:8pt;")
+        self.sens_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         sens_row.addWidget(self.sens_label)
 
         self.sens_slider = NoScrollSlider(Qt.Horizontal)
@@ -1181,7 +1375,7 @@ class AimbotTab(QWidget):
         tgt = QVBoxLayout(tgt_g); tgt.setSpacing(6)
         self.add_combo_row(tgt, "Target Bone:", ["head","chest"], "target_bone_name", to_lower=True, width=90)
         self.learn_dir_label = QLabel(f"Learning Dir: {getattr(Config,'learn_dir','')}")
-        self.learn_dir_label.setStyleSheet("color:#000000; font-size:8pt;")
+        self.learn_dir_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         tgt.addWidget(self.learn_dir_label)
         root.addWidget(tgt_g)
 
@@ -1316,85 +1510,27 @@ class AimbotTab(QWidget):
             print(f"[AimbotTab] refresh_ui error: {e}")
 
 class CheatCheckBox(QCheckBox):
-    def __init__(self, label="", parent=None):
+    def __init__(self, label: str = "", parent=None):
         super().__init__(label, parent)
-        self.setStyleSheet("""
-        QCheckBox {
-            color: #000000;
-            font-family: "MS Sans Serif","Tahoma",sans-serif;
-            font-size: 8pt;
-            spacing: 2px;
-        }
-        QCheckBox::indicator {
-            width: 11px; height: 11px;
-            background: #C0C0C0;
-            border: 1px solid #000000;
-            /* raised bezel */
-            border-top: 1px solid #FFFFFF;
-            border-left: 1px solid #FFFFFF;
-            border-right: 1px solid #808080;
-            border-bottom: 1px solid #808080;
-        }
-        QCheckBox::indicator:checked {
-            background: #000000;   /* solid black check box like screenshot */
-        }
-        """)
+        # Use global dark theme styling; only tag with objectName if extra rules are desired.
+        self.setObjectName("cheatCheckBox")
 
 class CheatComboBox(QComboBox):
-    def __init__(self, items=None, width=100, parent=None):
+    def __init__(self, items=None, width: int = 100, parent=None):
         super().__init__(parent)
+        self.setObjectName("cheatComboBox")
         if items:
             self.addItems(items)
         self.setFixedWidth(width)
-        self.setStyleSheet("""
-        QComboBox {
-            background: #FFFFFF;
-            border: 1px solid #000000;
-            padding: 1px 3px;
-            font-family: "MS Sans Serif","Tahoma",sans-serif;
-            font-size: 8pt;
-            min-height: 16px;
-        }
-        QComboBox::drop-down {
-            width: 14px;
-            border-left: 1px solid #000000;
-            background: #C0C0C0;
-        }
-        QComboBox::down-arrow {
-            image: none;
-            border-left: 5px solid #000000;
-            border-top: 4px solid transparent;
-            border-bottom: 4px solid transparent;
-            margin-right: 2px;
-        }
-        """)
 
 class ConfigTab(QWidget):
     config_loaded = pyqtSignal()
 
                                                
     def _create_group_box(self, title: str) -> QGroupBox:
+        """Create a modern card-style group box that uses the global theme."""
         g = QGroupBox(title)
-        g.setStyleSheet("""
-            QGroupBox {
-                background: #C0C0C0;
-                border-top: 1px solid #FFFFFF;
-                border-left: 1px solid #FFFFFF;
-                border-right: 1px solid #404040;
-                border-bottom: 1px solid #404040;
-                margin-top: 8px;
-                padding-top: 8px;
-                font-weight: bold;
-                font-size: 8pt;
-                color: #000000;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                background: #C0C0C0;
-            }
-        """)
+        g.setObjectName("cardGroup")
         return g
 
     def _sep(self) -> QFrame:
@@ -1426,9 +1562,9 @@ class ConfigTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background: #C0C0C0; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
-        content = QWidget(); content.setStyleSheet("background:#C0C0C0;")
+        content = QWidget(); content.setStyleSheet("background-color:#151520;")
         root = QVBoxLayout(content)
         root.setSpacing(8); root.setContentsMargins(8,8,8,8)
 
@@ -1439,7 +1575,7 @@ class ConfigTab(QWidget):
         row1 = QHBoxLayout()
         name_label = QLabel("Name:")
         name_label.setFixedWidth(40)
-        name_label.setStyleSheet("color:#000000; font-size:8pt;")
+        name_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
 
         self.active_combo = QComboBox()
         self.active_combo.setEditable(False)
@@ -1462,7 +1598,7 @@ class ConfigTab(QWidget):
         active.addLayout(row1)
 
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color:#000000; font-size:8pt;")
+        self.status_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         active.addWidget(self.status_label)
         root.addWidget(active_g)
 
@@ -1473,7 +1609,7 @@ class ConfigTab(QWidget):
         lr1 = QHBoxLayout()
         list_label = QLabel("Saved:")
         list_label.setFixedWidth(40)
-        list_label.setStyleSheet("color:#000; font-size:8pt;")
+        list_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         self.config_list = QComboBox()
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setFixedWidth(28)
@@ -1526,7 +1662,7 @@ class ConfigTab(QWidget):
         self.autosave_slider.setValue(max(1, min(30, cur_mins)))
 
         self.autosave_label = QLabel(f"Interval: {self.autosave_slider.value()} min")
-        self.autosave_label.setStyleSheet("color:#000; font-size:8pt;")
+        self.autosave_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
 
         def on_auto_change(v):
             setattr(self.CFG, "autosave_minutes", int(v))
@@ -1931,19 +2067,6 @@ class ConfigTab(QWidget):
                 pass
 
 class ConsoleTab(QWidget):
-    """
-    Retro-styled (Win95/Paint) console with:
-      - Scrollable log output (timestamped), copy-friendly
-      - Command prompt with history (↑/↓) and tab-completion popup
-      - Panic button + quick actions row (clear, save log, help)
-      - Robust command router:
-          help, get/set/toggle/list,
-          start/stop (esp, aimbot, triggerbot, glow, bhop, fov, walkbot),
-          threads, panic, reload_offsets, restart_features,
-          bind/unbind actions, gfx passthrough (to ExecutionTab/ExecFramework if present)
-      - Safe, reflective Config access with type coercion
-      - Emits refresh_all_tabs() after config mutations
-    """
     def __init__(self):
         super().__init__()
         # Cross-tab references
@@ -1976,7 +2099,7 @@ class ConsoleTab(QWidget):
         g = QGroupBox(title)
         g.setStyleSheet("""
             QGroupBox {
-                background: #C0C0C0;
+                background-color: #151520;
                 border-top: 1px solid #FFFFFF;
                 border-left: 1px solid #FFFFFF;
                 border-right: 1px solid #404040;
@@ -1985,13 +2108,13 @@ class ConsoleTab(QWidget):
                 padding-top: 8px;
                 font-weight: bold;
                 font-size: 8pt;
-                color: #000000;
+                color: #f5f5f7;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 3px;
-                background: #C0C0C0;
+                background-color: #151520;
             }
         """)
         return g
@@ -2002,17 +2125,17 @@ class ConsoleTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background:#C0C0C0; border:none; }")
+        scroll.setStyleSheet("QScrollArea { background-color:#151520; border:none; }")
 
-        content = QWidget(); content.setStyleSheet("background:#C0C0C0;")
+        content = QWidget(); content.setStyleSheet("background-color:#151520;")
         root = QVBoxLayout(content); root.setSpacing(8); root.setContentsMargins(8,8,8,8)
 
                 
         hdr = QHBoxLayout()
         title = QLabel("Console")
-        title.setStyleSheet("font-weight:bold; font-size:10pt; color:#000;")
+        title.setStyleSheet("font-weight:bold; font-size:10pt; color:#f5f5f7;")
         self.status = QLabel("Status: Ready")
-        self.status.setStyleSheet("color:#000; font-size:8pt;")
+        self.status.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         hdr.addWidget(title); hdr.addStretch(1); hdr.addWidget(self.status)
         root.addLayout(hdr)
 
@@ -2021,10 +2144,18 @@ class ConsoleTab(QWidget):
         out_l = QVBoxLayout(out_g); out_l.setSpacing(6)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.output.setStyleSheet(
-            "background:#FFFFFF; color:#000; border:1px solid #000; "
-            "font-family:Consolas,monospace; font-size:9pt;"
-        )
+        self.output.setStyleSheet("""
+            QTextEdit {
+                background: #0f0f14;
+                color: #e6e6e9;
+                border: 1px solid #2b2b3c;
+                font-family: Consolas, monospace;
+                font-size: 10pt;
+                padding: 6px;
+                selection-background-color: #ff3b4a;
+                selection-color: #ffffff;
+            }
+        """)
         out_l.addWidget(self.output)
         root.addWidget(out_g)
 
@@ -2068,7 +2199,7 @@ class ConsoleTab(QWidget):
 
                          
         self.cmd_status = QLabel("Examples: get FOV  |  set FOV 110  |  toggle aimbot_enabled")
-        self.cmd_status.setStyleSheet("color:#000; font-size:8pt;")
+        self.cmd_status.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         in_l.addWidget(self.cmd_status)
 
         root.addWidget(in_g)
@@ -2083,7 +2214,7 @@ class ConsoleTab(QWidget):
         self.completion.setWindowFlags(self.completion.windowFlags() | Qt.Popup)
         self.completion.itemClicked.connect(self._completion_pick)
         self.completion.setStyleSheet("""
-            QListWidget { background:#FFFFFF; color:#000; border:1px solid #000; font-family:Consolas; font-size:9pt; }
+            QListWidget { background:#FFFFFF; color:#f5f5f7; border:1px solid #000; font-family:Consolas; font-size:9pt; }
             QListWidget::item { padding:2px 6px; }
             QListWidget::item:selected { background:#C0D0FF; }
         """)
@@ -2508,7 +2639,7 @@ class ESPTab(QWidget):
         group = QGroupBox(title)
         group.setStyleSheet("""
             QGroupBox {
-                background: #C0C0C0;
+                background-color: #151520;
                 border-top: 1px solid #FFFFFF;
                 border-left: 1px solid #FFFFFF;
                 border-right: 1px solid #404040;
@@ -2517,13 +2648,13 @@ class ESPTab(QWidget):
                 padding-top: 8px;
                 font-weight: bold;
                 font-size: 8pt;
-                color: #000000;
+                color: #f5f5f7;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 3px;
-                background: #C0C0C0;
+                background-color: #151520;
             }
         """)
         return group
@@ -2554,7 +2685,7 @@ class ESPTab(QWidget):
     def add_combobox(self, layout, label, options, cfg_key):
         hbox = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+        lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         hbox.addWidget(lbl)
         
         combo = CheatComboBox(items=options, width=100)
@@ -2573,7 +2704,7 @@ class ESPTab(QWidget):
     def add_slider(self, layout, label, cfg_key, min_val, max_val):
         val = getattr(Config, cfg_key, min_val)
         lbl = QLabel(f"{label}: {val}")
-        lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+        lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         
         slider = NoScrollSlider(Qt.Horizontal)
         slider.setRange(min_val, max_val)
@@ -2594,7 +2725,7 @@ class ESPTab(QWidget):
         
         item_layout = QHBoxLayout()
         lbl = QLabel(f"{label}:")
-        lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+        lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         lbl.setFixedWidth(100)
         item_layout.addWidget(lbl)
         
@@ -2627,10 +2758,10 @@ class ESPTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background: #C0C0C0; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
         content = QWidget()
-        content.setStyleSheet("background: #C0C0C0;")
+        content.setStyleSheet("background-color: #151520;")
         layout = QVBoxLayout(content)
         layout.setSpacing(8)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -2653,7 +2784,7 @@ class ESPTab(QWidget):
         panic_layout.setSpacing(3)
         
         panic_lbl = QLabel(f"Key: {vk_to_name(getattr(Config, 'panic_key', 0x7B))}")
-        panic_lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+        panic_lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         panic_layout.addWidget(panic_lbl)
         
         panic_btn = QPushButton("Set Panic Key")
@@ -2914,7 +3045,7 @@ class MainWindow(QWidget):
         logger.info("Initializing MainWindow", category="UI")
         super().__init__()
         try:
-            self.setWindowTitle("GFusion V1 - Artificial Aiming Style")
+            self.setWindowTitle("GFusion V3.5.4")
             self.setGeometry(100, 100, 950, 700)
             self.setMinimumSize(900, 650)
             logger.debug("Window geometry set", category="UI")
@@ -2982,6 +3113,9 @@ class MainWindow(QWidget):
 
             self.setStyleSheet(self._build_helios_qss())
 
+            # Run a short welcome fade-in the first time the menu opens
+            QTimer.singleShot(0, self._run_startup_animation)
+
             # Set OBS protection after a short delay
             QTimer.singleShot(100, lambda: self.set_obs_protection(
                 bool(getattr(Config, "obs_protection_enabled", False))
@@ -2994,150 +3128,16 @@ class MainWindow(QWidget):
             raise
 
     def _build_helios_qss(self) -> str:
-                 
-        bg  = "#C0C0C0"   # classic gray
-        lt  = "#FFFFFF"               
-        dk  = "#808080"              
-        dk2 = "#404040"                
-        blk = "#000000"          
-
-        return f"""
-        /* Global */
-        QWidget {{
-            background: {bg};
-            color: {blk};
-            font-family: "MS Sans Serif","Tahoma",sans-serif;
-            font-size: 8pt;
-        }}
-
-        /* Outer 1px black frame */
-        #outerPanel {{
-            background: {bg};
-            border: 1px solid {blk};
-        }}
-
-        /* ----- Tabs: raised (off), sunken (selected) --------------------- */
-        QTabWidget::pane {{
-            background: {bg};
-            border: 1px solid {blk};
-            top: -1px;   /* seam with tabs like the PNG */
-        }}
-        QTabBar::tab {{
-            background: {bg};
-            color: {blk};
-            padding: 2px 10px;
-            margin-right: -1px;
-            min-height: 16px;
-            border-top: 1px solid {lt};
-            border-left: 1px solid {lt};
-            border-right: 1px solid {dk2};
-            border-bottom: 1px solid {dk2};
-        }}
-        QTabBar::tab:hover {{
-            background: #D3D3D3;
-        }}
-        QTabBar::tab:selected {{
-            /* sunken */
-            background: #E0E0E0;
-            border-top: 1px solid {dk2};
-            border-left: 1px solid {dk2};
-            border-right: 1px solid {lt};
-            border-bottom: 1px solid {lt};
-            margin-bottom: -1px;
-        }}
-
-        /* ----- GroupBoxes: flat title, 3D frame like screenshot ---------- */
-        QGroupBox {{
-            background: {bg};
-            margin-top: 10px;
-            padding: 4px;
-            /* raised frame (top/left light, bottom/right dark) */
-            border-top: 1px solid {lt};
-            border-left: 1px solid {lt};
-            border-right: 1px solid {dk2};
-            border-bottom: 1px solid {dk2};
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            subcontrol-position: top left;
-            padding: 0 3px;
-            color: {blk};
-            background: {bg};
-            font-weight: normal;
-        }}
-
-        /* ----- Buttons: raised, pressed -> sunken ------------------------ */
-        QPushButton {{
-            background: {bg};
-            padding: 2px 8px;
-            min-height: 16px;
-            border-top: 1px solid {lt};
-            border-left: 1px solid {lt};
-            border-right: 1px solid {dk2};
-            border-bottom: 1px solid {dk2};
-        }}
-        QPushButton:hover {{ background: #D3D3D3; }}
-        QPushButton:pressed, QPushButton:checked {{
-            /* sunken */
-            border-top: 1px solid {dk2};
-            border-left: 1px solid {dk2};
-            border-right: 1px solid {lt};
-            border-bottom: 1px solid {lt};
-            background: #E0E0E0;
-        }}
-
-        /* ----- Edits ------------------------------------------------------ */
-        QLineEdit, QComboBox, QTextEdit {{
-            background: #FFFFFF;
-            border: 1px solid {blk};
-            padding: 1px 3px;
-        }}
-        QComboBox::drop-down {{ width: 14px; border-left: 1px solid {blk}; }}
-
-        /* ----- Checkboxes / Radios: tiny, boxy --------------------------- */
-        QCheckBox::indicator, QRadioButton::indicator {{
-            width: 11px; height: 11px;
-            border: 1px solid {blk};
-            background: {bg};
-            /* raised bezel */
-            border-top-color: {lt};
-            border-left-color: {lt};
-            border-right-color: {dk};
-            border-bottom-color: {dk};
-            margin-right: 4px;
-        }}
-        QCheckBox::indicator:checked {{
-            background: #000000;   /* strong pixel check look */
-        }}
-        QRadioButton::indicator:checked {{
-            background: #000000;
-        }}
-
-        /* ----- Sliders: flat groove w/ small sunken handle --------------- */
-        QSlider::groove:horizontal {{
-            height: 6px;
-            background: {bg};
-            border: 1px solid {blk};
-        }}
-        QSlider::handle:horizontal {{
-            width: 10px; height: 14px;
-            background: #E0E0E0;
-            margin: -5px 0; /* taller handle like old UIs */
-            border-top: 1px solid {dk2};
-            border-left: 1px solid {dk2};
-            border-right: 1px solid {lt};
-            border-bottom: 1px solid {lt};
-        }}
-
-        /* ----- Scrollbars (simple boxy) ---------------------------------- */
-        QScrollBar:vertical, QScrollBar:horizontal {{
-            background: {bg};
-            border: 1px solid {blk};
-        }}
-        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
-            background: #E0E0E0;
-            border: 1px solid {blk};
-        }}
+        """
+        Additional window-level styling. Most of the look comes from _apply_global_qss.
+        This only defines a few object-specific tweaks if needed.
+        """
+        return """
+        #outerPanel {
+            background-color: #151520;
+            border-radius: 14px;
+            border: 1px solid #26263a;
+        }
         """
 
                                                                               
@@ -3178,7 +3178,7 @@ class MainWindow(QWidget):
         layout = QVBoxLayout(placeholder)
         layout.setAlignment(Qt.AlignCenter)
         label = QLabel(f"Loading {name} tab...")
-        label.setStyleSheet("color: #000000; font-size: 10pt;")
+        label.setStyleSheet("color: #f5f5f7; font-size: 10pt;")
         layout.addWidget(label)
         return placeholder
     
@@ -3304,6 +3304,71 @@ class MainWindow(QWidget):
         except Exception as e:
             logger.exception("Error in refresh_all_tabs_on_config_load", category="UI")
 
+    def _run_startup_animation(self):
+        """
+        Simple fade-in welcome overlay at launch.
+        Does nothing if it has already been shown once.
+        """
+        if getattr(self, "_startup_animation_done", False):
+            return
+        self._startup_animation_done = True
+
+        try:
+            from PyQt5.QtWidgets import QLabel, QGraphicsOpacityEffect, QWidget, QVBoxLayout
+        except Exception:
+            return
+
+        overlay = QWidget(self.outer)
+        overlay.setObjectName("startupOverlay")
+        overlay.setAttribute(Qt.WA_StyledBackground, True)
+        layout = QVBoxLayout(overlay)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(6)
+
+        title = QLabel("GFusion V3.5.3")
+        title.setObjectName("startupTitle")
+        subtitle = QLabel("External Cheat by Cr0mb & SameOldMistakes")
+        subtitle.setObjectName("startupSubtitle")
+
+        title.setAlignment(Qt.AlignCenter)
+        subtitle.setAlignment(Qt.AlignCenter)
+
+        layout.addStretch(1)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addStretch(1)
+
+        overlay.setGeometry(self.outer.rect())
+        overlay.raise_()
+        overlay.show()
+
+        effect = QGraphicsOpacityEffect(overlay)
+        overlay.setGraphicsEffect(effect)
+
+        fade_in = QPropertyAnimation(effect, b"opacity", overlay)
+        fade_in.setDuration(1400)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.setEasingCurve(QEasingCurve.OutCubic)
+
+        fade_out = QPropertyAnimation(effect, b"opacity", overlay)
+        fade_out.setDuration(700)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QEasingCurve.InCubic)
+
+        def start_fade_out():
+            fade_out.start()
+
+        def cleanup():
+            overlay.hide()
+            overlay.deleteLater()
+
+        fade_in.finished.connect(start_fade_out)
+        fade_out.finished.connect(cleanup)
+        fade_in.start()
+
+
 class MiscTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -3313,7 +3378,7 @@ class MiscTab(QWidget):
                                    
     def section_title(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet("font-weight: bold; font-size: 9pt; color: #000000;")
+        lbl.setStyleSheet("font-weight: bold; font-size: 9pt; color: #f5f5f7;")
         return lbl
 
     def add_separator(self, layout: QVBoxLayout):
@@ -3411,7 +3476,7 @@ class MiscTab(QWidget):
         """
         row = QHBoxLayout()
         lbl = QLabel(f"{label}:")
-        lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+        lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         row.addWidget(lbl)
 
         rgb = self._sanitize_rgb3(getattr(Config, cfg_key, default))
@@ -3440,7 +3505,7 @@ class MiscTab(QWidget):
         group = QGroupBox(title)
         group.setStyleSheet("""
             QGroupBox {
-                background: #C0C0C0;
+                background-color: #151520;
                 border-top: 1px solid #FFFFFF;
                 border-left: 1px solid #FFFFFF;
                 border-right: 1px solid #404040;
@@ -3449,13 +3514,13 @@ class MiscTab(QWidget):
                 padding-top: 8px;
                 font-weight: bold;
                 font-size: 8pt;
-                color: #000000;
+                color: #f5f5f7;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 3px;
-                background: #C0C0C0;
+                background-color: #151520;
             }
         """)
         return group
@@ -3468,13 +3533,13 @@ class MiscTab(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
             QScrollArea {
-                background: #C0C0C0;
+                background-color: #151520;
                 border: none;
             }
         """)
 
         content_widget = QWidget()
-        content_widget.setStyleSheet("background: #C0C0C0;")
+        content_widget.setStyleSheet("background-color: #151520;")
         main_layout = QVBoxLayout(content_widget)
         main_layout.setSpacing(8)
         main_layout.setContentsMargins(8, 8, 8, 8)
@@ -3493,7 +3558,7 @@ class MiscTab(QWidget):
             default=True, thread_start=start_fov_thread, thread_stop=stop_fov_thread
         )
         self.fov_label = QLabel(f"Game FOV: {cfg.game_fov}")
-        self.fov_label.setStyleSheet("color: #000000; font-size: 8pt;")
+        self.fov_label.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         self.fov_slider = NoScrollSlider(Qt.Horizontal)
         self.fov_slider.setRange(60, 150)
         self.fov_slider.setValue(cfg.game_fov)
@@ -3555,7 +3620,7 @@ class MiscTab(QWidget):
             
             item_layout = QHBoxLayout()
             lbl = QLabel(f"{label}:")
-            lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+            lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
             lbl.setFixedWidth(70)
             item_layout.addWidget(lbl)
             
@@ -3621,7 +3686,7 @@ class MiscTab(QWidget):
                      
         font_box = QHBoxLayout()
         self.team_list_font_label = QLabel(f"Size: {getattr(Config, 'team_list_font_size', 11)}")
-        self.team_list_font_label.setStyleSheet("color: #000000; font-size: 8pt;")
+        self.team_list_font_label.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         self.team_list_font_slider = NoScrollSlider(Qt.Horizontal)
         self.team_list_font_slider.setRange(8, 16)
         self.team_list_font_slider.setValue(getattr(Config, 'team_list_font_size', 11))
@@ -3656,7 +3721,7 @@ class MiscTab(QWidget):
             
             item_layout = QHBoxLayout()
             lbl = QLabel(f"{label}:")
-            lbl.setStyleSheet("color: #000000; font-size: 8pt;")
+            lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
             lbl.setFixedWidth(70)
             item_layout.addWidget(lbl)
             
@@ -3694,7 +3759,7 @@ class MiscTab(QWidget):
                        
         left_system = QVBoxLayout()
         offsets_label = QLabel("Offsets")
-        offsets_label.setStyleSheet("font-weight: bold; font-size: 8pt; color: #000000;")
+        offsets_label.setStyleSheet("font-weight: bold; font-size: 8pt; color: #f5f5f7;")
         left_system.addWidget(offsets_label)
         
         self.update_offsets_btn = QPushButton("Update Offsets")
@@ -3707,11 +3772,11 @@ class MiscTab(QWidget):
                            
         right_system = QVBoxLayout()
         toggle_label = QLabel("Menu Toggle")
-        toggle_label.setStyleSheet("font-weight: bold; font-size: 8pt; color: #000000;")
+        toggle_label.setStyleSheet("font-weight: bold; font-size: 8pt; color: #f5f5f7;")
         right_system.addWidget(toggle_label)
         
         self.toggle_key_label = QLabel(f"Key: {cfg.toggle_menu_key}")
-        self.toggle_key_label.setStyleSheet("color: #000000; font-size: 8pt;")
+        self.toggle_key_label.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         right_system.addWidget(self.toggle_key_label)
         
         toggle_btn = QPushButton("Set Key")
@@ -3833,28 +3898,11 @@ class NoScrollSlider(QSlider):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setStyleSheet("""
-        QSlider {
-            background: transparent;
-        }
-        QSlider::groove:horizontal {
-            height: 6px;
-            background: #C0C0C0;
-            border: 1px solid #000000;
-        }
-        QSlider::handle:horizontal {
-            width: 10px; height: 14px;
-            background: #E0E0E0;
-            margin: -5px 0;
-            /* sunken bevel */
-            border-top: 1px solid #404040;
-            border-left: 1px solid #404040;
-            border-right: 1px solid #FFFFFF;
-            border-bottom: 1px solid #FFFFFF;
-        }
-        """)
+        # Visual style comes from the global QSlider rules; this class just disables wheel scrolling.
+
     def wheelEvent(self, event):
-        pass                        
+        # Block scroll-wheel to avoid accidental value changes while scrolling the menu.
+        event.ignore()
 
 class RecoilViewer(QWidget):
     """
@@ -3897,7 +3945,7 @@ class RecoilViewer(QWidget):
         g = QGroupBox(title)
         g.setStyleSheet("""
             QGroupBox {
-                background: #C0C0C0;
+                background-color: #151520;
                 border-top: 1px solid #FFFFFF;
                 border-left: 1px solid #FFFFFF;
                 border-right: 1px solid #404040;
@@ -3906,13 +3954,13 @@ class RecoilViewer(QWidget):
                 padding-top: 8px;
                 font-weight: bold;
                 font-size: 8pt;
-                color: #000000;
+                color: #f5f5f7;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 3px;
-                background: #C0C0C0;
+                background-color: #151520;
             }
         """)
         return g
@@ -3931,10 +3979,10 @@ class RecoilViewer(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background: #C0C0C0; border: none; }")                  
+        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")                  
 
         content = QWidget()
-        content.setStyleSheet("background:#C0C0C0;")
+        content.setStyleSheet("background-color:#151520;")
         root = QVBoxLayout(content)
         root.setSpacing(8)
         root.setContentsMargins(8, 8, 8, 8)
@@ -3942,9 +3990,9 @@ class RecoilViewer(QWidget):
                                  
         header = QHBoxLayout()
         title = QLabel("Recoil Analyzer")
-        title.setStyleSheet("font-weight:bold; font-size:10pt; color:#000000;")
+        title.setStyleSheet("font-weight:bold; font-size:10pt; color:#f5f5f7;")
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color:#000000; font-size:8pt;")
+        self.status_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(self.status_label)
@@ -3986,8 +4034,8 @@ class RecoilViewer(QWidget):
             }
             QComboBox QAbstractItemView {
                 background: #FFFFFF;
-                color: #000000;
-                selection-background-color: #000000;
+                color: #f5f5f7;
+                selection-background-color: #f5f5f7;
                 selection-color: #FFFFFF;
             }
         """)
@@ -4058,7 +4106,7 @@ class RecoilViewer(QWidget):
         stats_v.setSpacing(6)
         self.stats_scroll = QScrollArea()
         self.stats_scroll.setWidgetResizable(True)
-        self.stats_scroll.setStyleSheet("QScrollArea { background: #E0E0E0; border: 1px solid #000000; }")
+        self.stats_scroll.setStyleSheet("QScrollArea { background-color: #202030; border: 1px solid #000000; }")
         self.stats_widget = QWidget()
         self.stats_layout = QVBoxLayout(self.stats_widget)
         self.stats_layout.setContentsMargins(6, 6, 6, 6)
@@ -4291,7 +4339,7 @@ class RecoilViewer(QWidget):
 
                           
             dataset_header = QLabel(f"Dataset: {key}")
-            dataset_header.setStyleSheet("font-weight:bold; font-size:9pt; color:#000000; margin-top:6px;")
+            dataset_header.setStyleSheet("font-weight:bold; font-size:9pt; color:#f5f5f7; margin-top:6px;")
             self.stats_layout.addWidget(dataset_header)
 
             self._add_stats_summary(key, vectors)
@@ -4299,7 +4347,7 @@ class RecoilViewer(QWidget):
             bursts = self._split_bursts(vectors)
             if bursts:
                 burst_header = QLabel(f"Burst Analysis ({key})")
-                burst_header.setStyleSheet("font-weight:bold; font-size:9pt; color:#000000; margin-top:4px;")
+                burst_header.setStyleSheet("font-weight:bold; font-size:9pt; color:#f5f5f7; margin-top:4px;")
                 self.stats_layout.addWidget(burst_header)
                 for b_idx, burst in enumerate(bursts, 1):
                     self._add_burst_summary(b_idx, burst)
@@ -4339,7 +4387,7 @@ class RecoilViewer(QWidget):
             f"Bones: {bone_counts}"
         )
         lbl.setStyleSheet("""
-            color:#000000; font-size:8pt; border:1px solid #000000;
+            color:#f5f5f7; font-size:8pt; border:1px solid #000000;
             padding:3px; margin:3px 0; background:#FFFFFF;
         """)
         self.stats_layout.addWidget(lbl)
@@ -4353,7 +4401,7 @@ class RecoilViewer(QWidget):
             return
         avg_dx, avg_dy = (sum(dxs)/len(dxs)), (sum(dys)/len(dys))
         lbl = QLabel(f" Burst {idx}: {len(burst)} shots | Avg ΔPitch={avg_dx:.2f}, ΔYaw={avg_dy:.2f}")
-        lbl.setStyleSheet("color:#000000; font-size:8pt; margin-left:8px;")
+        lbl.setStyleSheet("color:#f5f5f7; font-size:8pt; margin-left:8px;")
         self.stats_layout.addWidget(lbl)
 
     def _split_bursts(self, vectors):
@@ -4394,7 +4442,7 @@ class TriggerBotTab(QWidget):
         g = QGroupBox(title)
         g.setStyleSheet("""
             QGroupBox {
-                background: #C0C0C0;
+                background-color: #151520;
                 border-top: 1px solid #FFFFFF;
                 border-left: 1px solid #FFFFFF;
                 border-right: 1px solid #404040;
@@ -4403,13 +4451,13 @@ class TriggerBotTab(QWidget):
                 padding-top: 8px;
                 font-weight: bold;
                 font-size: 8pt;
-                color: #000000;
+                color: #f5f5f7;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 3px;
-                background: #C0C0C0;
+                background-color: #151520;
             }
         """)
         return g
@@ -4432,7 +4480,7 @@ class TriggerBotTab(QWidget):
         """Float slider with label, e.g. 0.01..1.00 (x step_mult)"""
         val = float(getattr(self.CFG, cfg_key, min_v))
         lab = QLabel(f"{label}: {val:.2f}{suffix}")
-        lab.setStyleSheet("color: #000000; font-size: 8pt;")
+        lab.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         sld = NoScrollSlider(Qt.Horizontal)
         sld.setMinimum(int(min_v*step_mult)); sld.setMaximum(int(max_v*step_mult))
         sld.setValue(int(val*step_mult))
@@ -4448,7 +4496,7 @@ class TriggerBotTab(QWidget):
     def add_int_slider(self, layout, label, cfg_key, min_v, max_v, suffix=""):
         val = int(getattr(self.CFG, cfg_key, min_v))
         lab = QLabel(f"{label}: {val}{suffix}")
-        lab.setStyleSheet("color: #000000; font-size: 8pt;")
+        lab.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
         sld = NoScrollSlider(Qt.Horizontal)
         sld.setMinimum(min_v); sld.setMaximum(max_v); sld.setValue(val)
         def on_change(v):
@@ -4466,9 +4514,9 @@ class TriggerBotTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("QScrollArea { background: #C0C0C0; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
-        content = QWidget(); content.setStyleSheet("background: #C0C0C0;")
+        content = QWidget(); content.setStyleSheet("background-color: #151520;")
         root = QVBoxLayout(content)
         root.setSpacing(8); root.setContentsMargins(8, 8, 8, 8)
 
@@ -4485,7 +4533,7 @@ class TriggerBotTab(QWidget):
 
         right = QVBoxLayout()
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color:#000000; font-size: 8pt;")
+        self.status_label.setStyleSheet("color:#f5f5f7; font-size: 8pt;")
         right.addWidget(self.status_label)
 
         right.addStretch(1)
@@ -4497,7 +4545,7 @@ class TriggerBotTab(QWidget):
         key = QHBoxLayout(key_g); key.setSpacing(10)
 
         self.trigger_key_label = QLabel(f"Trigger Key: {getattr(self.CFG, 'trigger_key', 'mouse5')}")
-        self.trigger_key_label.setStyleSheet("color:#000000; font-size:8pt;")
+        self.trigger_key_label.setStyleSheet("color:#f5f5f7; font-size:8pt;")
         key.addWidget(self.trigger_key_label)
 
         self.set_key_btn = QPushButton("Set Trigger Key")
