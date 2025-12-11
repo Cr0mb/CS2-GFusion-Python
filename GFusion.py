@@ -54,7 +54,8 @@ from PyQt5.QtWidgets import (
     QTableWidget, QDoubleSpinBox, QTableWidgetItem
 )
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTabWidget, QApplication
-
+from PyQt5.QtWidgets import QTabWidget, QGraphicsOpacityEffect
+from PyQt5.QtCore import QPropertyAnimation, QEasingCurve
                             
                        
                             
@@ -266,15 +267,18 @@ def safe_call(func, *args, error_msg="Operation failed", category="", **kwargs):
         return False, None
 
                             
+
 def _apply_global_qss(app):
     """
     Apply a modern dark + red global stylesheet.
     All custom widgets rely on this instead of per-widget Win95 QSS.
+    This version slightly increases spacing, adds nicer scrollbars,
+    and cleans up the tab / header look.
     """
     qss = """
     /* === Global base === */
     QWidget {
-        background-color: #0f0f17;
+        background-color: #080812;
         color: #f5f5f7;
         font-family: "Segoe UI", "Inter", "Tahoma", sans-serif;
         font-size: 11px;
@@ -286,9 +290,24 @@ def _apply_global_qss(app):
 
     /* === Outer shell === */
     #outerPanel {
-        background-color: #151520;
+        background-color: qlineargradient(
+            x1:0, y1:0, x2:1, y2:1,
+            stop:0 #151520,
+            stop:1 #11111c
+        );
         border-radius: 14px;
         border: 1px solid #26263a;
+    }
+
+    /* Small header tweaks (safe even if IDs don't exist) */
+    #headerTitle {
+        font-size: 12pt;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    #headerSubtitle {
+        font-size: 8.5pt;
+        color: #a3a5c0;
     }
 
     /* === Tabs === */
@@ -296,9 +315,12 @@ def _apply_global_qss(app):
         border: none;
         top: 0px;
     }
+    QTabBar {
+        qproperty-drawBase: 0;
+    }
     QTabBar::tab {
         background: transparent;
-        padding: 8px 14px;
+        padding: 8px 16px;
         margin-right: 4px;
         color: #8a8fa2;
         border-bottom: 2px solid transparent;
@@ -332,10 +354,10 @@ def _apply_global_qss(app):
     /* === Buttons === */
     QPushButton {
         background-color: #1f1f2b;
-        border-radius: 8px;
+        border-radius: 9px;
         border: 1px solid #2b2b3c;
-        padding: 8px 8px;        /* ← more vertical space */
-        min-height: 12px;          /* ← ensures text is never clipped */
+        padding: 7px 10px;
+        min-height: 22px;
         color: #f5f5f7;
     }
     QPushButton:hover {
@@ -438,11 +460,51 @@ def _apply_global_qss(app):
         border: 1px solid #ff606b;
     }
 
-
     /* === Scroll areas === */
     QScrollArea {
         background: transparent;
         border: none;
+    }
+
+    /* === Scrollbars === */
+    QScrollBar:vertical {
+        width: 10px;
+        background: transparent;
+        margin: 0px;
+    }
+    QScrollBar::handle:vertical {
+        background: #2a2a3a;
+        border-radius: 5px;
+        min-height: 30px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background: #343449;
+    }
+    QScrollBar::add-line:vertical,
+    QScrollBar::sub-line:vertical {
+        height: 0px;
+        border: none;
+        background: transparent;
+    }
+
+    QScrollBar:horizontal {
+        height: 10px;
+        background: transparent;
+        margin: 0px;
+    }
+    QScrollBar::handle:horizontal {
+        background: #2a2a3a;
+        border-radius: 5px;
+        min-width: 30px;
+    }
+    QScrollBar::handle:horizontal:hover {
+        background: #343449;
+    }
+    QScrollBar::add-line:horizontal,
+    QScrollBar::sub-line:horizontal {
+        width: 0px;
+        border: none;
+        background: transparent;
     }
 
     /* === Edits === */
@@ -485,6 +547,27 @@ def _apply_global_qss(app):
         font-size: 11px;
         color: #b0b2c8;
     }
+    
+    /* Tiny square ESP color buttons */
+    #espColorButton {
+        min-width: 16px;
+        max-width: 16px;
+        min-height: 16px;
+        max-height: 16px;
+        padding: 0;              /* overrides the global 7px padding */
+        border-radius: 4px;
+        border: 1px solid #3a3a4d;
+    }
+
+    #espColorButton:hover {
+        border-color: #ff3b4a;
+    }
+
+    #espColorButton:pressed {
+        border-color: #ff3b4a;
+    }
+
+    
     """
     app.setStyleSheet(qss)
 def check_admin_privileges():
@@ -2726,11 +2809,12 @@ class ESPTab(QWidget):
         item_layout = QHBoxLayout()
         lbl = QLabel(f"{label}:")
         lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
-        lbl.setFixedWidth(100)
+        lbl.setFixedWidth(80)
         item_layout.addWidget(lbl)
         
         btn = QPushButton()
-        btn.setFixedSize(30, 16)
+        btn.setObjectName("espColorButton")  # <- important
+        btn.setFixedSize(16, 16)             # base size, QSS will enforce it
         btn.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid black;")
 
         def choose():
@@ -2837,14 +2921,6 @@ class ESPTab(QWidget):
                                        
         row2 = QHBoxLayout()
         row2.setSpacing(8)
-        
-                  
-        render_group = self.create_group_box("Overlay Renderer")
-        render_layout = QVBoxLayout(render_group)
-        render_layout.setSpacing(3)
-        self.add_checkbox(render_layout, "Use GPU (DX11)", "use_gpu_overlay")
-        render_layout.addStretch()
-        
                     
         vis_group = self.create_group_box("Visibility ESP")
         vis_layout = QVBoxLayout(vis_group)
@@ -2853,7 +2929,6 @@ class ESPTab(QWidget):
         self.add_checkbox(vis_layout, "Show Vis Text", "visibility_text_enabled")
         vis_layout.addStretch()
         
-        row2.addWidget(render_group, 1)
         row2.addWidget(vis_group, 1)
         layout.addLayout(row2)
 
@@ -3040,6 +3115,28 @@ class KeyListenerThread(QThread):
         if key.event_type == keyboard.KEY_DOWN:
             self.key_pressed.emit(key.name)
 
+class AnimatedTabWidget(QTabWidget):
+    def __init__(self, duration=900, parent=None):
+        super().__init__(parent)
+        self.duration = duration
+
+        self._fade = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._fade)
+
+        self._anim = QPropertyAnimation(self._fade, b"opacity", self)
+        self._anim.setDuration(self.duration)
+        self._anim.setStartValue(0.0)
+        self._anim.setEndValue(1.0)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+
+        self.currentChanged.connect(self._animate)
+
+    def _animate(self, idx):
+        self._fade.setOpacity(0.0)
+        self._anim.stop()
+        self._anim.start()
+
 class MainWindow(QWidget):
     def __init__(self):
         logger.info("Initializing MainWindow", category="UI")
@@ -3078,7 +3175,7 @@ class MainWindow(QWidget):
             self._console_tab = None
             
             # Create placeholder widgets for tabs
-            self.tabs = QTabWidget()
+            self.tabs = AnimatedTabWidget(duration=220)
             self.tabs.addTab(self._create_placeholder("Aimbot"), "Aimbot")
             self.tabs.addTab(self._create_placeholder("Trigger"), "Trigger")
             self.tabs.addTab(self._create_placeholder("ESP"), "ESP")
@@ -3571,65 +3668,34 @@ class MiscTab(QWidget):
         glow_group = self.create_group_box("Glow Effects")
         glow_layout = QVBoxLayout(glow_group)
         glow_layout.setSpacing(4)
-        
+
         self.glow_checkbox = self.add_checkbox(
             glow_layout, "Enable Glow", "glow",
             default=False, thread_start=start_glow_thread, thread_stop=stop_glow_thread
         )
         self.add_checkbox(glow_layout, "Glow Enemies", "glow_show_enemies", default=True)
         self.add_checkbox(glow_layout, "Glow Team", "glow_show_team", default=True)
-        self.add_color_picker(glow_layout, "Enemy Color", "glow_color_enemy", (255, 0, 0))
-        self.add_color_picker(glow_layout, "Team Color", "glow_color_team", (0, 255, 0))
-        glow_layout.addStretch()
-        
-        row1.addWidget(fov_group, 1)
-        row1.addWidget(glow_group, 1)
-        main_layout.addLayout(row1)
 
-                                      
-        bhop_group = self.create_group_box("Bunny Hop")
-        bhop_main = QHBoxLayout(bhop_group)
-        bhop_main.setSpacing(12)
-        
-                   
-        left_side = QVBoxLayout()
-        left_side.setSpacing(4)
-        self.bhop_checkbox = self.add_checkbox(
-            left_side, "Enable Bunny Hop", "bhop_enabled",
-            thread_start=start_bhop_thread, thread_stop=stop_bhop_thread
-        )
-        self.add_checkbox(left_side, "Show Info Box", "show_local_info_box", default=True)
-        left_side.addStretch()
-        
-                                     
-        right_side = QVBoxLayout()
-        colors_grid = QGridLayout()
-        colors_grid.setSpacing(4)
-        
-        color_items = [
-            ("Coords", "color_local_coords_text"),
-            ("Velocity", "color_local_velocity_text"),
-            ("Speed", "color_local_speed_text"),
-            ("Background", "color_local_box_background"),
-            ("Border", "color_local_box_border"),
+        # --- Glow colors with small square buttons ---
+        glow_color_items = [
+            ("Enemy Color", "glow_color_enemy", (255, 0, 0)),
+            ("Team Color", "glow_color_team", (0, 255, 0)),
         ]
-        
-        for idx, (label, key) in enumerate(color_items):
-            row = idx // 2
-            col = idx % 2
-            
-            item_layout = QHBoxLayout()
+
+        for label, key, default in glow_color_items:
+            row = QHBoxLayout()
             lbl = QLabel(f"{label}:")
             lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
-            lbl.setFixedWidth(70)
-            item_layout.addWidget(lbl)
-            
-            rgb = self._sanitize_rgb3(getattr(Config, key, (0, 0, 0)))
+            lbl.setFixedWidth(80)
+            row.addWidget(lbl)
+
+            rgb = self._sanitize_rgb3(getattr(Config, key, default))
             btn = QPushButton()
-            btn.setFixedSize(30, 16)
+            btn.setObjectName("espColorButton")      # reuse the tiny square style
+            btn.setFixedSize(16, 16)                 # square base size
             btn.setStyleSheet(self.rgb_to_stylesheet_safe(rgb))
-            
-            def make_color_callback(cfg_key, button, default_val=(0,0,0)):
+
+            def make_glow_color_callback(cfg_key, button, default_val):
                 def choose():
                     current = self._sanitize_rgb3(getattr(Config, cfg_key, default_val))
                     initial = QColor(*current)
@@ -3639,21 +3705,87 @@ class MiscTab(QWidget):
                         setattr(Config, cfg_key, new_rgb)
                         button.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
                 return choose
-            
+
+            btn.clicked.connect(make_glow_color_callback(key, btn, default))
+            row.addWidget(btn)
+            row.addStretch()
+
+            self.ui_elements["color_buttons"][key] = btn
+            glow_layout.addLayout(row)
+
+        glow_layout.addStretch()
+
+        row1.addWidget(fov_group, 1)
+        row1.addWidget(glow_group, 1)
+        main_layout.addLayout(row1)
+
+
+                                      
+        bhop_group = self.create_group_box("Bunny Hop")
+        bhop_main = QHBoxLayout(bhop_group)
+        bhop_main.setSpacing(12)
+
+        left_side = QVBoxLayout()
+        left_side.setSpacing(4)
+        self.bhop_checkbox = self.add_checkbox(
+            left_side, "Enable Bunny Hop", "bhop_enabled",
+            thread_start=start_bhop_thread, thread_stop=stop_bhop_thread
+        )
+        self.add_checkbox(left_side, "Show Info Box", "show_local_info_box", default=True)
+        left_side.addStretch()
+
+        right_side = QVBoxLayout()
+        colors_grid = QGridLayout()
+        colors_grid.setSpacing(4)
+
+        color_items = [
+            ("Coords", "color_local_coords_text"),
+            ("Velocity", "color_local_velocity_text"),
+            ("Speed", "color_local_speed_text"),
+            ("Background", "color_local_box_background"),
+            ("Border", "color_local_box_border"),
+        ]
+
+        for idx, (label, key) in enumerate(color_items):
+            row = idx // 2
+            col = idx % 2
+
+            item_layout = QHBoxLayout()
+            lbl = QLabel(f"{label}:")
+            lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
+            lbl.setFixedWidth(70)
+            item_layout.addWidget(lbl)
+
+            rgb = self._sanitize_rgb3(getattr(Config, key, (0, 0, 0)))
+            btn = QPushButton()
+            btn.setObjectName("espColorButton")      # <- reuse the square color button style
+            btn.setFixedSize(16, 16)                 # <- force it to be a small square
+            btn.setStyleSheet(self.rgb_to_stylesheet_safe(rgb))
+
+            def make_color_callback(cfg_key, button, default_val=(0, 0, 0)):
+                def choose():
+                    current = self._sanitize_rgb3(getattr(Config, cfg_key, default_val))
+                    initial = QColor(*current)
+                    color = QColorDialog.getColor(initial, self, f"Select {cfg_key}")
+                    if color.isValid():
+                        new_rgb = (color.red(), color.green(), color.blue())
+                        setattr(Config, cfg_key, new_rgb)
+                        button.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
+                return choose
+
             btn.clicked.connect(make_color_callback(key, btn))
             item_layout.addWidget(btn)
             item_layout.addStretch()
-            
+
             self.ui_elements["color_buttons"][key] = btn
             colors_grid.addLayout(item_layout, row, col)
-        
+
         right_side.addLayout(colors_grid)
         right_side.addStretch()
-        
+
         bhop_main.addLayout(left_side, 1)
         bhop_main.addLayout(right_side, 1)
         main_layout.addWidget(bhop_group)
-
                                                       
         row3 = QHBoxLayout()
         row3.setSpacing(8)
@@ -3673,17 +3805,15 @@ class MiscTab(QWidget):
         self.add_checkbox(misc_layout, "No Flash", "noflash_enabled")
         misc_layout.addStretch()
         
-                           
         team_group = self.create_group_box("Team List")
         team_layout = QVBoxLayout(team_group)
         team_layout.setSpacing(3)
-        
+
         self.add_checkbox(team_layout, "Enable Team List", "team_list_enabled", default=True)
         self.add_checkbox(team_layout, "HP Bars", "team_list_show_hp_bars", default=True)
         self.add_checkbox(team_layout, "Alive Counts", "team_list_show_counts", default=True)
         self.add_checkbox(team_layout, "Sort by HP", "team_list_sort_by_hp", default=True)
-        
-                     
+
         font_box = QHBoxLayout()
         self.team_list_font_label = QLabel(f"Size: {getattr(Config, 'team_list_font_size', 11)}")
         self.team_list_font_label.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
@@ -3695,41 +3825,45 @@ class MiscTab(QWidget):
         font_box.addWidget(self.team_list_font_slider)
         team_layout.addLayout(font_box)
         team_layout.addStretch()
-        
+
         row3.addWidget(misc_group, 1)
         row3.addWidget(team_group, 1)
         main_layout.addLayout(row3)
 
-                                             
+        # ==========================
+        # Team List Colors (patched)
+        # ==========================
         colors_group = self.create_group_box("Team List Colors")
         colors_layout = QVBoxLayout(colors_group)
+
         colors_grid = QGridLayout()
         colors_grid.setSpacing(6)
-        
+
         team_color_items = [
-            ("T Header", "color_box_t", (255, 180, 0)),
-            ("CT Header", "color_box_ct", (100, 200, 255)),
-            ("Background", "team_list_background", (18, 18, 22)),
-            ("Border", "team_list_border", (70, 75, 85)),
-            ("Dead T", "team_list_dead_t", (100, 80, 60)),
-            ("Dead CT", "team_list_dead_ct", (60, 80, 100)),
+            ("T Header",    "color_box_t",          (255, 180, 0)),
+            ("CT Header",   "color_box_ct",         (100, 200, 255)),
+            ("Background",  "team_list_background", (18, 18, 22)),
+            ("Border",      "team_list_border",     (70, 75, 85)),
+            ("Dead T",      "team_list_dead_t",     (100, 80, 60)),
+            ("Dead CT",     "team_list_dead_ct",    (60, 80, 100)),
         ]
-        
+
         for idx, (label, key, default) in enumerate(team_color_items):
             row = idx // 3
             col = idx % 3
-            
+
             item_layout = QHBoxLayout()
             lbl = QLabel(f"{label}:")
             lbl.setStyleSheet("color: #f5f5f7; font-size: 8pt;")
-            lbl.setFixedWidth(70)
+            lbl.setFixedWidth(80)  # small but readable
             item_layout.addWidget(lbl)
-            
+
             rgb = self._sanitize_rgb3(getattr(Config, key, default))
             btn = QPushButton()
-            btn.setFixedSize(30, 16)
+            btn.setObjectName("espColorButton")       # <- reuse tiny square style
+            btn.setFixedSize(16, 16)                  # <- square base size
             btn.setStyleSheet(self.rgb_to_stylesheet_safe(rgb))
-            
+
             def make_team_color_callback(cfg_key, button, default_val):
                 def choose():
                     current = self._sanitize_rgb3(getattr(Config, cfg_key, default_val))
@@ -3740,18 +3874,18 @@ class MiscTab(QWidget):
                         setattr(Config, cfg_key, new_rgb)
                         button.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
                 return choose
-            
+
             btn.clicked.connect(make_team_color_callback(key, btn, default))
             item_layout.addWidget(btn)
             item_layout.addStretch()
-            
+
             self.ui_elements["color_buttons"][key] = btn
             colors_grid.addLayout(item_layout, row, col)
-        
+
         colors_layout.addLayout(colors_grid)
         main_layout.addWidget(colors_group)
 
-                                            
+
         system_group = self.create_group_box("System Controls")
         system_layout = QHBoxLayout(system_group)
         system_layout.setSpacing(12)
