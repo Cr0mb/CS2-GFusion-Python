@@ -2392,7 +2392,6 @@ def main():
                         cur_val = read_float(handle, flash_addr)
                         write_float(handle, flash_addr, 0.0)
                         new_val = read_float(handle, flash_addr)
-                        print(f"[NoFlash] FlashDuration before={cur_val:.3f} after={new_val:.3f}")
                 except Exception as e:
                     print(f"[NoFlash Error] {e}")
 
