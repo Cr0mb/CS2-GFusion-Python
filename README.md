@@ -15,13 +15,7 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 - Run with start.pyw
 
 <div style="display:flex; gap:250px;">
-  <img src="https://github.com/user-attachments/assets/26e1cd67-c1d9-4c3a-8c1a-97f980a3164b" width="850">
-  <img src="https://github.com/user-attachments/assets/c5287c42-4d42-497f-8add-707a9b0a9bd7" width="400">
-  <img src="https://github.com/user-attachments/assets/5422206b-5e99-4497-8284-06e0964a9578" width="400">
-  <img src="https://github.com/user-attachments/assets/620b5cc3-7fec-4b8b-b059-0c7dc340b583" width="300">
-  <img src="https://github.com/user-attachments/assets/50c77cf5-43c9-4b74-9b13-95f07ab8dc59" width="300">
-  <img src="https://github.com/user-attachments/assets/1dc3afb2-6134-4f37-bc8b-2b41de7f6844" width="300">
-  <img src="https://github.com/user-attachments/assets/ccf09df8-0b85-46f3-bdc9-d33a1461ebac" width="300">
+  <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
 </div>
 
 ```
