@@ -19,6 +19,17 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 </div>
 
 ```
+12/11/2025
+V3.5.4
+[+] New modern dark/red UI for all tabs.
+[+] Added hover animations and a startup loading animation.
+[+] Updated Console tab layout and log display.
+[+] Added fallback offsets loading from local files if GitHub download fails.
+[+] Fixed indentation errors and menu crashes.
+[+] Improved overall stability, performance, and responsiveness.
+```
+
+```
 12/2/2025
 V3.5.3
 [+] Fixed Error Code 1 by forcing win32api to use the global scope with a global win32api declaration inside main(), resolving the UnboundLocalError and preventing ESP crashes during panic-key checks.
