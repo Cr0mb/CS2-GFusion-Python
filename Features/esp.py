@@ -1305,9 +1305,12 @@ def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, f
             color_bone = getattr(Config, "color_bone", (255, 255, 255))
 
     # --- Bone rendering ---
-    bone_dot_size = flags.get("bone_esp_size", 6)
-    bone_dot_color = flags.get("bone_esp_color", (255, 0, 255))
-    draw_circle = str(flags.get("bone_esp_shape", "circle")).lower() == "circle"
+    bone_dot_size = flags.get("bone_dot_size", flags.get("bone_esp_size", 6))
+    bone_dot_color = flags.get("bone_dot_color", flags.get("bone_esp_color", (255, 0, 255)))
+    draw_circle = str(
+        flags.get("bone_dot_shape", flags.get("bone_esp_shape", "circle"))
+    ).lower() == "circle"
+
 
     needed_bones = set()
     if skeleton_enabled:
@@ -2244,57 +2247,44 @@ def main():
 
             # Cache all config flags once
             flags = {
-                "color_box_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),   # Dark red
-                "color_box_dead_ct": getattr(cfg, "color_box_dead_ct", (0, 0, 128)), # Dark blue
-                # Synonyms used by other code paths to avoid KeyErrors
-                "color_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),
-                "color_dead_ct": getattr(cfg, "color_box_dead_ct", (0, 0, 128)),
-                "color_box_visible_ct": getattr(cfg, "color_box_visible_ct", getattr(cfg, "color_box_visible", (0, 255, 0))),
-                "color_box_visible_t": getattr(cfg, "color_box_visible_t", getattr(cfg, "color_box_visible", (0, 255, 0))),
-                "color_box_invisible_ct": getattr(cfg, "color_box_invisible_ct", getattr(cfg, "color_box_not_visible", (255, 0, 0))),
-                "color_box_invisible_t": getattr(cfg, "color_box_invisible_t", getattr(cfg, "color_box_not_visible", (255, 0, 0))),
-                "color_skeleton_visible_ct": getattr(cfg, "color_skeleton_visible_ct", getattr(cfg, "color_skeleton_visible", (0, 255, 0))),
-                "color_skeleton_visible_t": getattr(cfg, "color_skeleton_visible_t", getattr(cfg, "color_skeleton_visible", (0, 255, 0))),
-                "color_skeleton_invisible_ct": getattr(cfg, "color_skeleton_invisible_ct", getattr(cfg, "color_skeleton_not_visible", (255, 0, 0))),
-                "color_skeleton_invisible_t": getattr(cfg, "color_skeleton_invisible_t", getattr(cfg, "color_skeleton_not_visible", (255, 0, 0))),
-                "head_esp_enabled": getattr(cfg, "head_esp_enabled", False),
-                "head_esp_shape": getattr(cfg, "head_esp_shape", "circle").lower(),
-                "box_esp_enabled": getattr(cfg, "show_box_esp", False),
-                "name_esp_enabled": getattr(cfg, "name_esp_enabled", True),
-                "skeleton_esp_enabled": getattr(cfg, "skeleton_esp_enabled", False),
-                "healthbar_enabled": getattr(cfg, "healthbar_enabled", False),
-                "armorbar_enabled": getattr(cfg, "armorbar_enabled", False),
-                "health_esp_enabled": getattr(cfg, "health_esp_enabled", False),
-                "armor_esp_enabled": getattr(cfg, "armor_esp_enabled", False),
-                "distance_esp_enabled": getattr(cfg, "distance_esp_enabled", False),
-                "flash_esp_enabled": getattr(cfg, "flash_esp_enabled", False),
-                "scope_esp_enabled": getattr(cfg, "scope_esp_enabled", False),
-                "spectator_list_enabled": getattr(cfg, "spectator_list_enabled", True),
-                "watermark_enabled": getattr(cfg, "watermark_enabled", True),
-                "bone_esp_enabled": getattr(cfg, "bone_dot_esp_enabled", True),
-                "bone_esp_shape": getattr(cfg, "bone_dot_shape", "circle"),
-                "bone_esp_size": getattr(cfg, "bone_dot_size", 6),
-                "bone_esp_color": getattr(cfg, "bone_dot_color", (255, 0, 255)),
-                "noflash_enabled": getattr(cfg, "noflash_enabled", False),
-                "grenade_prediction_enabled": getattr(cfg, "grenade_prediction_enabled", True),
-                "fov_circle_enabled": getattr(cfg, "fov_circle_enabled", True),
-                "draw_crosshair_enabled": getattr(cfg, "draw_crosshair_enabled", True),
-                "esp_show_enemies_only": getattr(cfg, "esp_show_enemies_only", True),
-                "esp_show_team_only": getattr(cfg, "esp_show_team_only", False),
-                "trace_esp_enabled": getattr(cfg, "trace_esp_enabled", True),
-                "trace_esp_max_points": getattr(cfg, "trace_esp_max_points", 150),
-                "velocity_esp": getattr(cfg, "velocity_esp", False),
-                "speed_esp": getattr(cfg, "speed_esp", False),
-                "velocity_esp_text": getattr(cfg, "velocity_esp_text", False),
-                "weapon_esp_enabled": getattr(cfg, "weapon_esp_enabled", True),
-                "line_esp_enabled": getattr(cfg, "line_esp_enabled", False),
-                "line_esp_position": getattr(cfg, "line_esp_position", "bottom").lower(),
-                "coordinates_esp_enabled": getattr(cfg, "coordinates_esp_enabled", True),
-                "bomb_esp_enabled": getattr(cfg, "bomb_esp_enabled", False),
-                "color_name": getattr(cfg, "color_name", (255, 255, 255)),
-                "color_head": getattr(cfg, "color_head", (255, 0, 0)),
+
+                # =======================================================================
+                # ───────────────────────────── COLOR FLAGS ──────────────────────────────
+                # =======================================================================
+
+                ## --- Team / Box Colors ---
                 "color_box_t": getattr(cfg, "color_box_t", (255, 0, 0)),
                 "color_box_ct": getattr(cfg, "color_box_ct", (0, 0, 255)),
+                "color_box_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),
+                "color_box_dead_ct": getattr(cfg, "color_box_dead_ct", (0, 0, 128)),
+
+                # Synonyms (backwards compatibility)
+                "color_dead_t": getattr(cfg, "color_box_dead_t", (128, 0, 0)),
+                "color_dead_ct": getattr(cfg, "color_box_dead_ct", (0, 0, 128)),
+
+                ## --- Box Visibility ---
+                "color_box_visible_ct": getattr(cfg, "color_box_visible_ct",
+                                                getattr(cfg, "color_box_visible", (0, 255, 0))),
+                "color_box_visible_t": getattr(cfg, "color_box_visible_t",
+                                               getattr(cfg, "color_box_visible", (0, 255, 0))),
+                "color_box_invisible_ct": getattr(cfg, "color_box_invisible_ct",
+                                                  getattr(cfg, "color_box_not_visible", (255, 0, 0))),
+                "color_box_invisible_t": getattr(cfg, "color_box_invisible_t",
+                                                 getattr(cfg, "color_box_not_visible", (255, 0, 0))),
+
+                ## --- Skeleton Visibility ---
+                "color_skeleton_visible_ct": getattr(cfg, "color_skeleton_visible_ct",
+                                                     getattr(cfg, "color_skeleton_visible", (0, 255, 0))),
+                "color_skeleton_visible_t": getattr(cfg, "color_skeleton_visible_t",
+                                                    getattr(cfg, "color_skeleton_visible", (0, 255, 0))),
+                "color_skeleton_invisible_ct": getattr(cfg, "color_skeleton_invisible_ct",
+                                                       getattr(cfg, "color_skeleton_not_visible", (255, 0, 0))),
+                "color_skeleton_invisible_t": getattr(cfg, "color_skeleton_invisible_t",
+                                                      getattr(cfg, "color_skeleton_not_visible", (255, 0, 0))),
+
+                ## --- Text/General Colors ---
+                "color_name": getattr(cfg, "color_name", (255, 255, 255)),
+                "color_head": getattr(cfg, "color_head", (255, 0, 0)),
                 "color_weapon_text": getattr(cfg, "color_weapon_text", (255, 255, 255)),
                 "color_line": getattr(cfg, "color_line", (255, 255, 255)),
                 "color_hp_text": getattr(cfg, "color_hp_text", (0, 255, 0)),
@@ -2302,26 +2292,120 @@ def main():
                 "color_distance": getattr(cfg, "color_distance", (255, 255, 255)),
                 "color_flash_scope": getattr(cfg, "color_flash_scope", (255, 255, 255)),
                 "color_spectators": getattr(cfg, "color_spectators", (180, 180, 180)),
-                "velocity_esp_color": getattr(cfg, "velocity_esp_color", (255, 255, 255)),
-                "velocity_text_color": getattr(cfg, "velocity_text_color", (255, 255, 255)),
-                "speed_esp_color": getattr(cfg, "speed_esp_color", (255, 255, 255)),
-                "crosshair_size": getattr(cfg, "crosshair_size", 6),
-                "crosshair_color": getattr(cfg, "crosshair_color", (255, 255, 255)),
-                "FOV": getattr(cfg, "FOV", 5.0),
-                "show_local_info_box": getattr(cfg, "show_local_info_box", True),
+
+                ## --- Local Info Box Colors ---
                 "color_local_box_background": getattr(cfg, "color_local_box_background", (30, 30, 30)),
                 "color_local_box_border": getattr(cfg, "color_local_box_border", (100, 100, 100)),
                 "color_local_velocity_text": getattr(cfg, "color_local_velocity_text", (255, 255, 255)),
                 "color_local_speed_text": getattr(cfg, "color_local_speed_text", (180, 255, 180)),
                 "color_local_coords_text": getattr(cfg, "color_local_coords_text", (200, 200, 255)),
-                "money_esp_enabled": getattr(cfg, "money_esp_enabled", True),
-                "money_esp_text": getattr(cfg, "money_esp_text", True),
+
+                ## --- Velocity / Speed Colors ---
+                "velocity_esp_color": getattr(cfg, "velocity_esp_color", (255, 255, 255)),
+                "velocity_text_color": getattr(cfg, "velocity_text_color", (255, 255, 255)),
+                "speed_esp_color": getattr(cfg, "speed_esp_color", (255, 255, 255)),
+
+                ## --- Money ESP Colors ---
                 "color_money_text": getattr(cfg, "color_money_text", (0, 255, 255)),
-                "visibility_esp_enabled": getattr(cfg, "visibility_esp_enabled", False),
-                "visibility_text_enabled": getattr(cfg, "visibility_text_enabled", True),
+
+                ## --- Visibility text ---
                 "color_visible_text": getattr(cfg, "color_visible_text", (0, 255, 0)),
                 "color_not_visible_text": getattr(cfg, "color_not_visible_text", (255, 0, 0)),
+
+
+                # =======================================================================
+                # ───────────────────────────── ESP FEATURE FLAGS ───────────────────────
+                # =======================================================================
+
+                ## Core ESP
+                "box_esp_enabled": getattr(cfg, "show_box_esp", False),
+                "name_esp_enabled": getattr(cfg, "name_esp_enabled", True),
+                "skeleton_esp_enabled": getattr(cfg, "skeleton_esp_enabled", False),
+                "weapon_esp_enabled": getattr(cfg, "weapon_esp_enabled", True),
+
+                ## Additional Info ESP
+                "healthbar_enabled": getattr(cfg, "healthbar_enabled", False),
+                "armorbar_enabled": getattr(cfg, "armorbar_enabled", False),
+                "health_esp_enabled": getattr(cfg, "health_esp_enabled", False),
+                "armor_esp_enabled": getattr(cfg, "armor_esp_enabled", False),
+                "distance_esp_enabled": getattr(cfg, "distance_esp_enabled", False),
+
+                ## Special ESP
+                "flash_esp_enabled": getattr(cfg, "flash_esp_enabled", False),
+                "scope_esp_enabled": getattr(cfg, "scope_esp_enabled", False),
+                "bomb_esp_enabled": getattr(cfg, "bomb_esp_enabled", False),
+                "trace_esp_enabled": getattr(cfg, "trace_esp_enabled", True),
+                "trace_esp_max_points": getattr(cfg, "trace_esp_max_points", 150),
+                "visibility_esp_enabled": getattr(cfg, "visibility_esp_enabled", False),
+                "visibility_text_enabled": getattr(cfg, "visibility_text_enabled", True),
+
+                ## Filters
+                "esp_show_enemies_only": getattr(cfg, "esp_show_enemies_only", True),
+                "esp_show_team_only": getattr(cfg, "esp_show_team_only", False),
+
+                ## Head ESP
+                "head_esp_enabled": getattr(cfg, "head_esp_enabled", False),
+                "head_esp_shape": getattr(cfg, "head_esp_shape", "circle").lower(),
+
+                ## Line ESP
+                "line_esp_enabled": getattr(cfg, "line_esp_enabled", False),
+                "line_esp_position": getattr(cfg, "line_esp_position", "bottom").lower(),
+
+                ## Coordinates ESP
+                "coordinates_esp_enabled": getattr(cfg, "coordinates_esp_enabled", True),
+
+
+                # =======================================================================
+                # ─────────────────────────── BONE DOT ESP OPTIONS ──────────────────────
+                # =======================================================================
+
+                ## New system (RenderBoneESP)
+                "bone_dot_esp_enabled": getattr(cfg, "bone_dot_esp_enabled", False),
+                "bone_dot_shape": getattr(cfg, "bone_dot_shape", "circle").lower(),
+                "bone_dot_size": getattr(cfg, "bone_dot_size", 6),
+                "bone_dot_color": getattr(cfg, "bone_dot_color", (255, 0, 255)),
+
+                ## Backwards compatibility
+                "bone_esp_enabled": getattr(cfg, "bone_dot_esp_enabled", False),
+                "bone_esp_shape": getattr(cfg, "bone_dot_shape", "circle").lower(),
+                "bone_esp_size": getattr(cfg, "bone_dot_size", 6),
+                "bone_esp_color": getattr(cfg, "bone_dot_color", (255, 0, 255)),
+
+
+                # =======================================================================
+                # ───────────────────────────── OTHER FEATURES ──────────────────────────
+                # =======================================================================
+
+                "grenade_prediction_enabled": getattr(cfg, "grenade_prediction_enabled", True),
+                "noflash_enabled": getattr(cfg, "noflash_enabled", False),
+
+                "fov_circle_enabled": getattr(cfg, "fov_circle_enabled", True),
+                "draw_crosshair_enabled": getattr(cfg, "draw_crosshair_enabled", True),
+                "crosshair_size": getattr(cfg, "crosshair_size", 6),
+                "crosshair_color": getattr(cfg, "crosshair_color", (255, 255, 255)),
+
+                "FOV": getattr(cfg, "FOV", 5.0),
+
+                ## Velocity / Speed ESP
+                "velocity_esp": getattr(cfg, "velocity_esp", False),
+                "speed_esp": getattr(cfg, "speed_esp", False),
+                "velocity_esp_text": getattr(cfg, "velocity_esp_text", False),
+
+                ## Money ESP
+                "money_esp_enabled": getattr(cfg, "money_esp_enabled", True),
+                "money_esp_text": getattr(cfg, "money_esp_text", True),
+
+
+                # =======================================================================
+                # ───────────────────────── OVERLAY / UI ELEMENTS ───────────────────────
+                # =======================================================================
+
+                "spectator_list_enabled": getattr(cfg, "spectator_list_enabled", True),
+                "watermark_enabled": getattr(cfg, "watermark_enabled", True),
+
+                "show_local_info_box": getattr(cfg, "show_local_info_box", True),
             }
+
 
             matrix = read_matrix(handle, base + Offsets.dwViewMatrix)
             local_pos = get_local_player()
@@ -2756,10 +2840,8 @@ def main():
                         )
 
 
-                # Skeleton ESP
-                if flags["skeleton_esp_enabled"] or flags["bone_esp_enabled"]:
+                if flags.get("skeleton_esp_enabled") or flags.get("bone_dot_esp_enabled"):
                     RenderBoneESP(overlay, ent, matrix, local_pos, vis_checker, local_team, flags)
-
 
                 if flags["healthbar_enabled"]:
                     draw_health_bar(ent, x, y, h)
