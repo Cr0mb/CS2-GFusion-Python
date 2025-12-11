@@ -1,6 +1,6 @@
 ## GFusion V3.5
 
-The most advanced Counter-Strike cheats ever made in Python. Kernel driver included.
+The most advanced Counter-Strike closet cheats ever made in Python. Kernel driver included.
 
 [UC Forum](https://www.unknowncheats.me/forum/counter-strike-2-releases/711867-gfusion-closet-cheat.html)
 [YouTube](https://www.youtube.com/@cr0mble)
