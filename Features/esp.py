@@ -13,6 +13,13 @@ except Exception:
 win32api = _win32api
 del _win32api
 
+# Fail fast: pywin32 is required for ESP overlay renderers.
+if win32api is None:
+    raise ImportError(
+        "pywin32 is required (win32api/win32gui/win32con/win32ui). "
+        "Install it with: pip install pywin32"
+    )
+
 import win32gui
 import win32con
 import win32ui
@@ -297,15 +304,38 @@ def world_to_screen(matrix, pos, width, height):
     }
 
 class Entity:
+    """Lightweight entity wrapper with aggressive caching.
+
+    Top-3 perf upgrades implemented:
+      1) Entity objects are reusable (see get_entities() cache).
+      2) Bone reads are batched (single RPM for a contiguous bone range).
+      3) Slow-changing fields (name/team/money) use TTL refresh.
+    """
+
+    # --- Per-field refresh (seconds) ---
+    _NAME_TTL  = 2.5
+    _TEAM_TTL  = 1.0
+    _MONEY_TTL = 0.25
+
+    # Bone buffer micro-cache (seconds). Small but very effective because skeleton draws
+    # request many bones in the same frame.
+    _BONEBUF_TTL = 0.020  # 20ms
+
+    _BONE_STRIDE = 0x20
+
     def __init__(self, controller, pawn, handle):
         self.handle = handle
         self.controller = controller
         self.pawn = pawn
-        self.last_update_time = 0
+
+        # bookkeeping for caching/eviction
         self.cached_frame = -1
+        self.last_seen_frame = -1
+
+        # Cached pointers
         self.bone_base = None
 
-        # Cache offsets locally for speed
+        # Cache offsets locally for speed (avoid global lookups in hot loops)
         self._h = Offsets.m_iHealth
         self._t = Offsets.m_iTeamNum
         self._p = Offsets.m_vOldOrigin
@@ -315,57 +345,178 @@ class Entity:
         self._money_services_off = Offsets.m_pInGameMoneyServices
         self._money_acc_off = Offsets.m_iAccount
 
-    def update(self, current_frame):
+        # --- Safe defaults so draw code never crashes on partial reads ---
+        self.hp = 0
+        self.team = 0
+        self.pos = Vec3(0.0, 0.0, 0.0)
+        self.head = None
+        self.money = 0
+        self.name = "Unknown"
+
+        # --- TTL refresh timestamps (perf_counter time) ---
+        now = time.perf_counter()
+        self._next_name_refresh = 0.0  # load asap
+        self._next_team_refresh = 0.0
+        self._next_money_refresh = 0.0
+
+        # --- Bone bulk-read cache ---
+        self._bone_buf = None
+        self._bone_buf_min = 0
+        self._bone_buf_max = -1
+        self._bone_buf_expiry = 0.0
+
+    def touch(self, frame_id: int):
+        self.last_seen_frame = frame_id
+
+    def update_refs(self, controller: int, pawn: int, handle):
+        # Keep objects reusable across frames (controller/pawn can change)
+        self.handle = handle
+        self.controller = controller
+        self.pawn = pawn
+
+    def update(self, current_frame: int, now=None):
         if self.cached_frame == current_frame:
             return
         self.cached_frame = current_frame
-        self.read_data()
+        self.read_data(now=now)
 
-    def read_data(self):
-        hp = read_int(self.handle, self.pawn + self._h)
-        team = read_int(self.handle, self.pawn + self._t)
-        pos = read_vec3(self.handle, self.pawn + self._p)
-
+    def _refresh_bone_base(self):
+        # Resolve bone_base pointer (scene_node -> bone_array)
         scene_node = safe_read_uint64(self.handle, self.pawn + self._scene_node_off)
-        bone_base = None
-        if scene_node:
-            bone_base = safe_read_uint64(self.handle, scene_node + self._bone_array_off)
-        
-        head = None
+        if not scene_node:
+            self.bone_base = None
+            return None
+        self.bone_base = safe_read_uint64(self.handle, scene_node + self._bone_array_off)
+        return self.bone_base
+
+    def read_data(self, now=None):
+        """Update entity state.
+
+        Hot fields (hp/pos/head pointer) update every call.
+        Slow fields (name/team/money) update only on TTL.
+        """
+        if now is None:
+            now = time.perf_counter()
+
+        # Always refresh fast-moving data
+        try:
+            self.hp = read_int(self.handle, self.pawn + self._h)
+        except Exception:
+            self.hp = 0
+
+        try:
+            self.pos = read_vec3(self.handle, self.pawn + self._p)
+        except Exception:
+            self.pos = Vec3(0.0, 0.0, 0.0)
+
+        # Refresh bone_base (cheap pointer chain) every frame because it can be invalidated on respawn.
+        bone_base = self._refresh_bone_base()
         if bone_base:
-            head = read_vec3(self.handle, bone_base + 6 * 0x20)
+            # Head is bone 6; grab it using bulk path for cache friendliness.
+            head = self.get_bone_positions((6,), now=now).get(6)
+            self.head = head
+        else:
+            self.head = None
 
-        self.hp = hp
-        self.team = team
-        self.pos = pos
-        self.bone_base = bone_base
-        self.head = head
+        # TTL refresh: team
+        if now >= self._next_team_refresh:
+            try:
+                self.team = read_int(self.handle, self.pawn + self._t)
+            except Exception:
+                self.team = 0
+            self._next_team_refresh = now + self._TEAM_TTL
 
-        # Read name once and cache it unless it can change often (add logic if needed)
-        if not hasattr(self, 'name') or self.name is None:
-            self.name = self.read_name()
+        # TTL refresh: name
+        if (self.name == "Unknown") or (now >= self._next_name_refresh):
+            self.name = self.read_name() or "Unknown"
+            self._next_name_refresh = now + self._NAME_TTL
 
-        # Avoid try/except by checking pointer validity
-        money = 0
-        money_services = safe_read_uint64(self.handle, self.controller + self._money_services_off)
-        if money_services:
-            money = read_int(self.handle, money_services + self._money_acc_off)
-        self.money = money
+        # TTL refresh: money
+        if now >= self._next_money_refresh:
+            money = 0
+            try:
+                money_services = safe_read_uint64(self.handle, self.controller + self._money_services_off)
+                if money_services:
+                    money = read_int(self.handle, money_services + self._money_acc_off)
+            except Exception:
+                money = 0
+            self.money = money
+            self._next_money_refresh = now + self._MONEY_TTL
 
-    def read_name(self):
-        raw = read_bytes(self.handle, self.controller + self._player_name_off, 32)
-        if raw:
-            return raw.split(b'\x00')[0].decode(errors='ignore')
+    def read_name(self) -> str:
+        try:
+            raw = read_bytes(self.handle, self.controller + self._player_name_off, 32)
+            if raw:
+                s = raw.split(b'\x00')[0].decode(errors='ignore')
+                return s.strip() if s else "Unknown"
+        except Exception:
+            pass
         return "Unknown"
 
-    def BonePos(self, index):
-        if not self.bone_base:
-            scene_node = safe_read_uint64(self.handle, self.pawn + self._scene_node_off)
-            self.bone_base = safe_read_uint64(self.handle, scene_node + self._bone_array_off) if scene_node else None
+    def get_bone_positions(self, indices, now=None):
+        """Bulk-read a contiguous bone range and return {index: Vec3|None}.
 
-        if self.bone_base:
-            return read_vec3(self.handle, self.bone_base + index * 0x20)
-        return None
+        Uses a tiny per-entity buffer cache to avoid re-reading bones multiple times per frame.
+        """
+        if now is None:
+            now = time.perf_counter()
+
+        out = {int(i): None for i in indices}
+        if not out:
+            return out
+
+        if not self.bone_base:
+            if not self._refresh_bone_base():
+                return out
+
+        # Compute contiguous range to read
+        idxs = [int(i) for i in out.keys() if int(i) >= 0]
+        if not idxs:
+            return out
+        bmin = min(idxs)
+        bmax = max(idxs)
+
+        # If our cached buffer doesn't cover the request or expired -> read a new block
+        need_new = (
+            self._bone_buf is None
+            or now >= self._bone_buf_expiry
+            or bmin < self._bone_buf_min
+            or bmax > self._bone_buf_max
+        )
+
+        if need_new:
+            size = (bmax - bmin + 1) * self._BONE_STRIDE
+            base_addr = self.bone_base + bmin * self._BONE_STRIDE
+            buf = read_bytes(self.handle, base_addr, size)
+            # Defensive: if RPM failed, don't cache garbage
+            if not buf or len(buf) != size:
+                return out
+            self._bone_buf = buf
+            self._bone_buf_min = bmin
+            self._bone_buf_max = bmax
+            self._bone_buf_expiry = now + self._BONEBUF_TTL
+
+        buf = self._bone_buf
+        stride = self._BONE_STRIDE
+        base_min = self._bone_buf_min
+
+        # Parse only the requested bones (position at offset 0: 3 floats)
+        for i in out.keys():
+            if i < base_min or i > self._bone_buf_max:
+                continue
+            off = (i - base_min) * stride
+            try:
+                x, y, z = struct.unpack_from("fff", buf, off)
+                out[i] = Vec3(float(x), float(y), float(z))
+            except Exception:
+                out[i] = None
+
+        return out
+
+    def BonePos(self, index):
+        # Backwards-compatible API: now uses bulk read under the hood.
+        idx = int(index)
+        return self.get_bone_positions((idx,)).get(idx)
 
     def wts(self, matrix, width, height):
         feet2d = world_to_screen(matrix, self.pos, width, height)
@@ -375,15 +526,48 @@ class Entity:
 
 # Map detection with caching
 def get_current_map_name_cached(handle, matchmaking_base):
-    """Get current map name with caching for performance"""
+    """Get current map name with caching.
+
+    IMPORTANT: The map name field is treated as a pointer-to-string (64-bit) to match
+    get_current_map_name(). This avoids inconsistent reads that can return garbage.
+    """
     global current_detected_map
     now = time.time()
-    
+
     # Use cached value if recent (within 5 seconds)
-    if (hasattr(get_current_map_name_cached, 'last_check') and 
-        now - get_current_map_name_cached.last_check < 5.0 and 
-        current_detected_map):
+    last_check = getattr(get_current_map_name_cached, "last_check", 0.0)
+    if (now - last_check) < 5.0 and current_detected_map:
         return current_detected_map
+
+    try:
+        if not handle or not matchmaking_base:
+            get_current_map_name_cached.last_check = now
+            return current_detected_map
+
+        ptr_addr = matchmaking_base + DW_GAME_TYPES + DW_GAME_TYPES_MAP_NAME
+
+        # Read pointer (8 bytes) then dereference to read the actual string
+        ptr_bytes = read_bytes(handle, ptr_addr, 8)
+        if not ptr_bytes:
+            get_current_map_name_cached.last_check = now
+            return current_detected_map
+
+        map_name_ptr = struct.unpack("Q", ptr_bytes)[0]
+        if not map_name_ptr or map_name_ptr > 0x7FFFFFFFFFFF:
+            get_current_map_name_cached.last_check = now
+            return current_detected_map
+
+        raw = read_bytes(handle, map_name_ptr, 128)
+        if raw:
+            map_name = raw.split(b"\x00", 1)[0].decode("utf-8", errors="ignore").strip()
+            if map_name and len(map_name) > 2 and not map_name.isspace():
+                current_detected_map = map_name
+    except Exception:
+        pass
+
+    get_current_map_name_cached.last_check = now
+    return current_detected_map
+
     
     try:
         # Read map name from memory
@@ -456,8 +640,6 @@ class SpectatorList:
 
             spectators = []
             for i in range(1, 65):
-                if i == local_controller:
-                    continue
                 controller = self._get_entity(entity_list, i)
                 if not controller or controller == local_controller:
                     continue
@@ -649,54 +831,83 @@ def get_entity_type(identifier):
     """Get entity display name from identifier"""
     return ENTITY_TYPES.get(identifier, None)
 
+# --- Entity cache for performance (reuses Entity objects across frames) ---
+_ENTITY_CACHE = {}     # {pawn_addr: Entity}
+_ENTITY_FRAME = 0      # incremented each get_entities() call
+
 def get_entities(handle, base):
+    """Return list[Entity] using an object cache to reduce allocations and RPM overhead."""
+    global _ENTITY_CACHE, _ENTITY_FRAME
+    _ENTITY_FRAME += 1
+    frame_id = _ENTITY_FRAME
+    now = time.perf_counter()
+
     try:
         local = safe_read_uint64(handle, base + Offsets.dwLocalPlayerController)
         entity_list = safe_read_uint64(handle, base + Offsets.dwEntityList)
     except Exception as e:
         print(f"[ESP] Failed to read entity list base: {e}")
         return []
-    
+
     result = []
+    seen_pawns = set()
     max_entities = 64  # Safety limit
 
+    # Localize hot functions for tiny speedups in the loop
+    _safe_u64 = safe_read_uint64
+    _read_u64 = read_uint64
+
     for i in range(1, min(65, max_entities + 1)):
-        # Precompute indices
         i_mask_7FFF = i & 0x7FFF
         i_mask_1FF = i & 0x1FF
 
         list_offset = ((i_mask_7FFF) >> 9) * 8 + 16
         try:
-            list_entry = entity_list + list_offset
-            entry = safe_read_uint64(handle, list_entry)
+            entry = _safe_u64(handle, entity_list + list_offset)
             if not entry:
                 continue
 
-            ctrl_offset = 112 * i_mask_1FF
-            ctrl = safe_read_uint64(handle, entry + ctrl_offset)
+            ctrl = _safe_u64(handle, entry + (112 * i_mask_1FF))
             if not ctrl or ctrl == local:
                 continue
 
-            hPawn = safe_read_uint64(handle, ctrl + Offsets.m_hPlayerPawn)
+            hPawn = _safe_u64(handle, ctrl + Offsets.m_hPlayerPawn)
             if not hPawn:
                 continue
 
             pawn_list_offset = ((hPawn & 0x7FFF) >> 9) * 8 + 16
-            pawn_entry = safe_read_uint64(handle, entity_list + pawn_list_offset)
+            pawn_entry = _safe_u64(handle, entity_list + pawn_list_offset)
             if not pawn_entry:
                 continue
 
-            pawn_offset = 112 * (hPawn & 0x1FF)
-            pawn = safe_read_uint64(handle, pawn_entry + pawn_offset)
+            pawn = _safe_u64(handle, pawn_entry + (112 * (hPawn & 0x1FF)))
             if not pawn:
                 continue
 
-            ent = Entity(ctrl, pawn, handle)
-            ent.read_data()
+            seen_pawns.add(pawn)
+
+            ent = _ENTITY_CACHE.get(pawn)
+            if ent is None:
+                ent = Entity(ctrl, pawn, handle)
+                _ENTITY_CACHE[pawn] = ent
+            else:
+                ent.update_refs(ctrl, pawn, handle)
+
+            ent.touch(frame_id)
+            ent.update(frame_id, now=now)
             result.append(ent)
 
-        except Exception as e:
+        except Exception:
             continue
+
+    # Evict stale entries occasionally (keeps cache bounded)
+    # Remove entities not seen for ~2 seconds at 144fps (~288 frames). Use frame count, not wall clock.
+    if (frame_id % 60) == 0 and _ENTITY_CACHE:
+        stale_before = frame_id - 300
+        # Avoid "changed size during iteration"
+        for pawn_addr, ent in list(_ENTITY_CACHE.items()):
+            if getattr(ent, "last_seen_frame", -1) < stale_before:
+                _ENTITY_CACHE.pop(pawn_addr, None)
 
     return result
 
@@ -1320,15 +1531,19 @@ def RenderBoneESP(overlay, entity, matrix, local_pos, vis_checker, local_team, f
 
     width, height = overlay.width, overlay.height
     bone_screens = {}
+
+    # Bulk bone read (single RPM for a contiguous range) + tiny cache inside Entity
+    now = time.perf_counter()
+    bone_positions = entity.get_bone_positions(needed_bones, now=now)
+
     for bone in needed_bones:
-        pos = entity.BonePos(bone)
+        pos = bone_positions.get(bone)
         if pos:
             screen = world_to_screen(matrix, pos, width, height)
             if screen and "x" in screen and "y" in screen:
                 bone_screens[bone] = (screen["x"], screen["y"])
                 continue
         bone_screens[bone] = None
-
     # Skeleton lines
     if skeleton_enabled:
         for start, end in overlay.BONE_CONNECTIONS:

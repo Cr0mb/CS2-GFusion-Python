@@ -441,6 +441,12 @@ class AimbotRCS:
             self.recoil_active = False
             self.total_recoil_compensation = [0.0, 0.0]
 
+            # Reset humanization state so runtime toggles behave immediately.
+            self.should_overshoot = False
+            self.overshoot_completed = False
+            self.overshoot_decay_until = 0.0
+            self.reaction_delay_until = 0.0
+
     # Reader redirects
     def read_vec3(self, addr): return self.reader.read_vec3(addr)
     def read(self, addr, t="int"): return self.reader.read(addr, t)
@@ -718,8 +724,18 @@ class AimbotRCS:
             }
         return self.target_profiles[target_id]
 
+
+    def _is_humanization_enabled(self) -> bool:
+        """Read humanization toggle live from cfg to support runtime toggling."""
+        return bool(getattr(self.cfg, "humanization_enabled", True))
+
+    def _is_jitter_enabled(self) -> bool:
+        """Master jitter gate. When OFF, all jitter-like randomness is disabled."""
+        return self._is_humanization_enabled() and bool(getattr(self.cfg, "aim_jitter_enabled", True))
+
+
     def apply_aim_jitter(self, pitch, yaw):
-        if not self.humanization_enabled or not getattr(self.cfg, "aim_jitter_enabled", True):
+        if not self._is_jitter_enabled():
             return pitch, yaw
         t = time.time()
         # sinusoidal micro-shake
@@ -731,17 +747,17 @@ class AimbotRCS:
         return pitch + shake_x + drift_x, yaw + shake_y + drift_y
 
     def get_randomized_smooth(self, target_id):
-        if not self.humanization_enabled or not getattr(self.cfg, "smooth_randomization", True):
+        if not self._is_humanization_enabled() or not getattr(self.cfg, "smooth_randomization", True):
             return 1.0
         return self.get_target_profile(target_id).get("smooth_mult", 1.0)
 
     def check_reaction_delay(self):
-        if not self.humanization_enabled or not getattr(self.cfg, "reaction_delay_enabled", True):
+        if not self._is_humanization_enabled() or not getattr(self.cfg, "reaction_delay_enabled", True):
             return False
         return time.time() < self.reaction_delay_until
 
     def trigger_reaction_delay(self, distance=0.0):
-        if not self.humanization_enabled or not getattr(self.cfg, "reaction_delay_enabled", True):
+        if not self._is_humanization_enabled() or not getattr(self.cfg, "reaction_delay_enabled", True):
             return
         # Distance-aware reaction
         base_min, base_max = 0.02, 0.12
@@ -751,7 +767,7 @@ class AimbotRCS:
         self.reaction_delay_until = time.time() + random.uniform(min_delay, max_delay)
 
     def should_apply_overshoot(self):
-        if not self.humanization_enabled or not getattr(self.cfg, "overshoot_enabled", True):
+        if not self._is_humanization_enabled() or not getattr(self.cfg, "overshoot_enabled", True):
             return False
         if not self.should_overshoot:
             chance = getattr(self.cfg, "overshoot_chance", 0.15)
@@ -1079,18 +1095,20 @@ class AimbotRCS:
                         post_switch_shaky_until = now + float(getattr(self.cfg, "post_switch_shaky_time", 0.18))
                 self.prev_target_id = self.target_id
 
-                # Frame dithering
-                engage_drop = base_drop_engage
-                if now < post_switch_shaky_until:
-                    engage_drop *= 1.6  # slightly shakier just after switch
-                if self.left_down and random.random() < engage_drop:
-                    time.sleep(frame_time); continue
-                if not self.left_down and random.random() < base_drop_idle:
-                    time.sleep(frame_time); continue
+                # Frame dithering + micro-pauses are treated as jitter-like randomness.
+                # When jitter is OFF, we keep motion fully deterministic (no random frame drops or pauses).
+                if self._is_jitter_enabled():
+                    engage_drop = base_drop_engage
+                    if now < post_switch_shaky_until:
+                        engage_drop *= 1.6  # slightly shakier just after switch
+                    if self.left_down and random.random() < engage_drop:
+                        time.sleep(frame_time); continue
+                    if not self.left_down and random.random() < base_drop_idle:
+                        time.sleep(frame_time); continue
 
-                # Optional micro-pause
-                if self.left_down and random.random() < float(getattr(self.cfg, "micro_pause_chance", 0.02)):
-                    time.sleep(random.uniform(0.010, 0.028))
+                    # Optional micro-pause
+                    if self.left_down and random.random() < float(getattr(self.cfg, "micro_pause_chance", 0.02)):
+                        time.sleep(random.uniform(0.010, 0.028))
 
                 # Reaction delay wait
                 if self.check_reaction_delay():
@@ -1166,10 +1184,11 @@ class AimbotRCS:
                     sp, sy = self.normalize(sp, sy)
 
                     # Micro jitter & drift
-                    jitter = profile.get("jitter", 0.22)
-                    sp += random.uniform(-jitter, jitter)
-                    sy += random.uniform(-jitter, jitter)
-                    sp, sy = self.apply_aim_jitter(sp, sy)
+                    if self._is_jitter_enabled():
+                        jitter = profile.get("jitter", 0.22)
+                        sp += random.uniform(-jitter, jitter)
+                        sy += random.uniform(-jitter, jitter)
+                        sp, sy = self.apply_aim_jitter(sp, sy)
 
                     # Snap if very close
                     if abs(sp - pitch) < 0.18: sp = comp_pitch
@@ -1182,15 +1201,20 @@ class AimbotRCS:
                     raw_dy = - (sp - pitch) / sensitivity * invert_y
 
                     max_move = int(getattr(self.cfg, 'max_mouse_move', 25))
-                    # small per-frame randomization of the clamp to avoid quantized patterns
-                    jitter_clamp = float(getattr(self.cfg, "max_move_jitter", 0.6))
-                    local_max = max_move + random.uniform(-jitter_clamp, jitter_clamp)
-                    clamped_dx = max(min(raw_dx,  local_max), -local_max)
-                    clamped_dy = max(min(raw_dy, local_max), -local_max)
+                    if self._is_jitter_enabled():
+                        # small per-frame randomization of the clamp to avoid quantized patterns
+                        jitter_clamp = float(getattr(self.cfg, "max_move_jitter", 0.6))
+                        local_max = max_move + random.uniform(-jitter_clamp, jitter_clamp)
+                        clamped_dx = max(min(raw_dx,  local_max), -local_max)
+                        clamped_dy = max(min(raw_dy, local_max), -local_max)
 
-                    # Tiny noise
-                    clamped_dx += random.uniform(-0.14, 0.14)
-                    clamped_dy += random.uniform(-0.14, 0.14)
+                        # Tiny noise
+                        clamped_dx += random.uniform(-0.14, 0.14)
+                        clamped_dy += random.uniform(-0.14, 0.14)
+                    else:
+                        # Deterministic clamp (no jitter/noise)
+                        clamped_dx = max(min(raw_dx,  max_move), -max_move)
+                        clamped_dy = max(min(raw_dy, max_move), -max_move)
 
                     mouse_dx = int(clamped_dx)
                     mouse_dy = int(clamped_dy)
