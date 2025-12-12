@@ -20,7 +20,12 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
 </div>
-
+```
+12/12/2025
+V3.6
+[+] refactored esp to reuse cached entities, batch-read bones, apply ttl-based memory refresh (average 144 fps drawing)
+[+] Fixed the aimbot by making aim_jitter_enabled the single master toggle that cleanly enables or disables all jitter-related behavior without breaking existing logic.
+```
 ```
 12/11/2025
 V3.5.4
