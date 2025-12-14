@@ -1308,7 +1308,7 @@ class AimbotTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
         content = QWidget(); content.setStyleSheet("background-color: #151520;")
@@ -1644,7 +1644,7 @@ class ConfigTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
         content = QWidget(); content.setStyleSheet("background-color:#151520;")
@@ -2207,7 +2207,7 @@ class ConsoleTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { background-color:#151520; border:none; }")
 
         content = QWidget(); content.setStyleSheet("background-color:#151520;")
@@ -2841,7 +2841,7 @@ class ESPTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
         content = QWidget()
@@ -3150,11 +3150,14 @@ class MainWindow(QWidget):
         try:
             self.setWindowTitle("GFusion V3.6")
             self.setGeometry(100, 100, 950, 700)
-            self.setMinimumSize(900, 650)
+            self.setMinimumSize(600, 450)
             logger.debug("Window geometry set", category="UI")
 
             self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
             self.setAttribute(Qt.WA_TranslucentBackground, False)
+            # Enable hover tracking so edge-resize cursors work on a frameless window
+            self.setMouseTracking(True)
+
             logger.debug("Window flags configured", category="UI")
 
             root = QVBoxLayout(self)
@@ -3252,23 +3255,141 @@ class MainWindow(QWidget):
             print(f"[OBS Protection] Failed to apply mode={mode} to window")
 
                                                                               
+    
+    # -------------------------
+    # Frameless window: drag + resize
+    # -------------------------
+    _RESIZE_MARGIN = 8  # px grab area along the edges
+
+    def _hit_test_edges(self, pos):
+        """Return a string describing which edge(s) the mouse is on (e.g. 'L', 'RB', 'LT')."""
+        r = self.rect()
+        m = getattr(self, "_RESIZE_MARGIN", 8)
+
+        left = pos.x() <= m
+        right = pos.x() >= (r.width() - m)
+        top = pos.y() <= m
+        bottom = pos.y() >= (r.height() - m)
+
+        d = ""
+        if left:
+            d += "L"
+        elif right:
+            d += "R"
+        if top:
+            d += "T"
+        elif bottom:
+            d += "B"
+        return d
+
+    def _cursor_for_dir(self, d):
+        # Corners first
+        if d in ("LT", "RB"):
+            return Qt.SizeFDiagCursor
+        if d in ("RT", "LB"):
+            return Qt.SizeBDiagCursor
+        if d in ("L", "R"):
+            return Qt.SizeHorCursor
+        if d in ("T", "B"):
+            return Qt.SizeVerCursor
+        return Qt.ArrowCursor
+
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
+            # Prefer resize when clicking edges/corners
+            d = self._hit_test_edges(e.pos())
+            if d:
+                self._resize_active = True
+                self._resize_dir = d
+                self._resize_start_pos = e.globalPos()
+                self._resize_start_geo = self.geometry()
+                e.accept()
+                return
+
+            # Otherwise: normal drag move
             self._drag_active = True
             self._drag_start_pos = e.globalPos()
+            e.accept()
+            return
+
+        super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
+        # Active resize
+        if getattr(self, "_resize_active", False):
+            d = getattr(self, "_resize_dir", "")
+            start_geo = getattr(self, "_resize_start_geo", self.geometry())
+            start_pos = getattr(self, "_resize_start_pos", e.globalPos())
+
+            delta = e.globalPos() - start_pos
+            dx, dy = delta.x(), delta.y()
+
+            x = start_geo.x()
+            y = start_geo.y()
+            w = start_geo.width()
+            h = start_geo.height()
+
+            min_w = self.minimumWidth() if self.minimumWidth() > 0 else 100
+            min_h = self.minimumHeight() if self.minimumHeight() > 0 else 100
+
+            # Horizontal resize
+            if "L" in d:
+                new_w = max(min_w, w - dx)
+                x = x + (w - new_w)
+                w = new_w
+            elif "R" in d:
+                w = max(min_w, w + dx)
+
+            # Vertical resize
+            if "T" in d:
+                new_h = max(min_h, h - dy)
+                y = y + (h - new_h)
+                h = new_h
+            elif "B" in d:
+                h = max(min_h, h + dy)
+
+            self.setGeometry(x, y, w, h)
+            e.accept()
+            return
+
+        # Active drag
         if getattr(self, "_drag_active", False):
             delta = e.globalPos() - self._drag_start_pos
             self.move(self.x() + delta.x(), self.y() + delta.y())
             self._drag_start_pos = e.globalPos()
+            e.accept()
+            return
+
+        # Hover cursor update (only when not resizing/dragging)
+        d = self._hit_test_edges(e.pos())
+        cur = self._cursor_for_dir(d)
+        self.setCursor(cur)
+        super().mouseMoveEvent(e)
+
+    def leaveEvent(self, e):
+        # Reset cursor when leaving window
+        try:
+            if not getattr(self, "_resize_active", False) and not getattr(self, "_drag_active", False):
+                self.unsetCursor()
+        finally:
+            super().leaveEvent(e)
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton:
             self._drag_active = False
             self._drag_start_pos = None
+            self._resize_active = False
+            self._resize_dir = ""
+            self._resize_start_pos = None
+            self._resize_start_geo = None
+            self.unsetCursor()
+            e.accept()
+            return
+
+        super().mouseReleaseEvent(e)
 
     def exit_app(self):
+
         stop_aimbot_thread()
         stop_bhop_thread()
         stop_glow_thread()
@@ -3428,7 +3549,7 @@ class MainWindow(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(6)
 
-        title = QLabel("GFusion V3.5.3")
+        title = QLabel("GFusion V3.6.1")
         title.setObjectName("startupTitle")
         subtitle = QLabel("External Cheat by Cr0mb & SameOldMistakes")
         subtitle.setObjectName("startupSubtitle")
@@ -3633,7 +3754,7 @@ class MiscTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("""
             QScrollArea {
                 background-color: #151520;
@@ -4118,7 +4239,7 @@ class RecoilViewer(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")                  
 
         content = QWidget()
@@ -4653,7 +4774,7 @@ class TriggerBotTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
 
         content = QWidget(); content.setStyleSheet("background-color: #151520;")
