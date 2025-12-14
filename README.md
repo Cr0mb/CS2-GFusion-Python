@@ -22,6 +22,12 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 </div>
 
 ```
+12/14/2025
+V3.6.1
+[+] Added font changer to configs tab
+[+] Made menu resizable
+```
+```
 12/12/2025
 V3.6
 [+] refactored esp to reuse cached entities, batch-read bones, apply ttl-based memory refresh (average 144 fps drawing)
