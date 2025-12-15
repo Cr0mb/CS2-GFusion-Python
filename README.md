@@ -22,6 +22,12 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 </div>
 
 ```
+12/15/2025
+V3.6.2
+[+] Updated walk bot to be completely reliant on ctypes, no more psutil.
+```
+
+```
 12/14/2025
 V3.6.1
 [+] Added font changer to configs tab
