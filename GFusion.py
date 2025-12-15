@@ -60,12 +60,6 @@ from PyQt5.QtGui import QFontDatabase
    
                        
                             
-try:
-    from render.dx11_backend import DX11Backend
-except Exception as e:
-                                                    
-                                           
-    from render.dx11_backend_stub import DX11Backend
 
 try:
                                          
@@ -3609,7 +3603,7 @@ class MainWindow(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(6)
 
-        title = QLabel("GFusion V3.6.1")
+        title = QLabel("GFusion V3.6.2")
         title.setObjectName("startupTitle")
         subtitle = QLabel("External Cheat by Cr0mb & SameOldMistakes")
         subtitle.setObjectName("startupSubtitle")
