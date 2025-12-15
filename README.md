@@ -1,4 +1,4 @@
-## GFusion V3.6.1
+## GFusion V3.6.2
 
 The most advanced Counter-Strike closet cheats ever made in Python. Kernel driver included.
 
