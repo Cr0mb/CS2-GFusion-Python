@@ -1,11 +1,11 @@
-## GFusion V3.5.4
+## GFusion V3.6.1
 
 The most advanced Counter-Strike closet cheats ever made in Python. Kernel driver included.
 
 [UC Forum](https://www.unknowncheats.me/forum/counter-strike-2-releases/711867-gfusion-closet-cheat.html)
 [YouTube](https://www.youtube.com/@cr0mble)
 
-[How to Download and Install GFusion V3.5](https://www.youtube.com/watch?v=HJDb8FdCeRc)
+[How to Download and Install GFusion V3.6](https://www.youtube.com/watch?v=i3q_ryNTHww&lc=Ugz-S0AoR0fkkcZhfXZ4AaABAg)
 
 Install setup command (run this in powershell as admin):
 ```
