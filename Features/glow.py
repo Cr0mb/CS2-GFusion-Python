@@ -168,8 +168,14 @@ class CS2GlowManager:
     def run(self):
         try:
             while not getattr(self.shared_config, "stop", False):
+                # Write glow at a high, stable cadence to prevent engine-side resets from causing flicker
+                target_hz = float(getattr(self.shared_config, "glow_write_hz", 240.0))
+                interval = 1.0 / max(30.0, min(2000.0, target_hz))
+                t0 = time.perf_counter()
                 self.update_glow()
-                time.sleep(0.02)  # small delay to reduce CPU usage and flicker
+                dt = time.perf_counter() - t0
+                # Sleep only the remaining budget; small floor avoids 0-sleep spin on Windows
+                time.sleep(max(0.0005, interval - dt))
         except KeyboardInterrupt:
             pass
         finally:
