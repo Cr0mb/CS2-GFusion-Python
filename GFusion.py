@@ -23,6 +23,7 @@ from Features.auto_pistol import run_auto_pistol
 from Features.bhop import BHopProcess
 from Features.fov import FOVChanger
 from Features.glow import CS2GlowManager
+from Features.radar import CS2RadarManager
 from Features.triggerbot import TriggerBot
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -900,6 +901,15 @@ def run_glow():
     except Exception as e:
         logger.exception(f"Glow crashed: {e}", category="Glow")
 
+def run_radar():
+    global radar_manager
+    logger.info("Starting radar", category="Radar")
+    try:
+        radar_manager = CS2RadarManager(cfg)
+        radar_manager.run()
+    except Exception as e:
+        logger.exception(f"Radar crashed: {e}", category="Radar")
+
 def run_triggerbot():
     global triggerbot_instance
     logger.info("Starting triggerbot", category="Triggerbot")
@@ -987,6 +997,18 @@ def start_glow_thread():
             logger.info("Glow thread started", category="Threading")
     except Exception as e:
         logger.error(f"Failed to start glow thread: {e}", category="Threading", exc_info=True)
+
+def start_radar_thread():
+    global radar_thread
+    try:
+        if radar_thread is None or not radar_thread.is_alive():
+            Config.radar_stop = False
+            Config.radar_enabled = True
+            radar_thread = threading.Thread(target=run_radar, daemon=True, name="RadarThread")
+            radar_thread.start()
+            logger.info("Radar thread started", category="Threading")
+    except Exception as e:
+        logger.error(f"Failed to start radar thread: {e}", category="Threading", exc_info=True)
 
 def start_toggle_listener(main_window):
     def _toggle_menu():
@@ -1149,6 +1171,17 @@ def stop_glow_thread():
         logger.info("Glow stop signal sent", category="Threading")
     except Exception as e:
         logger.error(f"Failed to stop glow: {e}", category="Threading", exc_info=True)
+
+def stop_radar_thread():
+    global radar_thread, radar_manager
+    try:
+        Config.radar_enabled = False
+        Config.radar_stop = True
+        radar_thread = None
+        radar_manager = None
+        logger.info("Radar stop signal sent", category="Threading")
+    except Exception as e:
+        logger.error(f"Failed to stop radar: {e}", category="Threading", exc_info=True)
 
 def stop_triggerbot_thread():
     try:
@@ -3128,6 +3161,46 @@ class ESPTab(QWidget):
         colors_layout.addLayout(color_grid)
         layout.addWidget(colors_group)
 
+        # === 2D Radar ===
+        radar_group = self.create_group_box("2D Radar")
+        radar_layout = QVBoxLayout(radar_group)
+        radar_layout.setSpacing(4)
+        
+        r_row1 = QHBoxLayout()
+        self.add_checkbox(r_row1, "Enable Radar", "radar_enabled")
+        self.add_checkbox(r_row1, "Show Team", "radar_show_team")
+        self.add_checkbox(r_row1, "Show Background", "radar_show_background")
+        radar_layout.addLayout(r_row1)
+        
+        self.add_slider(radar_layout, "Size", "radar_size", 100, 400)
+        self.add_slider(radar_layout, "Range", "radar_range", 500, 5000)
+        
+        shape_row = QHBoxLayout()
+        shape_lbl = QLabel("Shape:")
+        shape_lbl.setStyleSheet("color: #f5f5f7;")
+        shape_row.addWidget(shape_lbl)
+        shape_combo = QComboBox()
+        shape_combo.addItems(["square", "circle"])
+        shape_combo.setCurrentText(getattr(Config, "radar_shape", "square"))
+        shape_combo.setStyleSheet("QComboBox { background: #2d2d30; color: #f5f5f7; border: 1px solid #3e3e42; padding: 4px; }")
+        shape_combo.currentTextChanged.connect(lambda t: setattr(Config, "radar_shape", t))
+        shape_row.addWidget(shape_combo)
+        shape_row.addStretch()
+        radar_layout.addLayout(shape_row)
+        
+        drag_hint = QLabel("💡 Drag radar in-game to reposition")
+        drag_hint.setStyleSheet("color: #888; font-size: 10px;")
+        radar_layout.addWidget(drag_hint)
+        
+        r_color_grid = QGridLayout()
+        self.add_color_picker_to_grid(r_color_grid, 0, 0, "Background", "radar_bg_color", (20, 20, 20))
+        self.add_color_picker_to_grid(r_color_grid, 0, 1, "Border", "radar_border_color", (100, 100, 100))
+        self.add_color_picker_to_grid(r_color_grid, 1, 0, "Enemy", "radar_color_enemy", (255, 50, 50))
+        self.add_color_picker_to_grid(r_color_grid, 1, 1, "Team", "radar_color_team", (50, 150, 255))
+        radar_layout.addLayout(r_color_grid)
+        radar_layout.addStretch()
+        layout.addWidget(radar_group)
+
         layout.addStretch()
         scroll.setWidget(content)
         main_layout = QVBoxLayout(self)
@@ -4951,6 +5024,10 @@ bhop_instance = None
 glow_thread = None
 
 glow_manager = None
+
+radar_thread = None
+
+radar_manager = None
 
 triggerbot_thread = None
 

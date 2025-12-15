@@ -204,6 +204,22 @@ class Config:
     glow_color_team = (0, 0, 1, 1)
 
     # ===========================
+    #  2D Radar (integrated into ESP)
+    # ===========================
+    radar_enabled = True
+    radar_show_team = True
+    radar_show_background = True
+    radar_size = 200
+    radar_range = 1500
+    radar_x = 20
+    radar_y = 20
+    radar_bg_color = (20, 20, 20)
+    radar_border_color = (100, 100, 100)
+    radar_color_enemy = (255, 50, 50)
+    radar_color_team = (50, 150, 255)
+    radar_shape = "square"  # "square" or "circle"
+
+    # ===========================
     #  TriggerBot
     # ===========================
     triggerbot_enabled = False

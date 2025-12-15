@@ -34,6 +34,7 @@ from Process.config import Config
 from Process.offsets import Offsets
 from Process.memory_interface import MemoryInterface
 from Features import worldesp
+from Features import radar as radar_module
 
 # Add current directory to path for vischeck.pyd
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1658,6 +1659,10 @@ map_status_pos = [20, 60]
 map_status_dragging = False
 map_status_drag_offset = [0, 0]
 
+# Radar draggable globals
+radar_dragging = False
+radar_drag_offset = [0, 0]
+
 def calculate_speed(vel):
     return math.sqrt(vel['x']**2 + vel['y']**2 + vel['z']**2)
 
@@ -2382,7 +2387,17 @@ def main():
             local_info_dragging, local_info_box_pos, local_info_drag_offset, box_width, 24
         )
 
-
+    def handle_radar_drag():
+        global radar_dragging, radar_drag_offset
+        if not getattr(Config, "radar_enabled", False):
+            return
+        radar_size = getattr(Config, "radar_size", 200)
+        radar_pos = [getattr(Config, "radar_x", 20), getattr(Config, "radar_y", 20)]
+        radar_dragging, radar_drag_offset = handle_dragging(
+            radar_dragging, radar_pos, radar_drag_offset, radar_size, radar_size
+        )
+        Config.radar_x = radar_pos[0]
+        Config.radar_y = radar_pos[1]
 
     # Error tracking for stability
     consecutive_errors = 0
@@ -2772,6 +2787,16 @@ def main():
                 print(f"[ESP Error] Failed to get entities: {e}")
                 overlay.end_scene()
                 continue
+
+            # --- Radar ---
+            try:
+                if getattr(cfg, "radar_enabled", False) and local_pos:
+                    handle_radar_drag()
+                    local_yaw = read_float(handle, base + Offsets.dwViewAngles + 4)
+                    radar_module.draw_radar(overlay, local_pos, local_team, local_yaw, entities)
+                    radar_module.draw_radar_label(overlay)
+            except Exception as e:
+                print(f"[Radar Error] {e}")
 
             # ESP status tracking
             current_time = time.time()
