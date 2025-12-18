@@ -3,7 +3,28 @@ import os
 import shutil
 import time
 import win32con
+BONES = {
+    "head": 6,
+    "neck": 5,
+    "chest": 15,
+    "pelvis": 0,
+    "left_hand": 10,
+    "right_hand": 2,
+    "left_leg": 23,
+    "right_leg": 26,
+}
 
+# sensible defaults for aiming
+DEFAULT_AIM_BONES = (
+    BONES["head"],
+    BONES["neck"],
+    BONES["chest"],
+    BONES["pelvis"],
+    BONES["left_hand"],
+    BONES["right_hand"],
+    BONES["left_leg"],
+    BONES["right_leg"],
+)
 class Config:
     """
     GFusion Configuration (with safe persistence)
@@ -33,8 +54,8 @@ class Config:
     #  Watermark / Overlay
     # ===========================
     watermark_enabled = True
-    use_gpu_overlay = False
-    show_overlay_fps = False
+    use_gpu_overlay = True
+    show_overlay_fps = True
     obs_protection_enabled = False
 
     team_list_enabled = False
@@ -237,9 +258,18 @@ class Config:
     # ===========================
     enabled = True
     aim_key = "mouse1"
+    # Aimbot bone selection
+    # Enable multi-bone scanning
+    aim_bones = ["head","neck","chest","pelvis","left_hand","right_hand","left_leg","right_leg"]
+    target_bone_name = "head"
+    closest_to_crosshair = False
+
+
+    # Internal, fast bone indices (derived once)
+    bone_indices_to_try = list(DEFAULT_AIM_BONES)
+
     target_bone_name = "head"
     bone_indices_to_try = [6, 18]
-    closest_to_crosshair = False
     max_entities = 64
     FOV = 3.0
     max_delta_angle = 60
@@ -300,8 +330,8 @@ class Config:
     # ===========================
     #  Kernel Mode Driver (NeacController)
     # ===========================
-    kernel_mode_enabled = False
-    kernel_driver_auto_start = False
+    kernel_mode_enabled = True
+    kernel_driver_auto_start = True
     kernel_fallback_to_usermode = False
 
     # ===========================
