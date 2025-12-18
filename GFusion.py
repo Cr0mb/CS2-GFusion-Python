@@ -1485,7 +1485,7 @@ class AimbotTab(QWidget):
                                
         tgt_g = self.create_group_box("Target")
         tgt = QVBoxLayout(tgt_g); tgt.setSpacing(6)
-        self.add_combo_row(tgt, "Target Bone:", ["head","chest"], "target_bone_name", to_lower=True, width=90)
+        self.add_combo_row(tgt, "Target Bone:", ["head","neck","chest","pelvis","left_hand","right_hand","left_leg","right_leg"], "target_bone_name", to_lower=True, width=90)
         self.learn_dir_label = QLabel(f"Learning Dir: {getattr(Config,'learn_dir','')}")
         self.learn_dir_label.setStyleSheet("color:#f5f5f7; ")
         tgt.addWidget(self.learn_dir_label)
