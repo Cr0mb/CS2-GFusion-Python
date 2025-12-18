@@ -1,4 +1,4 @@
-## GFusion V3.6.3
+## GFusion V3.6.4
 
 The most advanced Counter-Strike closet cheats ever made in Python. Kernel driver included.
 
@@ -20,6 +20,11 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
 </div>
+```
+12/18/2025
+V3.6.4
+[+] Added more target bone selection to menu
+```
 ```
 12/18/2025
 V3.6.3
