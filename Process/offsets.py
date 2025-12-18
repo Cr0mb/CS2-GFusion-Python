@@ -1,3 +1,6 @@
+# Auto-generated — LOCAL OFFSETS ONLY
+# Do not edit manually
+
 class Offsets:
     HDRColorScale = 56
     __m_pChainEntity = 8
