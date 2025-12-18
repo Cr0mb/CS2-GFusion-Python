@@ -20,7 +20,12 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
 </div>
-
+```
+12/18/2025
+V3.6.3
+[+] Added multiple bones to aimbot (soon to integrate full selection choices to menu), as of now only works with closest crosshair.
+https://www.youtube.com/watch?v=NPphc77LTcg
+```
 ```
 12/15/2025
 V3.6.2
