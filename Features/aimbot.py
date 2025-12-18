@@ -335,6 +335,29 @@ class CS2WeaponTracker:
 # -----------------------------
 # Aimbot + RCS + Mouse Recording
 # -----------------------------
+BONES = {
+    "head": 6,
+    "neck": 5,
+    "chest": 15,
+    "pelvis": 0,
+    "left_hand": 10,
+    "right_hand": 2,
+    "left_leg": 23,
+    "right_leg": 26,
+}
+
+# sensible defaults for aiming
+DEFAULT_AIM_BONES = (
+    BONES["head"],
+    BONES["neck"],
+    BONES["chest"],
+    BONES["pelvis"],
+    BONES["left_hand"],
+    BONES["right_hand"],
+    BONES["left_leg"],
+    BONES["right_leg"],
+)
+
 class AimbotRCS:
     MAX_DELTA_ANGLE = 60
     SENSITIVITY = None
@@ -352,7 +375,8 @@ class AimbotRCS:
         self.reader = RPMReader(self.cs2.process_id, self.process_handle, cfg)
         self.local_player_controller = self.base + self.o.dwLocalPlayerController
 
-        self.bone_indices = {"head": 6, "chest": 18}
+        self.bone_indices = BONES
+
 
         # Runtime state
         self.left_down = False
@@ -679,34 +703,79 @@ class AimbotRCS:
     # -----------------------------
     # Bone selection
     # -----------------------------
-    def get_current_bone_index(self, pawn=None, my_pos=None, pitch=None, yaw=None, frame_time=1.0/60):
-        if not self.cfg.closest_to_crosshair:
-            return self.bone_indices.get(self.cfg.target_bone_name, 6)
+    def get_current_bone_index(
+        self,
+        pawn,
+        my_pos,
+        pitch,
+        yaw,
+        frame_time=1.0 / 60.0,
+    ):
+        """
+        If cfg.closest_to_crosshair is False:
+            aim at cfg.target_bone_name (or first cfg.aim_bones entry).
+        If True:
+            scan cfg.aim_bones and pick the closest-to-crosshair bone.
+        """
         if not pawn or not my_pos:
             return self.bone_indices.get("head", 6)
 
-        best_index, best_distance = None, float('inf')
-        cfg_bones = self.cfg.bone_indices_to_try
-        enable_velocity_prediction = self.cfg.enable_velocity_prediction
-        downward_offset = self.cfg.downward_offset
+        # --- Fixed bone mode (HEAD-ONLY etc.) ---
+        if not bool(getattr(self.cfg, "closest_to_crosshair", False)):
+            name = str(getattr(self.cfg, "target_bone_name", "head")).lower().strip()
+            if name in self.bone_indices:
+                return self.bone_indices[name]
 
-        vp_factor = getattr(self.cfg, 'velocity_prediction_factor', 1.0)
-        smoothing = vp_factor * frame_time
-        vel = self.read_vec3(pawn + self.o.m_vecVelocity) if enable_velocity_prediction else None
+            # fallback: first aim_bones entry if target_bone_name is invalid
+            bone_names = getattr(self.cfg, "aim_bones", ["head"])
+            if bone_names:
+                first = str(bone_names[0]).lower().strip()
+                if first in self.bone_indices:
+                    return self.bone_indices[first]
 
-        for idx in cfg_bones:
-            pos = self.read_bone_pos(pawn, idx)
+            return self.bone_indices.get("head", 6)
+
+        # --- Multi-bone mode (closest-to-crosshair) ---
+        bone_names = getattr(self.cfg, "aim_bones", ["head"])
+        bone_ids = [self.bone_indices[b] for b in bone_names if b in self.bone_indices]
+        if not bone_ids:
+            return self.bone_indices.get("head", 6)
+
+        best_bone = None
+        best_delta = float("inf")
+
+        vel = (
+            self.read_vec3(pawn + self.o.m_vecVelocity)
+            if getattr(self.cfg, "enable_velocity_prediction", False)
+            else None
+        )
+
+        for bone in bone_ids:
+            pos = self.read_bone_pos(pawn, bone)
             if not pos:
                 continue
-            if enable_velocity_prediction and vel:
-                pos = [pos[i] + vel[i] * smoothing for i in range(3)]
-            pos[2] -= downward_offset
+
+            if vel:
+                factor = float(getattr(self.cfg, "velocity_prediction_factor", 1.0))
+                pos = [pos[i] + vel[i] * frame_time * factor for i in range(3)]
+
+            pos[2] -= float(getattr(self.cfg, "downward_offset", 0.0))
+
             p, y = self.calc_angle(my_pos, pos)
-            if self._isnan(p) or self._isnan(y): continue
-            dist = math.hypot(self.angle_diff(p, pitch), self.angle_diff(y, yaw))
-            if dist < best_distance:
-                best_distance, best_index = dist, idx
-        return best_index if best_index is not None else self.bone_indices.get("head", 6)
+            if math.isnan(p) or math.isnan(y):
+                continue
+
+            delta = math.hypot(
+                self.angle_diff(p, pitch),
+                self.angle_diff(y, yaw),
+            )
+
+            if delta < best_delta:
+                best_delta = delta
+                best_bone = bone
+
+        return best_bone if best_bone is not None else self.bone_indices.get("head", 6)
+
 
     # -----------------------------
     # Humanization
