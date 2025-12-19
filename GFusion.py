@@ -3714,7 +3714,7 @@ class MainWindow(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(6)
 
-        title = QLabel("GFusion V3.6.3")
+        title = QLabel("GFusion V3.6.5")
         title.setObjectName("startupTitle")
         subtitle = QLabel("External Cheat by Cr0mb & SameOldMistakes")
         subtitle.setObjectName("startupSubtitle")
