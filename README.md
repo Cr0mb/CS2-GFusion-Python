@@ -20,11 +20,21 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
 </div>
+
+```
+V3.6.5
+12/19/2025
+[+] added visibility color settings
+[+] integrated fov overlay color change for aimbot
+[+] organized colors layout in menu
+```
+
 ```
 12/18/2025
 V3.6.4
 [+] Added more target bone selection to menu
 ```
+
 ```
 12/18/2025
 V3.6.3
