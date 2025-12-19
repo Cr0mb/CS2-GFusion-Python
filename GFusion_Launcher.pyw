@@ -45,10 +45,12 @@ ALLOWED_EXTENSIONS = (
     ".py", ".json", ".txt",
     ".opt",
     ".exe", ".dll", ".pyd",
-    ".bat",                      
+    ".bat",
     ".vcxproj", ".filters", ".sln",
-    ".ps1"
+    ".ps1", ".inf", ".sys", ".64", ".sys.i64", ".cpp",
+    ".h"
 )
+
 
 
 # ===============================
