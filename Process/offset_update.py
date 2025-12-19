@@ -1,141 +1,136 @@
 import json
-import os
 import sys
+import subprocess
 import urllib.request
-import urllib.error
+from pathlib import Path
 
-# === Ensure correct working directory ===
-script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir)
-print(f"[DEBUG] Running in: {os.getcwd()}")
+# ============================================================
+# CONFIG
+# ============================================================
+CS2_DUMPER_URL = (
+    "https://github.com/a2x/cs2-dumper/releases/download/0.1.3/cs2-dumper.exe"
+)
+DUMPER_NAME = "cs2-dumper.exe"
 
+# ============================================================
+# PATHS (MATCHES YOUR LAYOUT)
+# ============================================================
+PROCESS_DIR = Path(__file__).resolve().parent           # Process/
+OUTPUT_DIR  = PROCESS_DIR / "output"                    # Process/output/
+DUMPER_PATH = PROCESS_DIR / DUMPER_NAME                 # Process/cs2-dumper.exe
+OFFSETS_PY  = PROCESS_DIR / "offsets.py"
 
-class Offsets:
-    OFFSETS_URL = "https://raw.githubusercontent.com/a2x/cs2-dumper/refs/heads/main/output/offsets.json"
-    CLIENT_DLL_URL = "https://raw.githubusercontent.com/a2x/cs2-dumper/refs/heads/main/output/client_dll.json"
+print(f"[DEBUG] Process dir : {PROCESS_DIR}")
+print(f"[DEBUG] Output dir  : {OUTPUT_DIR}")
 
-    OUTPUT_DIR = "output"   # where ExLoader may put fallback DBs
+# ============================================================
+# HELPERS
+# ============================================================
+def download_dumper():
+    if DUMPER_PATH.exists():
+        print("[INFO] cs2-dumper.exe already exists")
+        return
 
-    @classmethod
-    def _download_json(cls, url: str, name: str) -> dict:
-        """
-        Try downloading JSON from GitHub.
-        Raise exception if not successful.
-        """
-        print(f"[INFO] Downloading {name} from {url}")
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (Python offsets-updater)"}
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"HTTP {resp.status} while downloading {name}")
-                raw = resp.read().decode("utf-8", errors="replace")
-
-            data = json.loads(raw)
-            print(f"[INFO] Successfully downloaded {name}")
-            return data
-
-        except Exception as e:
-            print(f"[WARN] Could not download {name}: {e}")
-            raise
-
-    @classmethod
-    def _load_local_json(cls, name: str) -> dict:
-        """
-        Load JSON file from local output/ folder as fallback.
-        """
-        path = os.path.join(cls.OUTPUT_DIR, name)
-        print(f"[INFO] Trying fallback local file: {path}")
-
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Fallback file not found: {path}")
-
-        with open(path, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                print(f"[INFO] Loaded fallback {name} from disk")
-                return data
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON in fallback {name}: {e}")
-
-    @classmethod
-    def _get_json_with_fallback(cls, url: str, filename: str) -> dict:
-        """
-        Try downloading from GitHub.
-        If that fails, load from output/ directory.
-        """
-        try:
-            return cls._download_json(url, filename)
-        except Exception:
-            print(f"[WARN] Download failed, switching to fallback local file for {filename}")
-
-        try:
-            return cls._load_local_json(filename)
-        except Exception as e:
-            print(f"[ERROR] Fallback also failed for {filename}: {e}")
-            raise RuntimeError(f"Could not obtain {filename} from any source")
-
-    @classmethod
-    def update_offsets_py(cls):
-        try:
-            # === Core change: This now supports fallback ===
-            offset = cls._get_json_with_fallback(cls.OFFSETS_URL, "offsets.json")
-            client = cls._get_json_with_fallback(cls.CLIENT_DLL_URL, "client_dll.json")
-
-            # Your existing flatten + output logic remains the same
-            manual_offsets = {
-                "dwEntityList": offset["client.dll"]["dwEntityList"],
-                "dwViewMatrix": offset["client.dll"]["dwViewMatrix"],
-                "dwLocalPlayerPawn": offset["client.dll"]["dwLocalPlayerPawn"],
-
-                "m_iTeamNum": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_iTeamNum"],
-                "m_lifeState": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_lifeState"],
-                "m_pGameSceneNode": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_pGameSceneNode"],
-                "m_vecAbsOrigin": client["client.dll"]["classes"]["CGameSceneNode"]["fields"]["m_vecAbsOrigin"],
-
-                "m_hPlayerPawn": client["client.dll"]["classes"]["CCSPlayerController"]["fields"]["m_hPlayerPawn"],
-                "m_AttributeManager": client["client.dll"]["classes"]["C_EconEntity"]["fields"]["m_AttributeManager"],
-                "m_Item": client["client.dll"]["classes"]["C_AttributeContainer"]["fields"]["m_Item"],
-                "m_iItemDefinitionIndex": client["client.dll"]["classes"]["C_EconItemView"]["fields"]["m_iItemDefinitionIndex"],
-            }
-
-            all_offsets = {}
-
-            # flattening logic from your script
-            for module_name, offsets_dict in offset.items():
-                if isinstance(offsets_dict, dict):
-                    for name, value in offsets_dict.items():
-                        all_offsets[name] = value
-
-            for module_name, module_data in client.items():
-                if isinstance(module_data, dict):
-                    classes = module_data.get("classes", {})
-                    for class_name, class_data in classes.items():
-                        fields = class_data.get("fields", {})
-                        for field_name, field_value in fields.items():
-                            if field_name == "m_modelState" and class_name == "CSkeletonInstance":
-                                field_name = "m_pBoneArray"
-                                field_value += 128
-                            all_offsets[field_name] = field_value
-
-            all_offsets.update(manual_offsets)
-
-            # write the final offsets.py
-            out_path = os.path.join(script_dir, "offsets.py")
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write("class Offsets:\n")
-                for name in sorted(all_offsets.keys()):
-                    f.write(f"    {name} = {all_offsets[name]}\n")
-
-            print(f"[SUCCESS] offsets.py updated successfully at {out_path}")
-
-        except Exception as e:
-            print(f"[FATAL] Offsets update failed: {e}")
-            sys.exit(1)
+    print("[INFO] Downloading cs2-dumper.exe...")
+    try:
+        with urllib.request.urlopen(CS2_DUMPER_URL, timeout=30) as r:
+            data = r.read()
+        with open(DUMPER_PATH, "wb") as f:
+            f.write(data)
+        print("[SUCCESS] cs2-dumper.exe downloaded")
+    except Exception as e:
+        print(f"[FATAL] Failed to download dumper: {e}")
+        sys.exit(1)
 
 
-# Run updater
+def run_dumper():
+    print("[INFO] Running cs2-dumper.exe...")
+    try:
+        subprocess.run(
+            [str(DUMPER_PATH)],
+            cwd=str(PROCESS_DIR),   # CRITICAL: output goes to Process/output
+            check=True,
+            timeout=120
+        )
+    except subprocess.TimeoutExpired:
+        print("[FATAL] cs2-dumper.exe timed out")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"[FATAL] cs2-dumper.exe failed: {e}")
+        sys.exit(1)
+
+
+def load_json(name: str) -> dict:
+    path = OUTPUT_DIR / name
+    if not path.exists():
+        print(f"[FATAL] Missing {path}")
+        sys.exit(1)
+
+    print(f"[INFO] Loading {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+# ============================================================
+# MAIN LOGIC
+# ============================================================
+def update_offsets():
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    download_dumper()
+    run_dumper()
+
+    offsets = load_json("offsets.json")
+    client  = load_json("client_dll.json")
+
+    # ---- manual mappings (UNCHANGED) ----
+    manual_offsets = {
+        "dwEntityList": offsets["client.dll"]["dwEntityList"],
+        "dwViewMatrix": offsets["client.dll"]["dwViewMatrix"],
+        "dwLocalPlayerPawn": offsets["client.dll"]["dwLocalPlayerPawn"],
+
+        "m_iTeamNum": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_iTeamNum"],
+        "m_lifeState": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_lifeState"],
+        "m_pGameSceneNode": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_pGameSceneNode"],
+        "m_vecAbsOrigin": client["client.dll"]["classes"]["CGameSceneNode"]["fields"]["m_vecAbsOrigin"],
+
+        "m_hPlayerPawn": client["client.dll"]["classes"]["CCSPlayerController"]["fields"]["m_hPlayerPawn"],
+        "m_AttributeManager": client["client.dll"]["classes"]["C_EconEntity"]["fields"]["m_AttributeManager"],
+        "m_Item": client["client.dll"]["classes"]["C_AttributeContainer"]["fields"]["m_Item"],
+        "m_iItemDefinitionIndex": client["client.dll"]["classes"]["C_EconItemView"]["fields"]["m_iItemDefinitionIndex"],
+    }
+
+    all_offsets = {}
+
+    # ---- flatten offsets.json ----
+    for _, block in offsets.items():
+        if isinstance(block, dict):
+            for name, value in block.items():
+                all_offsets[name] = value
+
+    # ---- flatten client_dll.json ----
+    for module_data in client.values():
+        classes = module_data.get("classes", {})
+        for class_name, class_data in classes.items():
+            fields = class_data.get("fields", {})
+            for field_name, field_value in fields.items():
+                # Skeleton fix (same logic you already use)
+                if field_name == "m_modelState" and class_name == "CSkeletonInstance":
+                    field_name = "m_pBoneArray"
+                    field_value += 128
+                all_offsets[field_name] = field_value
+
+    all_offsets.update(manual_offsets)
+
+    # ---- write offsets.py ----
+    with open(OFFSETS_PY, "w", encoding="utf-8") as f:
+        f.write("class Offsets:\n")
+        for name in sorted(all_offsets):
+            f.write(f"    {name} = {all_offsets[name]}\n")
+
+    print(f"[SUCCESS] offsets.py written to {OFFSETS_PY}")
+
+# ============================================================
+# ENTRYPOINT
+# ============================================================
 if __name__ == "__main__":
-    Offsets.update_offsets_py()
+    update_offsets()
