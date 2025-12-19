@@ -315,17 +315,23 @@ class ScriptUpdateWorker(QThread):
     finished = pyqtSignal()
 
     def run(self):
+        import hashlib
+
+        def sha256_bytes(data: bytes) -> str:
+            return hashlib.sha256(data).hexdigest()
+
+        def sha256_file(path: Path) -> str:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+
         try:
             self.log.emit("Fetching repository tree...")
             r = requests.get(API_TREE, timeout=20)
             r.raise_for_status()
             tree = r.json()
-
-            self.log.emit("Fetching latest commit date...")
-            commit = requests.get(API_COMMIT, timeout=20).json()
-            repo_ts = datetime.fromisoformat(
-                commit["commit"]["committer"]["date"].replace("Z", "")
-            ).timestamp()
 
             files = [
                 f["path"]
@@ -338,29 +344,38 @@ class ScriptUpdateWorker(QThread):
 
             for i, path in enumerate(files, 1):
                 local = Path(path)
-                needs_update = (
-                    not local.exists()
-                    or local.stat().st_mtime < repo_ts
-                )
+                url = f"{RAW_BASE}/{path}"
 
-                if needs_update:
-                    url = f"{RAW_BASE}/{path}"
-                    self.log.emit(f"Updating: {path}")
-
-                    local.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    # Fetch remote content
                     r = requests.get(url, timeout=20)
                     r.raise_for_status()
+                    remote_bytes = r.content
+                    remote_hash = sha256_bytes(remote_bytes)
 
-                    tmp = local.with_suffix(".tmp")
-                    tmp.write_bytes(r.content)
-                    tmp.replace(local)
+                    needs_update = True
 
-                    os.utime(local, (repo_ts, repo_ts))
-                    updated += 1
+                    if local.exists():
+                        local_hash = sha256_file(local)
+                        needs_update = local_hash != remote_hash
+
+                    if needs_update:
+                        self.log.emit(f"Updating: {path}")
+                        local.parent.mkdir(parents=True, exist_ok=True)
+
+                        tmp = local.with_suffix(".tmp")
+                        tmp.write_bytes(remote_bytes)
+                        tmp.replace(local)
+
+                        updated += 1
+
+                except Exception as e:
+                    self.log.emit(f"ERROR updating {path}: {e}")
 
                 self.progress.emit(int(i / len(files) * 100))
 
             self.log.emit(f"✓ Update complete ({updated} files updated)")
+
         except Exception as e:
             self.log.emit(f"ERROR: {e}")
         finally:
@@ -809,7 +824,6 @@ class LauncherGUI(QWidget):
             self.run_btn,
             self.auto_convert_btn,
             self.download_run_exe_btn,
-            self.update_scripts_btn,
         ]:
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn_layout.addWidget(btn)
@@ -818,12 +832,21 @@ class LauncherGUI(QWidget):
         btn_row.setLayout(btn_layout)
         main_layout.addWidget(btn_row)
 
-        # Debug row centered
+        # Debug / maintenance row
         debug_layout = QHBoxLayout()
         debug_layout.addStretch()
+
+        self.update_scripts_btn.setMaximumHeight(30)
+        self.update_scripts_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        debug_layout.addWidget(self.update_scripts_btn)
+
+        debug_layout.addSpacing(10)
+
         debug_layout.addWidget(self.debug_btn)
+
         debug_layout.addStretch()
         main_layout.addLayout(debug_layout)
+
 
         root.setLayout(main_layout)
         self.root = root
