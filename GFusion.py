@@ -1278,6 +1278,31 @@ class AimbotTab(QWidget):
         self.ui["checkboxes"][cfg_key] = cb
         return cb
 
+    def add_color_button(self, layout, cfg_key, tooltip=""):
+        btn = QPushButton()
+        btn.setObjectName("espColorButton")
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(16, 16)
+
+        def update_btn():
+            col = getattr(Config, cfg_key, (255, 0, 0))
+            btn.setStyleSheet(
+                f"#espColorButton {{ background-color: rgb({col[0]}, {col[1]}, {col[2]}); }}"
+            )
+
+        def on_click():
+            cur = getattr(Config, cfg_key, (255, 0, 0))
+            color = QColorDialog.getColor(QColor(*cur), self)
+            if color.isValid():
+                new = (color.red(), color.green(), color.blue())
+                setattr(Config, cfg_key, new)
+                update_btn()
+
+        btn.clicked.connect(on_click)
+        update_btn()
+        layout.addWidget(btn)
+        return btn
+
     def add_combo_row(self, layout, label, options, cfg_key, to_lower=True, width=100):
         row = QHBoxLayout()
         lbl = QLabel(label)
@@ -1384,11 +1409,20 @@ class AimbotTab(QWidget):
                                         
         fov_g = self.create_group_box("FOV Overlay")
         fov = QVBoxLayout(fov_g); fov.setSpacing(6)
+
         row = QHBoxLayout()
         self.add_checkbox(row, "Show FOV Circle", "fov_circle_enabled")
+
+        self.add_color_button(
+            row,
+            "fov_overlay_color",
+            tooltip="FOV circle color"
+        )
+
         row.addStretch(1)
         fov.addLayout(row)
         root.addWidget(fov_g)
+
 
                                  
         kern_g = self.create_group_box("Kernel Mode (NeacController)")
@@ -2857,6 +2891,33 @@ class ESPTab(QWidget):
         self.ui_elements["sliders"][cfg_key] = (slider, lbl)
         return slider
 
+    def add_color_section(self, parent_layout, title, colors):
+        section = QGroupBox(title)
+        section.setStyleSheet("""
+            QGroupBox {
+                background-color: #11111a;
+                border: 1px solid #303040;
+                margin-top: 6px;
+                padding-top: 6px;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 6px;
+                padding: 0 4px;
+            }
+        """)
+
+        grid = QGridLayout(section)
+        grid.setSpacing(6)
+
+        for i, (label, attr, default) in enumerate(colors):
+            self.add_color_picker_to_grid(
+                grid, i // 3, i % 3, label, attr, default
+            )
+
+        parent_layout.addWidget(section)
+
     def add_color_picker_to_grid(self, grid, row, col, label, cfg_key, default=(255, 255, 255)):
         rgb = getattr(Config, cfg_key, default)
         
@@ -3088,45 +3149,95 @@ class ESPTab(QWidget):
                             
         colors_group = self.create_group_box("ESP Colors")
         colors_layout = QVBoxLayout(colors_group)
-        colors_layout.setSpacing(3)
-        
-        color_grid = QGridLayout()
-        color_grid.setSpacing(6)
-        
-        colors = [
+        colors_layout.setSpacing(8)
+
+        # --------------------------------------------------
+        # Box ESP (Base)
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Box ESP", [
             ("Box (T)", "color_box_t", (255, 180, 0)),
             ("Box (CT)", "color_box_ct", (100, 200, 255)),
+        ])
+
+        # --------------------------------------------------
+        # Box ESP (Visibility)
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Box ESP – Visibility", [
+            ("Visible (T)", "color_box_visible_t", (255, 200, 0)),
+            ("Hidden (T)", "color_box_invisible_t", (120, 70, 0)),
+            ("Visible (CT)", "color_box_visible_ct", (0, 200, 255)),
+            ("Hidden (CT)", "color_box_invisible_ct", (0, 70, 120)),
+        ])
+
+        # --------------------------------------------------
+        # Skeleton ESP
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Skeleton ESP", [
             ("Bone", "color_bone", (255, 255, 255)),
-            ("Head", "color_head", (255, 0, 0)),
-            ("Health Bar", "color_healthbar", (0, 255, 0)),
-            ("Armor Bar", "color_armorbar", (0, 0, 255)),
+            ("Bone Dot", "bone_dot_color", (255, 0, 255)),
+        ])
+
+        # --------------------------------------------------
+        # Skeleton ESP (Visibility)
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Skeleton ESP – Visibility", [
+            ("Visible (T)", "color_skeleton_visible_t", (255, 200, 0)),
+            ("Hidden (T)", "color_skeleton_invisible_t", (120, 70, 0)),
+            ("Visible (CT)", "color_skeleton_visible_ct", (0, 200, 255)),
+            ("Hidden (CT)", "color_skeleton_invisible_ct", (0, 70, 120)),
+        ])
+
+        # --------------------------------------------------
+        # Text & HUD
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Text & HUD", [
             ("Name", "color_name", (255, 255, 255)),
-            ("Name FX", "color_name_effects", (255, 255, 255)),
+            ("Name FX", "color_name_effects", (255, 215, 0)),
             ("HP Text", "color_hp_text", (0, 255, 0)),
             ("Armor Text", "color_armor_text", (0, 0, 255)),
             ("Distance", "color_distance", (255, 255, 255)),
-            ("Flash/Scope", "color_flash_scope", (255, 255, 0)),
-            ("Spectators", "color_spectators", (180, 180, 180)),
-            ("Bone Dot", "bone_dot_color", (255, 0, 255)),
             ("Weapon", "color_weapon_text", (255, 255, 255)),
-            ("Crosshair", "crosshair_color", (255, 255, 255)),
+            ("Money", "color_money_text", (0, 255, 255)),
+        ])
+
+        # --------------------------------------------------
+        # Visibility Text
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Visibility Text", [
+            ("Visible", "color_visible_text", (0, 255, 0)),
+            ("Hidden", "color_not_visible_text", (255, 0, 0)),
+        ])
+
+        # --------------------------------------------------
+        # Movement / Utility
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Movement & Utility", [
             ("Velocity Text", "velocity_text_color", (255, 255, 255)),
             ("Velocity ESP", "velocity_esp_color", (255, 255, 0)),
             ("Speed ESP", "speed_esp_color", (0, 255, 255)),
             ("Coordinates", "coordinates_esp_color", (255, 255, 255)),
             ("Trace ESP", "trace_esp_color", (255, 0, 255)),
-            ("Money", "color_money_text", (0, 255, 255)),
-            ("Visible", "color_visible_text", (0, 255, 0)),
-            ("Not Visible", "color_not_visible_text", (255, 0, 0)),
+        ])
+
+        # --------------------------------------------------
+        # Misc
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Misc", [
+            ("Crosshair", "crosshair_color", (255, 255, 255)),
+            ("Flash / Scope", "color_flash_scope", (255, 255, 0)),
+            ("Spectators", "color_spectators", (180, 180, 180)),
+        ])
+
+        # --------------------------------------------------
+        # Dead Players
+        # --------------------------------------------------
+        self.add_color_section(colors_layout, "Dead Players", [
             ("Dead CT", "color_dead_ct", (0, 0, 128)),
             ("Dead T", "color_dead_t", (128, 0, 0)),
-        ]
-        
-        for i, (label, attr, default) in enumerate(colors):
-            self.add_color_picker_to_grid(color_grid, i // 3, i % 3, label, attr, default)
-        
-        colors_layout.addLayout(color_grid)
+        ])
+
         layout.addWidget(colors_group)
+
 
         layout.addStretch()
         scroll.setWidget(content)
