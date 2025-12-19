@@ -167,7 +167,7 @@ class CS2GlowManager:
 
     def run(self):
         try:
-            while not getattr(self.shared_config, "stop", False):
+            while not getattr(self.shared_config, "glow_stop", False):
                 # Write glow at a high, stable cadence to prevent engine-side resets from causing flicker
                 target_hz = float(getattr(self.shared_config, "glow_write_hz", 240.0))
                 interval = 1.0 / max(30.0, min(2000.0, target_hz))
