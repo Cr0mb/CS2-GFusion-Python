@@ -338,12 +338,21 @@ class CS2WeaponTracker:
 BONES = {
     "head": 6,
     "neck": 5,
-    "chest": 15,
+
+    # Upper torso
+    "chest": 2,
+
+    # Lower torso
+    "stomach": 15,
     "pelvis": 0,
-    "left_hand": 10,
-    "right_hand": 2,
-    "left_leg": 23,
+
+    # Arms / hands
+    "right_hand": 10,
+    "left_hand": 13,
+
+    # Legs
     "right_leg": 26,
+    "left_leg": 23,
 }
 
 # sensible defaults for aiming
