@@ -3313,7 +3313,7 @@ class MainWindow(QWidget):
         logger.info("Initializing MainWindow", category="UI")
         super().__init__()
         try:
-            self.setWindowTitle("GFusion V3.6")
+            self.setWindowTitle("GFusion V3.6.5")
             self.setGeometry(100, 100, 950, 700)
             self.setMinimumSize(600, 450)
             logger.debug("Window geometry set", category="UI")
