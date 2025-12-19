@@ -4,6 +4,7 @@ import random
 import string
 import logging
 import subprocess
+from datetime import datetime
 import time
 import zipfile
 import requests
@@ -23,6 +24,30 @@ LAUNCHER_FILE = "launcher.py"
 FOLDERS_TO_OBFUSCATE = ["Features", "Process"]
 FERNET_KEY = Fernet.generate_key()
 fernet = Fernet(FERNET_KEY)
+
+GITHUB_OWNER = "Cr0mb"
+GITHUB_REPO = "CS2-GFusion-Python"
+GITHUB_BRANCH = "main"
+
+RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/{GITHUB_BRANCH}"
+API_TREE = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/git/trees/{GITHUB_BRANCH}?recursive=1"
+API_COMMIT = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/commits/{GITHUB_BRANCH}"
+
+IGNORED_PATHS = (
+    ".git/",
+    ".github/",
+    ".vscode/",
+    "dist/",
+    "build/",
+)
+
+ALLOWED_EXTENSIONS = (".py", ".json", ".txt")
+
+def is_valid_repo_file(path: str) -> bool:
+    if any(path.startswith(x) for x in IGNORED_PATHS):
+        return False
+    return path.endswith(ALLOWED_EXTENSIONS)
+
 
 # QTextEdit Logger
 class QTextEditLogger(QObject, logging.Handler):
@@ -283,6 +308,64 @@ if __name__ == '__main__':
         f.write(launcher_code)
 
     logging.info(f"Launcher generated: {LAUNCHER_FILE} with {len(modules_enc)} modules.")
+
+class ScriptUpdateWorker(QThread):
+    progress = pyqtSignal(int)
+    log = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def run(self):
+        try:
+            self.log.emit("Fetching repository tree...")
+            r = requests.get(API_TREE, timeout=20)
+            r.raise_for_status()
+            tree = r.json()
+
+            self.log.emit("Fetching latest commit date...")
+            commit = requests.get(API_COMMIT, timeout=20).json()
+            repo_ts = datetime.fromisoformat(
+                commit["commit"]["committer"]["date"].replace("Z", "")
+            ).timestamp()
+
+            files = [
+                f["path"]
+                for f in tree.get("tree", [])
+                if f["type"] == "blob" and is_valid_repo_file(f["path"])
+            ]
+
+            self.log.emit(f"Checking {len(files)} files...")
+            updated = 0
+
+            for i, path in enumerate(files, 1):
+                local = Path(path)
+                needs_update = (
+                    not local.exists()
+                    or local.stat().st_mtime < repo_ts
+                )
+
+                if needs_update:
+                    url = f"{RAW_BASE}/{path}"
+                    self.log.emit(f"Updating: {path}")
+
+                    local.parent.mkdir(parents=True, exist_ok=True)
+                    r = requests.get(url, timeout=20)
+                    r.raise_for_status()
+
+                    tmp = local.with_suffix(".tmp")
+                    tmp.write_bytes(r.content)
+                    tmp.replace(local)
+
+                    os.utime(local, (repo_ts, repo_ts))
+                    updated += 1
+
+                self.progress.emit(int(i / len(files) * 100))
+
+            self.log.emit(f"✓ Update complete ({updated} files updated)")
+        except Exception as e:
+            self.log.emit(f"ERROR: {e}")
+        finally:
+            self.finished.emit()
+
 
 class GFusionExeWorker(QThread):
     progress = pyqtSignal(int)
@@ -713,12 +796,20 @@ class LauncherGUI(QWidget):
         self.download_run_exe_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.download_run_exe_btn.clicked.connect(self.download_run_exe)
 
+        self.update_scripts_btn = QPushButton("UPDATE SCRIPTS")
+        self.update_scripts_btn.setObjectName("btn-blue")
+        self.update_scripts_btn.setFont(self.h2)
+        self.update_scripts_btn.clicked.connect(self.update_scripts)
+
+
+
         for btn in [
             self.update_btn,
             self.generate_btn,
             self.run_btn,
             self.auto_convert_btn,
-            self.download_run_exe_btn
+            self.download_run_exe_btn,
+            self.update_scripts_btn,
         ]:
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn_layout.addWidget(btn)
@@ -775,6 +866,21 @@ class LauncherGUI(QWidget):
         """)
         main_layout.addWidget(self.progress)
 
+
+    def update_scripts(self):
+        self.update_scripts_btn.setEnabled(False)
+        self.progress.setValue(0)
+        self.progress.setFormat("Checking updates...")
+
+        self.script_worker = ScriptUpdateWorker()
+        self.script_worker.progress.connect(self.progress.setValue)
+        self.script_worker.log.connect(lambda msg: logging.info(msg))
+        self.script_worker.finished.connect(self._on_scripts_updated)
+        self.script_worker.start()
+
+    def _on_scripts_updated(self):
+        self.update_scripts_btn.setEnabled(True)
+        self.progress.setFormat("Scripts up to date")
 
     def download_run_exe(self):
         self.download_run_exe_btn.setEnabled(False)
@@ -1115,14 +1221,17 @@ def check_admin_privileges():
             print("Requesting Administrator privileges for kernel mode support...")
             
             # Re-run the script with elevated privileges
+            params = f'"{os.path.abspath(__file__)}"'
+
             ctypes.windll.shell32.ShellExecuteW(
-                None, 
-                "runas", 
-                sys.executable, 
-                f'"{os.path.abspath(__file__)}"',
-                None, 
-                1  # SW_SHOWNORMAL
+                None,
+                "runas",
+                sys.executable,
+                params,
+                None,
+                1
             )
+
             sys.exit(0)  # Exit current instance
         except Exception as e:
             print(f"Failed to elevate privileges: {e}")
