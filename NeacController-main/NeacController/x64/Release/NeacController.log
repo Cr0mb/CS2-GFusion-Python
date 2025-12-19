@@ -1,6 +1,0 @@
-﻿  controller.cpp
-  main.cpp
-  service.cpp
-controller.obj : error LNK2001: unresolved external symbol FilterSendMessage
-controller.obj : error LNK2001: unresolved external symbol FilterConnectCommunicationPort
-C:\Users\traps\OneDrive\Desktop\Test\CS2\NeacController-main\x64\Release\NeacController.exe : fatal error LNK1120: 2 unresolved externals
