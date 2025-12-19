@@ -27,6 +27,7 @@ V3.6.5
 [+] added visibility color settings
 [+] integrated fov overlay color change for aimbot
 [+] organized colors layout in menu
+[+] added "Update Scripts" to GFusion Launcher, now you can quickly transfer between updates.
 ```
 
 ```
