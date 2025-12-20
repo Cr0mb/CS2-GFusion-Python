@@ -900,6 +900,27 @@ def run_glow():
     except Exception as e:
         logger.exception(f"Glow crashed: {e}", category="Glow")
 
+def run_radar():
+    global radar_app
+    logger.info("Starting radar overlay", category="Radar")
+    try:
+        # local import so GFusion still launches even if radar.py isn't present
+        from radar import RadarApp  # type: ignore
+    except Exception:
+        try:
+            from Features.radar import RadarApp  # type: ignore
+        except Exception as e:
+            logger.error(f"Radar module not found: {e}", category="Radar", exc_info=True)
+            return
+
+    try:
+        radar_app = RadarApp(title="GFusion Radar", cfg_ref=Config)
+        radar_app.start()
+    except Exception as e:
+        logger.exception(f"Radar crashed: {e}", category="Radar")
+
+
+
 def run_triggerbot():
     global triggerbot_instance
     logger.info("Starting triggerbot", category="Triggerbot")
@@ -1100,6 +1121,14 @@ def start_walkbot_thread():
         walkbot_thread = threading.Thread(target=run_walkbot, daemon=True)
         walkbot_thread.start()
 
+def start_radar_thread():
+    global radar_thread
+    if radar_thread is None or not radar_thread.is_alive():
+        Config.radar_stop = False
+        Config.radar_enabled = True
+        radar_thread = threading.Thread(target=run_radar, daemon=True)
+        radar_thread.start()
+
 def stop_aimbot_thread():
     try:
         cfg.stop = True
@@ -1165,6 +1194,24 @@ def stop_walkbot_thread():
         logger.info("Walkbot stop signal sent", category="Threading")
     except Exception as e:
         logger.error(f"Failed to stop walkbot: {e}", category="Threading", exc_info=True)
+
+def stop_radar_thread():
+    global radar_app, radar_thread
+    try:
+        Config.radar_enabled = False
+        Config.radar_stop = True
+
+        if radar_app is not None:
+            radar_app.stop()
+            radar_app = None
+
+        if radar_thread is not None:
+            radar_thread = None
+
+        logger.info("[Radar] Stop complete and cleaned up", category="Threading")
+    except Exception as e:
+        logger.error(f"[Radar] Stop error: {e}", category="Radar", exc_info=True)
+
 
 def vk_to_name(vk_code):
     return VK_NAME.get(vk_code, "UNKNOWN")
@@ -2675,6 +2722,7 @@ class ConsoleTab(QWidget):
             elif feat == "glow":        start_glow_thread()
             elif feat == "bhop":        start_bhop_thread()
             elif feat == "fov":         start_fov_thread()
+            elif feat == "radar":       start_radar_thread()
             elif feat == "walkbot":     start_walkbot_thread()
             else: return self._log(f"[ERR] Unknown feature '{feat}'")
             self._log(f"[OK] started {feat}")
@@ -2691,6 +2739,7 @@ class ConsoleTab(QWidget):
             elif feat == "glow":        stop_glow_thread()
             elif feat == "bhop":        stop_bhop_thread()
             elif feat == "fov":         stop_fov_thread()
+            elif feat == "radar":       stop_radar_thread()
             elif feat == "walkbot":     stop_walkbot_thread()
             else: return self._log(f"[ERR] Unknown feature '{feat}'")
             self._log(f"[OK] stopped {feat}")
@@ -3983,8 +4032,81 @@ class MiscTab(QWidget):
 
         glow_layout.addStretch()
 
+        # --------------------------
+        # Radar Overlay
+        # --------------------------
+        radar_group = self.create_group_box("Radar Overlay")
+        radar_layout = QVBoxLayout(radar_group)
+        radar_layout.setSpacing(4)
+
+        self.radar_checkbox = self.add_checkbox(
+            radar_layout, "Enable Radar", "radar_enabled",
+            default=False, thread_start=start_radar_thread, thread_stop=stop_radar_thread
+        )
+        self.add_checkbox(radar_layout, "Always on Top", "radar_always_on_top", default=True)
+        self.add_checkbox(radar_layout, "Show Team", "radar_show_team", default=True)
+        self.add_checkbox(radar_layout, "Show My Direction", "radar_show_me_dir", default=True)
+        self.add_checkbox(radar_layout, "Show Enemy Direction", "radar_show_enemy_dir", default=True)
+        self.add_checkbox(radar_layout, "Show Team Direction", "radar_show_team_dir", default=False)
+        self.add_checkbox(radar_layout, "Fixed Range", "radar_fixed_range", default=False)
+
+        # Size (square)
+        self.radar_size_label = QLabel(f"Size: {int(getattr(Config, 'radar_width', 280))} px")
+        self.radar_size_label.setStyleSheet("color: #f5f5f7;")
+        radar_layout.addWidget(self.radar_size_label)
+
+        self.radar_size_slider = NoScrollSlider(Qt.Horizontal)
+        self.radar_size_slider.setRange(180, 650)
+        self.radar_size_slider.setValue(int(getattr(Config, "radar_width", 280)))
+        self.radar_size_slider.valueChanged.connect(self.update_radar_size)
+        radar_layout.addWidget(self.radar_size_slider)
+
+        # Opacity
+        self.radar_opacity_label = QLabel(f"Opacity: {int(getattr(Config, 'radar_alpha', 235))}")
+        self.radar_opacity_label.setStyleSheet("color: #f5f5f7;")
+        radar_layout.addWidget(self.radar_opacity_label)
+
+        self.radar_opacity_slider = NoScrollSlider(Qt.Horizontal)
+        self.radar_opacity_slider.setRange(60, 255)
+        self.radar_opacity_slider.setValue(int(getattr(Config, "radar_alpha", 235)))
+        self.radar_opacity_slider.valueChanged.connect(self.update_radar_opacity)
+        radar_layout.addWidget(self.radar_opacity_slider)
+
+        # FPS
+        self.radar_fps_label = QLabel(f"Overlay FPS: {int(float(getattr(Config, 'radar_fps', 60.0)))}")
+        self.radar_fps_label.setStyleSheet("color: #f5f5f7;")
+        radar_layout.addWidget(self.radar_fps_label)
+
+        self.radar_fps_slider = NoScrollSlider(Qt.Horizontal)
+        self.radar_fps_slider.setRange(20, 144)
+        self.radar_fps_slider.setValue(int(float(getattr(Config, "radar_fps", 60.0))))
+        self.radar_fps_slider.valueChanged.connect(self.update_radar_fps)
+        radar_layout.addWidget(self.radar_fps_slider)
+
+        self.radar_reader_fps_label = QLabel(f"Reader FPS: {int(float(getattr(Config, 'radar_reader_fps', 60.0)))}")
+        self.radar_reader_fps_label.setStyleSheet("color: #f5f5f7;")
+        radar_layout.addWidget(self.radar_reader_fps_label)
+
+        self.radar_reader_fps_slider = NoScrollSlider(Qt.Horizontal)
+        self.radar_reader_fps_slider.setRange(5, 144)
+        self.radar_reader_fps_slider.setValue(int(float(getattr(Config, "radar_reader_fps", 60.0))))
+        self.radar_reader_fps_slider.valueChanged.connect(self.update_radar_reader_fps)
+        radar_layout.addWidget(self.radar_reader_fps_slider)
+
+        # Range (only matters when fixed range)
+        self.radar_range_label = QLabel(f"Range: {int(float(getattr(Config, 'radar_range_units', 3000.0)))}")
+        self.radar_range_label.setStyleSheet("color: #f5f5f7;")
+        radar_layout.addWidget(self.radar_range_label)
+
+        self.radar_range_slider = NoScrollSlider(Qt.Horizontal)
+        self.radar_range_slider.setRange(500, 8000)
+        self.radar_range_slider.setValue(int(float(getattr(Config, "radar_range_units", 3000.0))))
+        self.radar_range_slider.valueChanged.connect(self.update_radar_range)
+        radar_layout.addWidget(self.radar_range_slider)
+
         row1.addWidget(fov_group, 1)
         row1.addWidget(glow_group, 1)
+        row1.addWidget(radar_group, 1)
         main_layout.addLayout(row1)
 
 
@@ -4240,6 +4362,101 @@ class MiscTab(QWidget):
         cfg.game_fov = value
         self.fov_label.setText(f"Game FOV: {value}")
     
+
+    # -----------------------------
+    # Radar settings (live)
+    # -----------------------------
+    def update_radar_size(self, value: int):
+        """Update radar overlay size (square) in config."""
+        try:
+            value = int(value)
+        except Exception:
+            return
+        value = max(180, min(650, value))
+        try:
+            setattr(Config, "radar_width", value)
+            setattr(Config, "radar_height", value)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "radar_size_label"):
+                self.radar_size_label.setText(f"Size: {value} px")
+        except Exception:
+            pass
+
+    def update_radar_opacity(self, value: int):
+        """Update radar alpha/opacity (60-255)."""
+        try:
+            value = int(value)
+        except Exception:
+            return
+        value = max(60, min(255, value))
+        try:
+            setattr(Config, "radar_alpha", value)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "radar_opacity_label"):
+                self.radar_opacity_label.setText(f"Opacity: {value}")
+        except Exception:
+            pass
+
+    def update_radar_fps(self, value: int):
+        """Update radar overlay render FPS (20-144)."""
+        try:
+            value = int(value)
+        except Exception:
+            return
+        value = max(20, min(144, value))
+        try:
+            setattr(Config, "radar_fps", float(value))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "radar_fps_label"):
+                self.radar_fps_label.setText(f"Overlay FPS: {value}")
+        except Exception:
+            pass
+
+    def update_radar_reader_fps(self, value: int):
+        """Update radar reader (memory polling) FPS (5-144)."""
+        try:
+            value = int(value)
+        except Exception:
+            return
+        value = max(5, min(144, value))
+        try:
+            setattr(Config, "radar_reader_fps", float(value))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "radar_reader_fps_label"):
+                self.radar_reader_fps_label.setText(f"Reader FPS: {value}")
+        except Exception:
+            pass
+
+    def update_radar_range(self, value: int):
+        """Update radar fixed range units (500-8000)."""
+        try:
+            value = int(value)
+        except Exception:
+            return
+        value = max(500, min(8000, value))
+        try:
+            setattr(Config, "radar_range_units", float(value))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "radar_range_label"):
+                self.radar_range_label.setText(f"Range: {value}")
+        except Exception:
+            pass
+
     def update_team_list_font(self, value):
         Config.team_list_font_size = value
         self.team_list_font_label.setText(f"Size: {value}")
@@ -4284,6 +4501,47 @@ class MiscTab(QWidget):
                 size = getattr(CFG, 'team_list_font_size', 11)
                 self.team_list_font_slider.setValue(size)
                 self.team_list_font_label.setText(f"Size: {size}")
+
+            # Refresh radar sliders/labels
+            try:
+                if hasattr(self, "radar_size_slider"):
+                    v = int(getattr(CFG, "radar_width", 280))
+                    self.radar_size_slider.blockSignals(True)
+                    self.radar_size_slider.setValue(v)
+                    self.radar_size_slider.blockSignals(False)
+                    if hasattr(self, "radar_size_label"):
+                        self.radar_size_label.setText(f"Size: {v} px")
+                if hasattr(self, "radar_opacity_slider"):
+                    a = int(getattr(CFG, "radar_alpha", 235))
+                    self.radar_opacity_slider.blockSignals(True)
+                    self.radar_opacity_slider.setValue(a)
+                    self.radar_opacity_slider.blockSignals(False)
+                    if hasattr(self, "radar_opacity_label"):
+                        self.radar_opacity_label.setText(f"Opacity: {a}")
+                if hasattr(self, "radar_fps_slider"):
+                    fps = int(float(getattr(CFG, "radar_fps", 60.0)))
+                    self.radar_fps_slider.blockSignals(True)
+                    self.radar_fps_slider.setValue(fps)
+                    self.radar_fps_slider.blockSignals(False)
+                    if hasattr(self, "radar_fps_label"):
+                        self.radar_fps_label.setText(f"Overlay FPS: {fps}")
+                if hasattr(self, "radar_reader_fps_slider"):
+                    rfps = int(float(getattr(CFG, "radar_reader_fps", 60.0)))
+                    self.radar_reader_fps_slider.blockSignals(True)
+                    self.radar_reader_fps_slider.setValue(rfps)
+                    self.radar_reader_fps_slider.blockSignals(False)
+                    if hasattr(self, "radar_reader_fps_label"):
+                        self.radar_reader_fps_label.setText(f"Reader FPS: {rfps}")
+                if hasattr(self, "radar_range_slider"):
+                    r = int(float(getattr(CFG, "radar_range_units", 3000.0)))
+                    self.radar_range_slider.blockSignals(True)
+                    self.radar_range_slider.setValue(r)
+                    self.radar_range_slider.blockSignals(False)
+                    if hasattr(self, "radar_range_label"):
+                        self.radar_range_label.setText(f"Range: {r}")
+            except Exception:
+                pass
+
             
             # Refresh all color buttons
             for key, btn in self.ui_elements.get("color_buttons", {}).items():
@@ -5049,6 +5307,34 @@ class TriggerBotTab(QWidget):
                             
 cfg = Config()
 
+# ------------------------------------------------------------
+# Radar defaults (safe; only sets missing attributes)
+# ------------------------------------------------------------
+def _ensure_attr(obj, key, default):
+    try:
+        if not hasattr(obj, key):
+            setattr(obj, key, default)
+    except Exception:
+        pass
+
+for _obj in (Config, cfg):
+    _ensure_attr(_obj, "radar_enabled", False)
+    _ensure_attr(_obj, "radar_stop", False)
+    _ensure_attr(_obj, "radar_x", 40)
+    _ensure_attr(_obj, "radar_y", 120)
+    _ensure_attr(_obj, "radar_width", 280)
+    _ensure_attr(_obj, "radar_height", 280)
+    _ensure_attr(_obj, "radar_alpha", 235)
+    _ensure_attr(_obj, "radar_fps", 60.0)
+    _ensure_attr(_obj, "radar_reader_fps", 60.0)
+    _ensure_attr(_obj, "radar_always_on_top", True)
+    _ensure_attr(_obj, "radar_show_team", True)
+    _ensure_attr(_obj, "radar_show_me_dir", True)
+    _ensure_attr(_obj, "radar_show_enemy_dir", True)
+    _ensure_attr(_obj, "radar_show_team_dir", False)
+    _ensure_attr(_obj, "radar_fixed_range", False)
+    _ensure_attr(_obj, "radar_range_units", 3000.0)
+
 TAB_REGISTRY = []
 
 aimbot_thread = None
@@ -5072,6 +5358,9 @@ fov_thread = None
 fov_changer = None
 
 walkbot_thread = None
+
+radar_thread = None
+radar_app = None
 
 esp_thread = None
 
