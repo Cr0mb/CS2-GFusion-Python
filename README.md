@@ -21,18 +21,12 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
   <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
 </div>
 
+
 ```
-V3.6.5
 12/19/2025
+V3.6.5
 [+] Added external radar (not yet compatible with obs protection or panic key)
-[+] added visibility color settings
-[+] integrated fov overlay color change for aimbot
-[+] organized colors layout in menu
-[+] added "Update Scripts" to GFusion Launcher, now you can quickly transfer between updates.
-```
-```
-12/19/2025
-V3.6.5
+
 [+] added visibility color settings
 [+] integrated fov overlay color change for aimbot
 [+] organized colors layout in menu
