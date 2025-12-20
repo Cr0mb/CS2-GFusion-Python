@@ -24,6 +24,7 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 ```
 V3.6.5
 12/19/2025
+[+] Added external radar (not yet compatible with obs protection or panic key)
 [+] added visibility color settings
 [+] integrated fov overlay color change for aimbot
 [+] organized colors layout in menu
