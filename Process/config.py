@@ -76,6 +76,25 @@ class Config:
     circle_stop = False
     walkbot_enabled = False
 
+    # --- Radar Overlay (GFusion Radar) ---
+    # Add these to your Process/config.py Config class (defaults)
+    radar_enabled = False
+    radar_stop = False
+    radar_x = 40
+    radar_y = 120
+    radar_width = 280
+    radar_height = 280
+    radar_alpha = 235              # 60..255
+    radar_fps = 60.0               # overlay render FPS
+    radar_reader_fps = 60.0        # memory reader FPS
+    radar_always_on_top = True
+    radar_show_team = True
+    radar_show_me_dir = True
+    radar_show_enemy_dir = True
+    radar_show_team_dir = False
+    radar_fixed_range = False
+    radar_range_units = 3000.0     # only used when radar_fixed_range=True
+    
     # ===========================
     #  ESP Toggles
     # ===========================
