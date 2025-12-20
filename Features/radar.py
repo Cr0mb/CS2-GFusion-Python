@@ -1,22 +1,3 @@
-"""
-radar.py (ctypes-only)
-
-A small external CS2 radar window that mirrors the *entity list traversal* used by the ESP
-(controller -> m_hPlayerPawn -> pawn pointer) but does **not** depend on PyQt / pymem / pywin32.
-
-Design goals:
-- ctypes-only Win32 window + GDI drawing
-- Small draggable "HUD" style (similar vibe to spectator list / watermark boxes)
-- Background memory polling thread with safe reads + auto reconnect
-- Import-safe: nothing runs on import unless __main__
-
-Notes:
-- This uses your existing Offsets class. It attempts:
-    1) from Process.offsets import Offsets
-    2) from offsets import Offsets
-- This is a radar (top-down), not a world-to-screen overlay.
-"""
-
 from __future__ import annotations
 
 import ctypes
@@ -138,6 +119,10 @@ user32.DrawTextW.restype = ctypes.c_int
 
 
 
+
+# OBS-proofing (hide overlay from capture when enabled)
+user32.SetWindowDisplayAffinity.argtypes = [wt.HWND, wt.DWORD]
+user32.SetWindowDisplayAffinity.restype = wt.BOOL
 # --- gdi32 ---
 gdi32.CreateCompatibleDC.argtypes = [wt.HDC]
 gdi32.CreateCompatibleDC.restype = wt.HDC
@@ -215,6 +200,11 @@ WS_EX_LAYERED = 0x00080000
 
 LWA_ALPHA = 0x00000002
 
+
+# Window display affinity (OBS / screen-capture protection)
+WDA_NONE = 0x00000000
+WDA_MONITOR = 0x00000001
+WDA_EXCLUDEFROMCAPTURE = 0x00000011
 HWND_TOPMOST = wt.HWND(-1)
 HWND_NOTOPMOST = wt.HWND(-2)
 
@@ -631,6 +621,11 @@ class RadarOverlay:
         self.fps = max(20.0, float(fps))
         self.style = RadarStyle()
         self.cfg_ref = cfg_ref if cfg_ref is not None else Config
+        # OBS protection toggle tracking (mirrors esp.py behavior)
+        self._last_obs_check_time = 0.0
+        self._obs_check_interval = 0.5  # seconds
+        self._last_obs_value = None
+
         # Apply initial config size/fps if present
         try:
             self.style.width = int(getattr(self.cfg_ref, 'radar_width', self.style.width))
@@ -694,6 +689,13 @@ class RadarOverlay:
         if not self.hwnd:
             raise ctypes.WinError(ctypes.get_last_error())
 
+
+        # Apply OBS protection immediately (matches esp.py behavior)
+        try:
+            self._last_obs_value = bool(self._cfg_get('obs_protection_enabled', False))
+        except Exception:
+            self._last_obs_value = False
+        self._update_obs_protection(self._last_obs_value)
         # overall window alpha (simple + stable)
         user32.SetLayeredWindowAttributes(self.hwnd, 0, wt.BYTE(max(30, min(alpha, 255))), LWA_ALPHA)
 
@@ -993,6 +995,42 @@ class RadarOverlay:
         except Exception:
             pass
 
+
+    # ------------- OBS / capture protection -------------
+    def _update_obs_protection(self, enabled: bool | None = None) -> None:
+        """Apply SetWindowDisplayAffinity to hide/show this overlay in capture sources.
+
+        Uses WDA_EXCLUDEFROMCAPTURE when enabled (Windows 10 2004+). Falls back to WDA_MONITOR
+        when EXCLUDEFROMCAPTURE is not supported.
+        """
+        if not self.hwnd:
+            return
+        if enabled is None:
+            enabled = bool(self._cfg_get('obs_protection_enabled', False))
+        try:
+            if enabled:
+                # Prefer EXCLUDEFROMCAPTURE; fallback if OS rejects it.
+                ok = bool(user32.SetWindowDisplayAffinity(self.hwnd, WDA_EXCLUDEFROMCAPTURE))
+                if not ok:
+                    user32.SetWindowDisplayAffinity(self.hwnd, WDA_MONITOR)
+            else:
+                user32.SetWindowDisplayAffinity(self.hwnd, WDA_NONE)
+        except Exception:
+            # Don't crash the overlay if the API isn't available / supported.
+            return
+
+    def _check_and_update_obs_toggle(self) -> None:
+        now = time.perf_counter()
+        if (now - float(self._last_obs_check_time)) < float(self._obs_check_interval):
+            return
+        self._last_obs_check_time = now
+        try:
+            val = bool(self._cfg_get('obs_protection_enabled', False))
+        except Exception:
+            val = False
+        if self._last_obs_value is None or val != self._last_obs_value:
+            self._last_obs_value = val
+            self._update_obs_protection(val)
     def _sync_window_rect_to_cfg(self) -> None:
         if not self.hwnd:
             return
@@ -1097,6 +1135,27 @@ class RadarOverlay:
             fmt = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
         user32.DrawTextW(self._hdc_mem, s, -1, ctypes.byref(rect), fmt)
 
+    def _draw_center_marker(self, cx: int, cy: int) -> None:
+        """Draw a clear center reticle on top of everything (crosshair-style)."""
+        # Larger + thicker than the 1px version so it stays visible through alpha + blips.
+        size = int(self._cfg_get("radar_center_marker_size", 10))
+        size = max(4, min(size, 40))
+        thickness = int(self._cfg_get("radar_center_marker_thickness", 2))
+        thickness = max(1, min(thickness, 6))
+
+        # Outline trick for contrast: shadow line underneath, then bright line on top.
+        shadow = getattr(self.style, "border_shadow", _rgb(64, 64, 64))
+        color = getattr(self.style, "border", _rgb(255, 255, 255))
+
+        # Shadow (slightly thicker)
+        self._line(cx - size, cy, cx + size, cy, shadow, thickness + 1)
+        self._line(cx, cy - size, cx, cy + size, shadow, thickness + 1)
+
+        # Main
+        self._line(cx - size, cy, cx + size, cy, color, thickness)
+        self._line(cx, cy - size, cx, cy + size, color, thickness)
+
+
     # ------------- radar math -------------
     def _world_to_radar(self, ex: float, ey: float, lx: float, ly: float, local_yaw_deg: float, scale: float) -> Tuple[float, float]:
         # Mirrors the math in your PyQt radar (dx,dy swap + rotate by yaw+180)
@@ -1111,6 +1170,9 @@ class RadarOverlay:
     def _render(self) -> None:
         st = self.style
 
+
+        # Keep OBS protection in sync with config (throttled)
+        self._check_and_update_obs_toggle()
         # snapshot copy (min lock time)
         with self.lock:
             snap = (
@@ -1219,6 +1281,9 @@ class RadarOverlay:
                 py2 = max(top + 4, min(bottom - 4, py2))
 
                 self._line(px, py, px2, py2, st.enemy_dir, 1)
+
+        # center marker (draw last so it stays on top)
+        self._draw_center_marker(cx, cy)
 
         # footer info
         age = max(0.0, time.time() - float(last_ok or time.time()))
