@@ -29,7 +29,16 @@ V3.6.5
 [+] organized colors layout in menu
 [+] added "Update Scripts" to GFusion Launcher, now you can quickly transfer between updates.
 ```
-
+```
+12/19/2025
+V3.6.5
+[+] added visibility color settings
+[+] integrated fov overlay color change for aimbot
+[+] organized colors layout in menu
+[+] added "Update Scripts" to GFusion Launcher, now you can quickly transfer between updates.
+[+] Cleaned up GFusion repo src code.
+[+] vischeck module was changed for latest release of Python (3.14), either use from old src, rebuild the module, or update python.
+```
 ```
 12/18/2025
 V3.6.4
