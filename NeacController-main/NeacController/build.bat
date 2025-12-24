@@ -1,5 +1,5 @@
 @echo off
-echo Building NeacController Python Module
+echo Setting up Driver..
 echo =====================================
 
 REM Check if running as administrator
