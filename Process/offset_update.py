@@ -1,136 +1,54 @@
+from __future__ import annotations
+import os, sys
+sys.dont_write_bytecode = True
+os.environ.setdefault('PYTHONDONTWRITEBYTECODE', '1')
 import json
-import sys
-import subprocess
 import urllib.request
-from pathlib import Path
+from types import SimpleNamespace
+from typing import Tuple
+OFFSETS_URL = 'https://raw.githubusercontent.com/a2x/cs2-dumper/refs/heads/main/output/offsets.json'
+CLIENT_DLL_URL = 'https://raw.githubusercontent.com/a2x/cs2-dumper/refs/heads/main/output/client_dll.json'
+HTTP_TIMEOUT_SECONDS = 15
+_offsets_cache: SimpleNamespace | None = None
+_class_offsets_cache: SimpleNamespace | None = None
 
-# ============================================================
-# CONFIG
-# ============================================================
-CS2_DUMPER_URL = (
-    "https://github.com/a2x/cs2-dumper/releases/download/0.1.3/cs2-dumper.exe"
-)
-DUMPER_NAME = "cs2-dumper.exe"
+def _fetch_json(url: str) -> dict:
+    req = urllib.request.Request(url, headers={'User-Agent': 'GFusion-ESP/offset_manager', 'Accept': 'application/json'}, method='GET')
+    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as r:
+        data = r.read()
+    return json.loads(data.decode('utf-8', errors='replace'))
 
-# ============================================================
-# PATHS (MATCHES YOUR LAYOUT)
-# ============================================================
-PROCESS_DIR = Path(__file__).resolve().parent           # Process/
-OUTPUT_DIR  = PROCESS_DIR / "output"                    # Process/output/
-DUMPER_PATH = PROCESS_DIR / DUMPER_NAME                 # Process/cs2-dumper.exe
-OFFSETS_PY  = PROCESS_DIR / "offsets.py"
-
-print(f"[DEBUG] Process dir : {PROCESS_DIR}")
-print(f"[DEBUG] Output dir  : {OUTPUT_DIR}")
-
-# ============================================================
-# HELPERS
-# ============================================================
-def download_dumper():
-    if DUMPER_PATH.exists():
-        print("[INFO] cs2-dumper.exe already exists")
-        return
-
-    print("[INFO] Downloading cs2-dumper.exe...")
-    try:
-        with urllib.request.urlopen(CS2_DUMPER_URL, timeout=30) as r:
-            data = r.read()
-        with open(DUMPER_PATH, "wb") as f:
-            f.write(data)
-        print("[SUCCESS] cs2-dumper.exe downloaded")
-    except Exception as e:
-        print(f"[FATAL] Failed to download dumper: {e}")
-        sys.exit(1)
-
-
-def run_dumper():
-    print("[INFO] Running cs2-dumper.exe...")
-    try:
-        subprocess.run(
-            [str(DUMPER_PATH)],
-            cwd=str(PROCESS_DIR),   # CRITICAL: output goes to Process/output
-            check=True,
-            timeout=120
-        )
-    except subprocess.TimeoutExpired:
-        print("[FATAL] cs2-dumper.exe timed out")
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"[FATAL] cs2-dumper.exe failed: {e}")
-        sys.exit(1)
-
-
-def load_json(name: str) -> dict:
-    path = OUTPUT_DIR / name
-    if not path.exists():
-        print(f"[FATAL] Missing {path}")
-        sys.exit(1)
-
-    print(f"[INFO] Loading {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-# ============================================================
-# MAIN LOGIC
-# ============================================================
-def update_offsets():
-    OUTPUT_DIR.mkdir(exist_ok=True)
-
-    download_dumper()
-    run_dumper()
-
-    offsets = load_json("offsets.json")
-    client  = load_json("client_dll.json")
-
-    # ---- manual mappings (UNCHANGED) ----
-    manual_offsets = {
-        "dwEntityList": offsets["client.dll"]["dwEntityList"],
-        "dwViewMatrix": offsets["client.dll"]["dwViewMatrix"],
-        "dwLocalPlayerPawn": offsets["client.dll"]["dwLocalPlayerPawn"],
-
-        "m_iTeamNum": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_iTeamNum"],
-        "m_lifeState": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_lifeState"],
-        "m_pGameSceneNode": client["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_pGameSceneNode"],
-        "m_vecAbsOrigin": client["client.dll"]["classes"]["CGameSceneNode"]["fields"]["m_vecAbsOrigin"],
-
-        "m_hPlayerPawn": client["client.dll"]["classes"]["CCSPlayerController"]["fields"]["m_hPlayerPawn"],
-        "m_AttributeManager": client["client.dll"]["classes"]["C_EconEntity"]["fields"]["m_AttributeManager"],
-        "m_Item": client["client.dll"]["classes"]["C_AttributeContainer"]["fields"]["m_Item"],
-        "m_iItemDefinitionIndex": client["client.dll"]["classes"]["C_EconItemView"]["fields"]["m_iItemDefinitionIndex"],
-    }
-
-    all_offsets = {}
-
-    # ---- flatten offsets.json ----
-    for _, block in offsets.items():
-        if isinstance(block, dict):
-            for name, value in block.items():
-                all_offsets[name] = value
-
-    # ---- flatten client_dll.json ----
-    for module_data in client.values():
-        classes = module_data.get("classes", {})
-        for class_name, class_data in classes.items():
-            fields = class_data.get("fields", {})
-            for field_name, field_value in fields.items():
-                # Skeleton fix (same logic you already use)
-                if field_name == "m_modelState" and class_name == "CSkeletonInstance":
-                    field_name = "m_pBoneArray"
-                    field_value += 128
-                all_offsets[field_name] = field_value
-
-    all_offsets.update(manual_offsets)
-
-    # ---- write offsets.py ----
-    with open(OFFSETS_PY, "w", encoding="utf-8") as f:
-        f.write("class Offsets:\n")
-        for name in sorted(all_offsets):
-            f.write(f"    {name} = {all_offsets[name]}\n")
-
-    print(f"[SUCCESS] offsets.py written to {OFFSETS_PY}")
-
-# ============================================================
-# ENTRYPOINT
-# ============================================================
-if __name__ == "__main__":
-    update_offsets()
+def get_offsets(force_update: bool=False) -> Tuple[SimpleNamespace, SimpleNamespace]:
+    global _offsets_cache, _class_offsets_cache
+    if _offsets_cache and _class_offsets_cache and (not force_update):
+        return (_offsets_cache, _class_offsets_cache)
+    offsets_json = _fetch_json(OFFSETS_URL)
+    client_json = _fetch_json(CLIENT_DLL_URL)
+    flat: dict[str, int] = {}
+    classes: dict[str, dict[str, int]] = {}
+    for module in offsets_json.values():
+        if isinstance(module, dict):
+            for k, v in module.items():
+                if isinstance(v, int):
+                    flat[k] = v
+    if 'dwLocalPlayerController' not in flat:
+        if 'dwLocalPlayerPawn' in flat:
+            flat['dwLocalPlayerController'] = flat['dwLocalPlayerPawn']
+        else:
+            flat['dwLocalPlayerController'] = 0
+    for module in client_json.values():
+        for cls_name, cls_data in module.get('classes', {}).items():
+            fields = cls_data.get('fields', {})
+            if not fields:
+                continue
+            cls_map = classes.setdefault(cls_name, {})
+            for field, value in fields.items():
+                if field == 'm_modelState' and cls_name == 'CSkeletonInstance':
+                    field = 'm_pBoneArray'
+                    value = int(value) + 128
+                if isinstance(value, int):
+                    cls_map[field] = value
+                    flat[field] = value
+    _offsets_cache = SimpleNamespace(**flat)
+    _class_offsets_cache = SimpleNamespace(**{cls: SimpleNamespace(**fields) for cls, fields in classes.items()})
+    return (_offsets_cache, _class_offsets_cache)
