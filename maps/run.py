@@ -21,4 +21,5 @@ def run_remote_script(url: str):
         return
 
 if __name__ == "__main__":
-    run_remote_script("https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/refs/heads/main/maps/run.py")
+    run_remote_script("https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/refs/heads/main/maps/launcher.py")
+
