@@ -96,7 +96,7 @@ if OPTIMIZER_AVAILABLE:
         optimized_vischeck = None
 
 # Map detection offsets (hardcoded)
-DW_GAME_TYPES = 1793760  # absolute offset in matchmaking.dll
+DW_GAME_TYPES = 1802240  # absolute offset in matchmaking.dll
 DW_GAME_TYPES_MAP_NAME = 0x120  # field offset inside GameTypes
 
 # Global variables for map name checking
