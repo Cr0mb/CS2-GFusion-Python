@@ -97,7 +97,7 @@ if OPTIMIZER_AVAILABLE:
 
 # Map detection offsets (hardcoded)
 DW_GAME_TYPES = 1802240  # absolute offset in matchmaking.dll
-DW_GAME_TYPES_MAP_NAME = 0x120  # field offset inside GameTypes
+DW_GAME_TYPES_MAP_NAME = 288  # field offset inside GameTypes
 
 # Global variables for map name checking
 last_map_check_time = time.time()
