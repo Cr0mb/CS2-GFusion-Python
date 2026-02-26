@@ -20,8 +20,8 @@ class Offsets:
     duration = 84
     dwBuildNumber = 6345988
     dwCSGOInput = 36790112
-    dwEntityList = 38449608
-    dwGameEntitySystem = 38449608
+    dwEntityList = 38449592
+    dwGameEntitySystem = 38449592
     dwGameEntitySystem_highestEntityIndex = 8352
     dwGameRules = 36740768
     dwGameTypes = 1802240
@@ -30,7 +30,7 @@ class Offsets:
     dwInputSystem = 285392
     dwLocalPlayerController = 36635016
     dwLocalPlayerPawn = 33970928
-    dwNetworkGameClient = 9471200
+    dwNetworkGameClient = 9471152
     dwNetworkGameClient_clientTickCount = 888
     dwNetworkGameClient_deltaTick = 588
     dwNetworkGameClient_isBackgroundMap = 2888735
@@ -48,8 +48,8 @@ class Offsets:
     dwViewMatrix = 36749024
     dwViewRender = 36750072
     dwWeaponC4 = 36262000
-    dwWindowHeight = 9488532
-    dwWindowWidth = 9488528
+    dwWindowHeight = 9488492
+    dwWindowWidth = 9488488
     enable = 100
     end = 40
     endLerpTo = 72
