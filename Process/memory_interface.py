@@ -1,6 +1,14 @@
 """
-Unified Memory Interface for CS2 Cheat System
-Supports both usermode (ReadProcessMemory) and kernel mode (NeacController) memory access
+Unified Memory Interface for CS2 Cheat System.
+
+Supports two memory-access modes:
+  * Usermode  - standard ReadProcessMemory / WriteProcessMemory
+  * Kernel    - via a pluggable IKernelDriver backend (Process.drivers).
+
+The default kernel backend is Binalyze IREC (KDU provider #41) which is
+non-blacklisted by Microsoft.
+
+Backend selection is driven by ``Config.kernel_driver`` (string).
 """
 
 import ctypes
@@ -16,8 +24,17 @@ try:
 except ImportError:
     from Process.config import Config
 
+# Pluggable kernel-driver backends
+try:
+    from .drivers import load_driver as _load_kernel_driver
+except Exception:
+    try:
+        from Process.drivers import load_driver as _load_kernel_driver  # type: ignore
+    except Exception:
+        _load_kernel_driver = None  # type: ignore
+
 # Global variables
-_kernel_driver = None
+_kernel_driver = None  # IKernelDriver instance (process-wide singleton)
 _kernel_driver_lock = threading.Lock()
 _driver_initialization_attempted = False
 
@@ -159,148 +176,139 @@ class UsermodeMemoryReader(IMemoryReader):
         return self.write_bytes(address, data)
 
 class KernelMemoryReader(IMemoryReader):
-    """Kernel mode memory reader using NeacController driver"""
-    
+    """Kernel mode reader driven by a pluggable IKernelDriver backend.
+
+    Two modes:
+      1. Handle-based backends (e.g. Binalyze IREC) provide an elevated
+         process HANDLE; we then use ReadProcessMemory on it. This is the
+         preferred path because it keeps the hot R/W loop in usermode.
+      2. R/W-providing backends supply ``read_bytes`` / ``write_bytes`` 
+         directly; we forward to them.
+    """
+
     def __init__(self, process_id: int):
         self.process_id = process_id
         self.driver = None
+        self._elevated_handle: int = 0
+        self._k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self._initialize_driver()
-    
+
     def _initialize_driver(self):
-        """Initialize the kernel driver"""
         global _kernel_driver, _kernel_driver_lock, _driver_initialization_attempted
-        
+
         with _kernel_driver_lock:
             if _kernel_driver is not None:
                 self.driver = _kernel_driver
-                return
-            
-            if _driver_initialization_attempted:
-                return
-            
-            _driver_initialization_attempted = True
-            
+            elif not _driver_initialization_attempted:
+                _driver_initialization_attempted = True
+                self.driver = self._load_backend()
+                _kernel_driver = self.driver
+
+        if not self.driver:
+            return
+
+        # Prefer an elevated handle if the backend supports it.
+        try:
+            self._elevated_handle = int(self.driver.open_process(self.process_id) or 0)
+        except Exception as e:
+            print(f"[Kernel] open_process failed: {e}")
+            self._elevated_handle = 0
+
+    @staticmethod
+    def _load_backend():
+        """Load the configured kernel backend, falling back through known names."""
+        if _load_kernel_driver is None:
+            print("[Kernel] drivers package unavailable")
+            return None
+
+        name = (getattr(Config, "kernel_driver", "binalyze_irec") or "").strip().lower()
+        tried = []
+        for candidate in [name, "binalyze_irec"]:
+            if candidate in tried or not candidate:
+                continue
+            tried.append(candidate)
+            drv = _load_kernel_driver(candidate)
+            if drv is None:
+                continue
             try:
-                # Import the NeacController module
-                import sys
-                import os
-                
-                # Add the NeacController directory to path
-                controller_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                                             'NeacController-main', 'NeacController')
-                if controller_path not in sys.path:
-                    sys.path.insert(0, controller_path)
-                
-                import neac_controller
-                
-                # Create driver manager instance
-                driver_manager = neac_controller.NeacDriverManager()
-                
-                # Try to start and connect to driver
-                if driver_manager.start_driver():
-                    print("[Kernel] NeacSafe64 driver started successfully")
-                    
-                    if driver_manager.connect():
-                        print("[Kernel] Connected to NeacController driver")
-                        _kernel_driver = driver_manager
-                        self.driver = _kernel_driver
-                    else:
-                        print("[Kernel] Failed to connect to driver")
-                        driver_manager.stop_driver()
-                else:
-                    print("[Kernel] Failed to start NeacSafe64 driver")
-                    
-            except ImportError as e:
-                print(f"[Kernel] NeacController module not found: {e}")
-                print("[Kernel] Make sure to build the Python module first")
+                if drv.start():
+                    print(f"[Kernel] Backend '{candidate}' started: {drv.status()}")
+                    return drv
+                print(f"[Kernel] Backend '{candidate}' refused to start: {drv.status()}")
             except Exception as e:
-                print(f"[Kernel] Failed to initialize kernel driver: {e}")
-    
+                print(f"[Kernel] Backend '{candidate}' raised: {e}")
+        return None
+
     def _ensure_driver(self) -> bool:
-        """Ensure driver is available and connected"""
-        return self.driver is not None and self.driver.is_connected()
-    
+        return self.driver is not None and (
+            self._elevated_handle != 0 or hasattr(self.driver, "read_bytes")
+        )
+
+    # -------- handle-based primitives (preferred path) --------------------
+    def _rpm(self, address: int, size: int) -> bytes:
+        buf = ctypes.create_string_buffer(size)
+        read = ctypes.c_size_t(0)
+        ok = self._k32.ReadProcessMemory(
+            wintypes.HANDLE(self._elevated_handle),
+            ctypes.c_void_p(address), buf, size, ctypes.byref(read),
+        )
+        return buf.raw if ok and read.value == size else b"\x00" * size
+
+    def _wpm(self, address: int, data: bytes) -> bool:
+        buf = ctypes.create_string_buffer(data)
+        written = ctypes.c_size_t(0)
+        ok = self._k32.WriteProcessMemory(
+            wintypes.HANDLE(self._elevated_handle),
+            ctypes.c_void_p(address), buf, len(data), ctypes.byref(written),
+        )
+        return bool(ok) and written.value == len(data)
+
+    # -------- IMemoryReader API -------------------------------------------
     def read_bytes(self, address: int, size: int) -> bytes:
         if not self._ensure_driver():
             return b"\x00" * size
-        
+        if self._elevated_handle:
+            return self._rpm(address, size)
         try:
-            data = self.driver.read_process_memory(self.process_id, address, size)
+            data = self.driver.read_bytes(self.process_id, address, size)
             return data if data else b"\x00" * size
         except Exception:
             return b"\x00" * size
-    
+
     def write_bytes(self, address: int, data: bytes) -> bool:
         if not self._ensure_driver():
             return False
-        
+        if self._elevated_handle:
+            return self._wpm(address, data)
         try:
-            return self.driver.write_process_memory(self.process_id, address, data)
+            return bool(self.driver.write_bytes(self.process_id, address, data))
         except Exception:
             return False
-    
+
     def read_int(self, address: int) -> int:
-        if not self._ensure_driver():
-            return 0
-        
-        try:
-            return self.driver.read_int32(self.process_id, address)
-        except Exception:
-            return 0
-    
+        d = self.read_bytes(address, 4)
+        return struct.unpack("i", d)[0] if d else 0
+
     def read_uint32(self, address: int) -> int:
-        if not self._ensure_driver():
-            return 0
-        
-        try:
-            return self.driver.read_uint32(self.process_id, address)
-        except Exception:
-            return 0
-    
+        d = self.read_bytes(address, 4)
+        return struct.unpack("I", d)[0] if d else 0
+
     def read_uint64(self, address: int) -> int:
-        if not self._ensure_driver():
-            return 0
-        
-        try:
-            return self.driver.read_uint64(self.process_id, address)
-        except Exception:
-            return 0
-    
+        d = self.read_bytes(address, 8)
+        return struct.unpack("Q", d)[0] if d else 0
+
     def read_float(self, address: int) -> float:
-        if not self._ensure_driver():
-            return 0.0
-        
-        try:
-            return self.driver.read_float(self.process_id, address)
-        except Exception:
-            return 0.0
-    
+        d = self.read_bytes(address, 4)
+        return struct.unpack("f", d)[0] if d else 0.0
+
     def write_int(self, address: int, value: int) -> bool:
-        if not self._ensure_driver():
-            return False
-        
-        try:
-            return self.driver.write_int32(self.process_id, address, value)
-        except Exception:
-            return False
-    
+        return self.write_bytes(address, struct.pack("i", value))
+
     def write_uint32(self, address: int, value: int) -> bool:
-        if not self._ensure_driver():
-            return False
-        
-        try:
-            return self.driver.write_uint32(self.process_id, address, value)
-        except Exception:
-            return False
-    
+        return self.write_bytes(address, struct.pack("I", value))
+
     def write_float(self, address: int, value: float) -> bool:
-        if not self._ensure_driver():
-            return False
-        
-        try:
-            return self.driver.write_float(self.process_id, address, value)
-        except Exception:
-            return False
+        return self.write_bytes(address, struct.pack("f", value))
 
 class MemoryInterface:
     """Main memory interface that automatically chooses between kernel and usermode"""
@@ -339,7 +347,8 @@ class MemoryInterface:
                 if self.kernel_reader._ensure_driver():
                     self._current_reader = self.kernel_reader
                     self._kernel_mode_active = True
-                    print("[Memory] 🚀 KERNEL MODE ACTIVE - Using NeacController driver")
+                    drv_name = (getattr(self.config, "kernel_driver", "binalyze_irec") or "binalyze_irec")
+                    print(f"[Memory] 🚀 KERNEL MODE ACTIVE - backend: {drv_name}")
                     
                     # Track active kernel instances for GUI status
                     if not hasattr(Config, '_kernel_active_instances'):
@@ -435,15 +444,46 @@ class MemoryInterface:
     def write_float(self, address: int, value: float) -> bool:
         return self._current_reader.write_float(address, value)
 
+def ensure_kernel_driver_started() -> bool:
+    """Eagerly load + start the configured kernel backend.
+
+    Idempotent. Populates the module-level ``_kernel_driver`` so subsequent
+    ``MemoryInterface`` instances reuse it instead of re-loading. Returns
+    True if a backend is live.
+    """
+    global _kernel_driver, _driver_initialization_attempted
+    with _kernel_driver_lock:
+        if _kernel_driver is not None:
+            return True
+        if _load_kernel_driver is None:
+            return False
+        _driver_initialization_attempted = True
+        name = (getattr(Config, "kernel_driver", "binalyze_irec") or "binalyze_irec").strip().lower()
+        for candidate in (name, "binalyze_irec"):
+            if not candidate:
+                continue
+            drv = _load_kernel_driver(candidate)
+            if drv is None:
+                continue
+            try:
+                if drv.start():
+                    _kernel_driver = drv
+                    print(f"[Kernel] Auto-started backend '{candidate}': {drv.status()}")
+                    return True
+                print(f"[Kernel] Backend '{candidate}' refused to start: {drv.status()}")
+            except Exception as e:
+                print(f"[Kernel] Backend '{candidate}' raised: {e}")
+        return False
+
+
 def cleanup_kernel_driver():
     """Cleanup kernel driver on exit"""
     global _kernel_driver, _kernel_driver_lock
-    
+
     with _kernel_driver_lock:
         if _kernel_driver:
             try:
-                _kernel_driver.disconnect()
-                _kernel_driver.stop_driver()
+                _kernel_driver.stop()
                 print("[Kernel] Driver cleaned up successfully")
             except Exception as e:
                 print(f"[Kernel] Error cleaning up driver: {e}")

@@ -236,6 +236,7 @@ This project is provided **for educational and research purposes only**. Using c
 
 ### v3.6.2 — 2025-12-15
 - Walk bot rewritten on pure `ctypes`, removed `psutil` dependency.
+- Slightly reduced flickering with Glow ESP.
 
 ### v3.6.1 — 2025-12-14
 - Added font changer to Configs tab.
@@ -293,3 +294,95 @@ This project is provided **for educational and research purposes only**. Using c
 - **Fix:** Multiple menu/config crashing issues — stability improved.
 - Optimized memory read structure, reduced code size.
 - Added Draw Dead Entities toggle plus Dead Color CT and Dead Color T.
+
+### v3.4 — 2025-09-23
+- Rebuilt and fixed the launcher generator.
+- Added a clean recoil reset system.
+- Added an overlay window for map / vischeck status.
+- Refined RCS logic and stability.
+
+### v3.3 — 2025-09-22
+- Added visibility checks to ESP and Aimbot.
+- Added auto map extractor and converter.
+- Introduced new VisCheck module.
+- **Fix:** Config handling.
+
+### v3.2 — 2025-09-16
+- **Fix:** Auto Pistol — restored the fire-rate slider.
+
+### v3.1 — 2025-09-14
+- **Fix:** RCS compensation bug with multiple aim keys (was aiming above or below the player instead of on).
+- Improved recoil-control accuracy at longer distances.
+- Raw mouse movements are now visible in Visualize Aim (previously crashed the game).
+- Updated `start.pyw` launcher styling to match the menu.
+- Polished main menu styling.
+- Added rounded box ESP and corner box ESP.
+
+### v3.0 — 2025-09-12
+- Updated Aimbot Learning — now records all mouse movements instead of only at aim time.
+
+### v2.9 — 2025-09-09
+- Updated Velocity Prediction.
+- Updated menu styling.
+- Updated memory reading for BHop.
+
+### v2.8 — 2025-09-09
+- Weapon ESP now reads faster.
+- Changed memory reading for Aimbot again.
+
+### v2.7 — 2025-09-07
+- Added Panic Key to ESP with a customizable key bind.
+- Updated `offset_update.py`.
+- Changed memory reading for Aimbot and ESP for stealth and speed.
+
+### v2.6 — 2025-08-13
+- **Fix:** Menu toggle key not working in the Misc tab.
+
+### v2.5 — 2025-08-08
+- Performance improvements to the ESP overlay.
+- Performance improvements to the Aimbot.
+- Added a player info box (shows info for all players in the match).
+- Added a "show drawing FPS" option for the overlay.
+- **Switched the GDI Windows overlay to DirectX 11** — large performance and visual quality boost.
+
+### v2.4 — 2025-08-06
+- Added Walk Bot.
+- Updated `offset_update.py` to pull from the new cs2-dumper UC thread.
+
+### v2.3 — 2025-08-04
+- Made the menu OBS-proof against screen capture.
+
+### v2.2 — 2025-08-04
+- Added OBS-proof screen-capture protection for the overlay.
+
+### v2.1 — 2025-08-03
+- **Fix:** Glow Team and Glow Enemy not refreshing on config load.
+- **Fix:** Aim Sensitivity and Invert Y not refreshing on config load.
+
+### v2.0 — 2025-08-01
+- Added Money ESP.
+- Added BHop information box.
+- **Fix:** Aimbot tab not refreshing UI on config load.
+- Added Trace ESP, Speed ESP, Velocity ESP, and Coordinates ESP.
+
+### v1.9 — 2025-07-31
+- Reorganized the menu — moved Grenade Prediction (simple), Enable No Flash, and Spectator List into the Misc tab.
+- Moved "Show Aimbot FOV Circle" into the Aimbot tab.
+- Big updates to menu design.
+- Spectator List is now draggable with a new design.
+- Added the GFusion watermark (also draggable).
+- **Fix:** Thread toggle issues with Auto Pistol.
+- Added color customization for the aim FOV.
+- Added a keyboard listener so the menu key can be remapped live.
+- Added a config setting for "enemy only" / "team only" ESP.
+- Added customization for the external crosshair size.
+- Added always-on TriggerBot.
+- Added Auto Pistol.
+- *Known issue:* crouching while aimbot is active can cause incorrect bone position.
+
+### v1.8 — 2025-07-30
+- Major Aimbot and Recoil Control improvements (more accurate, still legit).
+- Added the Aim Visualization tab to GFusion.
+- Integrated Weapon ESP with weapon color customization.
+- **Fix:** Weird aimbot mouse movement.
+- Re-integrated the RCS toggle with new aimbot customization options.

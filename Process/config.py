@@ -4,14 +4,15 @@ import shutil
 import time
 import win32con
 BONES = {
-    "head": 6,
-    "neck": 5,
-    "chest": 15,
-    "pelvis": 0,
-    "left_hand": 10,
-    "right_hand": 2,
-    "left_leg": 23,
-    "right_leg": 26,
+    # CS2 build 14154+ skeleton — see GHax_Free_v2/Game/Bone.h enum BONEINDEX.
+    "head":       7,
+    "neck":       6,   # neck_0
+    "chest":      4,   # spine_2
+    "pelvis":     1,
+    "left_hand":  11,  # hand_L
+    "right_hand": 15,  # hand_R
+    "left_leg":   19,  # ankle_L
+    "right_leg":  22,  # ankle_R
 }
 
 # sensible defaults for aiming
@@ -288,7 +289,7 @@ class Config:
     bone_indices_to_try = list(DEFAULT_AIM_BONES)
 
     target_bone_name = "head"
-    bone_indices_to_try = [6, 18]
+    bone_indices_to_try = [7, 4]  # head, chest (CS2 14154 indices)
     max_entities = 64
     FOV = 3.0
     max_delta_angle = 60
@@ -347,11 +348,15 @@ class Config:
     rcs_smooth_var = 0.01
 
     # ===========================
-    #  Kernel Mode Driver (NeacController)
+    #  Kernel Mode Driver
     # ===========================
+    # Sole backend: Binalyze IREC (KDU provider #41, CVE-2023-41444,
+    # NOT on the Microsoft driver blocklist). Loaded purely in Python via
+    # NtLoadDriver — no kdmapper, no KDU.exe.
     kernel_mode_enabled = True
+    kernel_driver = "binalyze_irec"
     kernel_driver_auto_start = True
-    kernel_fallback_to_usermode = False
+    kernel_fallback_to_usermode = True
 
     # ===========================
     #  Utility

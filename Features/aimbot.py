@@ -336,23 +336,24 @@ class CS2WeaponTracker:
 # Aimbot + RCS + Mouse Recording
 # -----------------------------
 BONES = {
-    "head": 6,
-    "neck": 5,
+    # CS2 build 14154+ skeleton — see GHax_Free_v2/Game/Bone.h enum BONEINDEX.
+    "head":       7,
+    "neck":       6,   # neck_0
 
-    # Upper torso
-    "chest": 2,
+    # Upper torso (spine_2, closest to neck)
+    "chest":      4,
 
     # Lower torso
-    "stomach": 15,
-    "pelvis": 0,
+    "stomach":    3,   # spine_1
+    "pelvis":     1,
 
     # Arms / hands
-    "right_hand": 10,
-    "left_hand": 13,
+    "right_hand": 15,  # hand_R
+    "left_hand":  11,  # hand_L
 
-    # Legs
-    "right_leg": 26,
-    "left_leg": 23,
+    # Legs (ankle is the bottom-most aimable joint)
+    "right_leg":  22,  # ankle_R
+    "left_leg":   19,  # ankle_L
 }
 
 # sensible defaults for aiming
@@ -727,7 +728,7 @@ class AimbotRCS:
             scan cfg.aim_bones and pick the closest-to-crosshair bone.
         """
         if not pawn or not my_pos:
-            return self.bone_indices.get("head", 6)
+            return self.bone_indices.get("head", 7)
 
         # --- Fixed bone mode (HEAD-ONLY etc.) ---
         if not bool(getattr(self.cfg, "closest_to_crosshair", False)):
@@ -742,13 +743,13 @@ class AimbotRCS:
                 if first in self.bone_indices:
                     return self.bone_indices[first]
 
-            return self.bone_indices.get("head", 6)
+            return self.bone_indices.get("head", 7)
 
         # --- Multi-bone mode (closest-to-crosshair) ---
         bone_names = getattr(self.cfg, "aim_bones", ["head"])
         bone_ids = [self.bone_indices[b] for b in bone_names if b in self.bone_indices]
         if not bone_ids:
-            return self.bone_indices.get("head", 6)
+            return self.bone_indices.get("head", 7)
 
         best_bone = None
         best_delta = float("inf")
@@ -1108,8 +1109,22 @@ class AimbotRCS:
                 my_pos = self.read_vec3(pawn + o.m_vOldOrigin)
                 view_raw = self.reader.read_bytes(base + o.dwViewAngles, 8)
                 pitch, yaw = struct.unpack("ff", view_raw) if view_raw else (0.0, 0.0)
-                recoil_pitch = self.read(pawn + o.m_aimPunchAngle, "float") or 0.0
-                recoil_yaw   = self.read(pawn + o.m_aimPunchAngle + 4, "float") or 0.0
+                # CS2 build 14154+ removed m_aimPunchAngle from C_CSPlayerPawn.
+                # Read via the new AimPunchServices chain:
+                #   pawn + m_pAimPunchServices (deref) -> CCSPlayer_AimPunchServices
+                #   + m_predictableBaseAngle -> Vec2 (pitch, yaw)
+                aps = self.read(pawn + o.m_pAimPunchServices, "long") if getattr(o, "m_pAimPunchServices", 0) else 0
+                if aps:
+                    base_angle_off = getattr(o, "m_predictableBaseAngle", 80) or 80
+                    recoil_pitch = self.read(aps + base_angle_off,     "float") or 0.0
+                    recoil_yaw   = self.read(aps + base_angle_off + 4, "float") or 0.0
+                else:
+                    # Fallback for older builds where m_aimPunchAngle still exists.
+                    legacy = getattr(o, "m_aimPunchAngle", 0) or 0
+                    recoil_pitch = self.read(pawn + legacy,     "float") if legacy else 0.0
+                    recoil_yaw   = self.read(pawn + legacy + 4, "float") if legacy else 0.0
+                    recoil_pitch = recoil_pitch or 0.0
+                    recoil_yaw   = recoil_yaw or 0.0
 
                 entity_list = self.read(base + o.dwEntityList, "long")
                 if not entity_list: time.sleep(0.01); continue

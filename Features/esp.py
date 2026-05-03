@@ -95,8 +95,29 @@ if OPTIMIZER_AVAILABLE:
         print("[ESP] Falling back to standard VisCheck")
         optimized_vischeck = None
 
+# Global variable for logo bitmap cache
+_LOGO_BITMAP_CACHE = {}
+_GDIPLUS_TOKEN = None
+
+def _init_gdiplus():
+    global _GDIPLUS_TOKEN
+    if _GDIPLUS_TOKEN is None:
+        try:
+            gdiplus = windll.gdiplus
+            class GdiplusStartupInput(ctypes.Structure):
+                _fields_ = [("GdiplusVersion", ctypes.c_uint32),
+                            ("DebugEventCallback", ctypes.c_void_p),
+                            ("SuppressBackgroundThread", ctypes.c_int),
+                            ("SuppressExternalCodecs", ctypes.c_int)]
+            token = ctypes.c_ulong()
+            input_struct = GdiplusStartupInput(1, None, 0, 0)
+            gdiplus.GdiplusStartup(byref(token), byref(input_struct), None)
+            _GDIPLUS_TOKEN = token
+        except Exception as e:
+            print(f"[GDI+] Init error: {e}")
+
 # Map detection offsets (hardcoded)
-DW_GAME_TYPES = 1802240  # absolute offset in matchmaking.dll
+DW_GAME_TYPES = 1773440  # 0x1B0F80, matchmaking.dll!dwGameTypes (cs2-dumper build 14158)
 DW_GAME_TYPES_MAP_NAME = 288  # field offset inside GameTypes
 
 # Global variables for map name checking
@@ -371,6 +392,10 @@ class Entity:
     def update_refs(self, controller: int, pawn: int, handle):
         # Keep objects reusable across frames (controller/pawn can change)
         self.handle = handle
+        if pawn != self.pawn:
+            # Pawn swap (entity slot recycled): bone_base belongs to the
+            # previous pawn; force a refresh on the next read.
+            self.bone_base = None
         self.controller = controller
         self.pawn = pawn
 
@@ -413,7 +438,8 @@ class Entity:
         bone_base = self._refresh_bone_base()
         if bone_base:
             # Head is bone 6; grab it using bulk path for cache friendliness.
-            head = self.get_bone_positions((6,), now=now).get(6)
+            # Head bone index changed from 6 to 7 in CS2 build 14154.
+            head = self.get_bone_positions((7,), now=now).get(7)
             self.head = head
         else:
             self.head = None
@@ -454,13 +480,13 @@ class Entity:
         return "Unknown"
 
     def get_bone_positions(self, indices, now=None):
-        """Bulk-read a contiguous bone range and return {index: Vec3|None}.
+        """Return {index: Vec3|None} using per-bone reads.
 
-        Uses a tiny per-entity buffer cache to avoid re-reading bones multiple times per frame.
+        Bulk-buffered reads were masking partial failures on some kernel
+        backends (large reads silently returned zero-filled buffers, which
+        collapsed all bones to the origin and produced broken skeletons).
+        Per-bone 12-byte reads match the working GScript path.
         """
-        if now is None:
-            now = time.perf_counter()
-
         out = {int(i): None for i in indices}
         if not out:
             return out
@@ -469,48 +495,14 @@ class Entity:
             if not self._refresh_bone_base():
                 return out
 
-        # Compute contiguous range to read
-        idxs = [int(i) for i in out.keys() if int(i) >= 0]
-        if not idxs:
-            return out
-        bmin = min(idxs)
-        bmax = max(idxs)
-
-        # If our cached buffer doesn't cover the request or expired -> read a new block
-        need_new = (
-            self._bone_buf is None
-            or now >= self._bone_buf_expiry
-            or bmin < self._bone_buf_min
-            or bmax > self._bone_buf_max
-        )
-
-        if need_new:
-            size = (bmax - bmin + 1) * self._BONE_STRIDE
-            base_addr = self.bone_base + bmin * self._BONE_STRIDE
-            buf = read_bytes(self.handle, base_addr, size)
-            # Defensive: if RPM failed, don't cache garbage
-            if not buf or len(buf) != size:
-                return out
-            self._bone_buf = buf
-            self._bone_buf_min = bmin
-            self._bone_buf_max = bmax
-            self._bone_buf_expiry = now + self._BONEBUF_TTL
-
-        buf = self._bone_buf
         stride = self._BONE_STRIDE
-        base_min = self._bone_buf_min
-
-        # Parse only the requested bones (position at offset 0: 3 floats)
         for i in out.keys():
-            if i < base_min or i > self._bone_buf_max:
+            if i < 0:
                 continue
-            off = (i - base_min) * stride
             try:
-                x, y, z = struct.unpack_from("fff", buf, off)
-                out[i] = Vec3(float(x), float(y), float(z))
+                out[i] = read_vec3(self.handle, self.bone_base + i * stride)
             except Exception:
                 out[i] = None
-
         return out
 
     def BonePos(self, index):
@@ -912,11 +904,27 @@ def get_entities(handle, base):
     return result
 
 class GDIRenderer:
-    BONE_POSITIONS = {"head": 6, "chest": 15, "left_hand": 10, "right_hand": 2, "left_leg": 23, "right_leg": 26}
+    # CS2 build 14154+ skeleton (per GHax_Free_v2/Game/Bone.h enum BONEINDEX).
+    # Old indices (head=6, pelvis=0, leg=22..27, etc.) draw garbage lines.
+    BONE_POSITIONS = {
+        "head":       7,
+        "chest":      4,   # spine_2
+        "left_hand":  11,
+        "right_hand": 15,
+        "left_leg":   19,  # ankle_L
+        "right_leg":  22,  # ankle_R
+    }
     BONE_CONNECTIONS = [
-        (0, 2), (2, 4), (4, 5), (5, 6), (4, 8), (8, 9), (9, 10),
-        (4, 13), (13, 14), (14, 15), (0, 22), (22, 23), (23, 24),
-        (0, 25), (25, 26), (26, 27)
+        # Trunk: pelvis -> spine_0 -> spine_1 -> spine_2 -> neck_0 -> head
+        (1, 2), (2, 3), (3, 4), (4, 6), (6, 7),
+        # Left arm:  spine_2 -> arm_upper_L -> arm_lower_L -> hand_L
+        (4, 9), (9, 10), (10, 11),
+        # Right arm: spine_2 -> arm_upper_R -> arm_lower_R -> hand_R
+        (4, 13), (13, 14), (14, 15),
+        # Left leg:  pelvis -> leg_upper_L -> leg_lower_L -> ankle_L
+        (1, 17), (17, 18), (18, 19),
+        # Right leg: pelvis -> leg_upper_R -> leg_lower_R -> ankle_R
+        (1, 20), (20, 21), (21, 22),
     ]
 
     def __init__(self, title="GHax", fps=144):
@@ -974,6 +982,60 @@ class GDIRenderer:
                 win32gui.DestroyWindow(self.hwnd)
             except Exception:
                 pass
+
+    def draw_image(self, x, y, w, h, path):
+        """Draw an image with professional GDI+ color-keying for transparency."""
+        global _LOGO_BITMAP_CACHE
+        if not os.path.exists(path):
+            return
+        
+        try:
+            _init_gdiplus()
+            gdiplus = windll.gdiplus
+            
+            # Cache the bitmap and image attributes
+            if path not in _LOGO_BITMAP_CACHE:
+                bitmap = ctypes.c_void_p()
+                gdiplus.GdipCreateBitmapFromFile(ctypes.c_wchar_p(path), byref(bitmap))
+                
+                # Create ImageAttributes for color-keying (making black transparent)
+                attr = ctypes.c_void_p()
+                gdiplus.GdipCreateImageAttributes(byref(attr))
+                
+                # Set color key: RGB(0,0,0) to RGB(15,15,15) is transparent
+                # Color is 0xAARRGGBB
+                low = ctypes.c_uint32(0xFF000000) # Pure black
+                high = ctypes.c_uint32(0xFF101010) # Near black
+                gdiplus.GdipSetImageAttributesColorKeys(attr, 0, True, low, high)
+                
+                _LOGO_BITMAP_CACHE[path] = (bitmap, attr)
+            
+            bitmap, attr = _LOGO_BITMAP_CACHE[path]
+            if bitmap:
+                img_w = ctypes.c_uint32(); img_h = ctypes.c_uint32()
+                gdiplus.GdipGetImageWidth(bitmap, byref(img_w))
+                gdiplus.GdipGetImageHeight(bitmap, byref(img_h))
+                
+                graphics = ctypes.c_void_p()
+                gdiplus.GdipCreateFromHDC(self._hdc, byref(graphics))
+                if graphics:
+                    gdiplus.GdipSetSmoothingMode(graphics, 4)
+                    gdiplus.GdipSetInterpolationMode(graphics, 7)
+                    
+                    # Draw with attributes
+                    gdiplus.GdipDrawImageRectRectI(
+                        graphics, bitmap,
+                        int(x), int(y), int(w), int(h),
+                        0, 0, int(img_w.value), int(img_h.value),
+                        2, attr, None, None
+                    )
+                    gdiplus.GdipDeleteGraphics(graphics)
+            
+        except Exception as e:
+            if not hasattr(self, "_logged_errors"): self._logged_errors = set()
+            if path not in self._logged_errors:
+                print(f"[GDI+] draw_image error: {e}")
+                self._logged_errors.add(path)
 
     def draw_corner_box(self, x, y, w, h, color, line_len=6):
         # Draws only the corners of the box
@@ -1921,7 +1983,7 @@ def main():
         memory = MemoryInterface(pid.value, handle, Config)
         set_memory_interface(memory)  # Set global memory interface
         if memory.is_kernel_mode_active():
-            print("[Memory] ✓ Kernel mode active via NeacController")
+            print("[Memory] ✓ Kernel mode active")
         else:
             print("[Memory] ⚠ Using usermode memory access")
     except Exception as e:
