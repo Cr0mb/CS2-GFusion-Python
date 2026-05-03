@@ -2129,7 +2129,7 @@ def main():
 
         set_memory_interface(memory)
         if memory.is_kernel_mode_active():
-            print("[Memory] ✓ Kernel mode active via NeacController")
+            print("[Memory] ✓ Kernel mode active")
         else:
             print("[Memory] ⚠ Using usermode memory access")
     except Exception as e:

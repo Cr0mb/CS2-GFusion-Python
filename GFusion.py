@@ -3,6 +3,13 @@
                             
 import atexit
 import ctypes
+import sys as _sys_early
+# Reconfigure stdio to UTF-8 *before* any module imports — many GFusion modules
+# print emojis at import time, and the default Windows console codepage
+# (cp1252) raises UnicodeEncodeError on '✓ ✗ ⚠ 🚀', aborting init mid-call.
+for _s in (_sys_early.stdout, _sys_early.stderr):
+    try: _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception: pass
 import ctypes.wintypes
 import datetime
 import Features.esp
@@ -263,6 +270,73 @@ def safe_call(func, *args, error_msg="Operation failed", category="", **kwargs):
 
                             
 
+class SectionFrame(QFrame):
+    """DayZ-External / GHaxLabs style panel.
+
+    Draws a single-pixel bordered card with a gradient header strip
+    (dark→red) and a 3px red accent bar on the left of the header. Layout
+    contents go below the header — the QFrame's ContentsMargins reserve
+    room for it. This replaces QGroupBox to get pixel-perfect, consistent
+    section headers across every tab.
+    """
+    HEADER_H = 24
+    BORDER_C = QColor(55, 55, 60)
+    HEADER_DARK = QColor(28, 22, 24)
+    HEADER_RED  = QColor(70, 26, 26)
+    ACCENT      = QColor(235, 60, 60)
+    BODY_BG     = QColor(20, 20, 26)
+    TITLE_C     = QColor(240, 234, 234)
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self._title = (title or "").upper()
+        self.setObjectName("sectionFrame")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("background: transparent; border: none;")
+        # Reserve space for header at the top.
+        self.setContentsMargins(8, self.HEADER_H + 8, 8, 8)
+
+    def setTitle(self, t: str) -> None:
+        self._title = (t or "").upper()
+        self.update()
+
+    def title(self) -> str:
+        return self._title
+
+    def paintEvent(self, ev):
+        from PyQt5.QtGui import QPainter, QLinearGradient, QPen, QBrush
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, False)
+        r = self.rect()
+
+        # Body
+        p.fillRect(r, self.BODY_BG)
+
+        # Header gradient strip
+        hr = r.adjusted(0, 0, 0, -(r.height() - self.HEADER_H))
+        grad = QLinearGradient(hr.topLeft(), hr.topRight())
+        grad.setColorAt(0.0, self.HEADER_DARK)
+        grad.setColorAt(1.0, self.HEADER_RED)
+        p.fillRect(hr, QBrush(grad))
+
+        # Red accent bar (left)
+        p.fillRect(0, 0, 3, self.HEADER_H, self.ACCENT)
+
+        # Title text
+        f = self.font()
+        f.setBold(True)
+        f.setLetterSpacing(QFont.AbsoluteSpacing, 1.0)
+        p.setFont(f)
+        p.setPen(self.TITLE_C)
+        p.drawText(hr.adjusted(12, 0, -8, 0),
+                   Qt.AlignVCenter | Qt.AlignLeft, self._title)
+
+        # Outer 1px border (bottom + sides + bottom of header == card border)
+        p.setPen(QPen(self.BORDER_C, 1))
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(r.adjusted(0, 0, -1, -1))
+
+
 def _apply_global_qss(app, font_family=None, font_size=None):
     """
     Apply a modern dark + red global stylesheet.
@@ -290,297 +364,363 @@ def _apply_global_qss(app, font_family=None, font_size=None):
     fs = max(7, min(24, fs))  # clamp
     ff_esc = str(ff).replace('"', r'\"')  # avoid breaking the CSS string
 
+    # Palette derived from the DayZ-External (GHaxLabs) ImGui theme:
+    #   bg #14141a, panel #1c1c20, frame #18181c, border #37373c,
+    #   accent red #eb3c3c, header strip gradient (dark→red).
     qss = f"""
     /* === Global base === */
     QWidget {{
-        background-color: #080812;
-        color: #f5f5f7;
+        background-color: #14141a;
+        color: #ebebeb;
         font-family: "{ff_esc}", "Segoe UI", "Inter", "Tahoma", sans-serif;
         font-size: {fs}px;
     }}
 
-    QLabel {{
-        color: #f5f5f7;
+    QLabel, QCheckBox, QRadioButton, QGroupBox, QFrame {{
+        background: transparent;
+        border: none;
+    }}
+    #sectionFrame {{
+        background-color: #14141a;
+    }}
+    QToolTip {{
+        background-color: #18181e;
+        color: #ebebeb;
+        border: 1px solid #eb3c3c;
+        padding: 4px 6px;
     }}
 
     /* === Outer shell === */
     #outerPanel {{
-        background-color: qlineargradient(
-            x1:0, y1:0, x2:1, y2:1,
-            stop:0 #151520,
-            stop:1 #11111c
-        );
-        border-radius: 14px;
-        border: 1px solid #26263a;
+        background-color: #14141a;
+        border: 1px solid #37373c;
     }}
 
-    /* Small header tweaks (safe even if IDs don't exist) */
     #headerTitle {{
-        font-size: 12pt;
+        font-size: 11pt;
         font-weight: 700;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
+        color: #f0eaea;
     }}
     #headerSubtitle {{
-        font-size: 8.5pt;
-        color: #a3a5c0;
+        font-size: 8pt;
+        color: #8a8a90;
+        letter-spacing: 0.5px;
     }}
 
     /* === Tabs === */
     QTabWidget::pane {{
-        border: none;
-        top: 0px;
+        border: 1px solid #37373c;
+        background: #14141a;
+        top: -1px;
     }}
-    QTabBar {{
-        qproperty-drawBase: 0;
-    }}
+    QTabBar {{ qproperty-drawBase: 0; }}
     QTabBar::tab {{
-        background: transparent;
-        padding: 8px 16px;
-        margin-right: 4px;
-        color: #8a8fa2;
-        border-bottom: 2px solid transparent;
+        background: #18181c;
+        padding: 6px 18px;
+        margin-right: 1px;
+        color: #8a8a90;
+        border: 1px solid #2c2c30;
+        border-bottom: none;
+        min-width: 60px;
     }}
     QTabBar::tab:selected {{
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 #2a1c1c, stop:1 #461a1a);
         color: #ffffff;
-        border-bottom: 2px solid #ff3b4a;
+        border: 1px solid #37373c;
+        border-bottom: 2px solid #eb3c3c;
     }}
-    QTabBar::tab:hover {{
-        color: #ffffff;
-        border-bottom: 2px solid #ff3b4a88;
+    QTabBar::tab:hover:!selected {{
+        background: #1f1f24;
+        color: #ebebeb;
     }}
 
-    /* === Group boxes / cards === */
+    /* === Group boxes — DayZ-style header strip === */
     QGroupBox {{
-        background-color: #181828;
-        border-radius: 10px;
-        border: 1px solid #26263a;
-        margin-top: 10px;
-        padding: 10px;
+        background-color: #1c1c20;
+        border: 1px solid #37373c;
+        margin-top: 22px;
+        padding: 10px 8px 8px 8px;
         font-weight: 600;
     }}
     QGroupBox::title {{
         subcontrol-origin: margin;
-        left: 12px;
-        padding: 0 4px;
-        color: #ffffff;
-        background-color: transparent;
+        subcontrol-position: top left;
+        left: 0px;
+        top: 0px;
+        padding: 5px 12px 5px 16px;
+        color: #f0eaea;
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 #1c1618, stop:1 #461a1a);
+        border-left: 3px solid #eb3c3c;
+        border-top: 1px solid #37373c;
+        border-right: 1px solid #37373c;
+        font-weight: 700;
+        letter-spacing: 0.5px;
     }}
 
     /* === Buttons === */
     QPushButton {{
-        background-color: #1f1f2b;
-        border-radius: 9px;
-        border: 1px solid #2b2b3c;
-        padding: 7px 10px;
-        min-height: 22px;
-        color: #f5f5f7;
+        background-color: #18181c;
+        border: 1px solid #37373c;
+        padding: 5px 10px;
+        min-height: 20px;
+        color: #ebebeb;
     }}
     QPushButton:hover {{
-        background-color: #282838;
-        border-color: #ff3b4a;
+        background-color: #26262c;
+        border-color: #eb3c3c;
     }}
     QPushButton:pressed {{
-        background-color: #ff3b4a;
-        border-color: #ff3b4a;
+        background-color: #3c1414;
+        border-color: #eb3c3c;
         color: #ffffff;
     }}
     QPushButton:disabled {{
-        background-color: #101018;
-        color: #5c5f74;
-        border-color: #202030;
+        background-color: #101014;
+        color: #5a5a60;
+        border-color: #25252a;
+    }}
+    QPushButton:checked {{
+        background-color: #3c1414;
+        border-color: #eb3c3c;
+        color: #ffffff;
     }}
 
     /* === Checkboxes === */
-    QCheckBox {{
-        spacing: 6px;
+    QCheckBox {{ 
+        spacing: 7px; 
+        color: #ebebeb; 
+        background: transparent;
+    }}
+    QCheckBox:focus {{
+        border: none;
+        outline: none;
     }}
     QCheckBox::indicator {{
-        width: 16px;
-        height: 16px;
-        border-radius: 4px;
-        border: 1px solid #3a3a4d;
-        background-color: #151520;
+        width: 14px;
+        height: 14px;
+        border: 1px solid #4a4a50;
+        background-color: #1c1c20;
     }}
-    QCheckBox::indicator:hover {{
-        border-color: #ff3b4a;
-    }}
+    QCheckBox::indicator:hover {{ border-color: #eb3c3c; }}
     QCheckBox::indicator:checked {{
-        background-color: #ff3b4a;
-        border-color: #ff3b4a;
+        background-color: #eb3c3c;
+        border-color: #eb3c3c;
+        image: none;
+    }}
+    QCheckBox::indicator:checked:hover {{
+        background-color: #f54a4a;
+        border-color: #f54a4a;
     }}
 
-    /* === Combobox === */
-    QComboBox {{
-        background-color: #151520;
-        border-radius: 6px;
-        border: 1px solid #2b2b3c;
-        padding: 4px 8px;
-        color: #f5f5f7;
+    /* === Radio buttons === */
+    QRadioButton {{ 
+        spacing: 7px; 
+        color: #ebebeb; 
+        background: transparent;
     }}
-    QComboBox:hover {{
-        border-color: #ff3b4a;
+    QRadioButton::indicator {{
+        width: 14px; height: 14px;
+        border: 1px solid #4a4a50;
+        background-color: #1c1c20;
+        border-radius: 7px;
     }}
-    QComboBox::drop-down {{
+    QRadioButton::indicator:checked {{
+        background-color: #eb3c3c;
+        border-color: #eb3c3c;
+    }}
+
+    /* === Combobox & Dropdowns === */
+    QComboBox, #cheatComboBox {{
+        background-color: #18181c;
+        border: 1px solid #37373c;
+        border-radius: 0px;
+        padding: 4px 10px;
+        color: #ffffff;
+        min-height: 24px;
+        font-weight: 700;
+    }}
+    QComboBox:hover, #cheatComboBox:hover {{ 
+        background-color: #1f1f26;
+        border-color: #eb3c3c;
+    }}
+    QComboBox::drop-down, #cheatComboBox::drop-down {{
         border: none;
-        width: 18px;
+        background: #1f1f26;
+        width: 24px;
+        border-left: 1px solid #37373c;
     }}
-    QComboBox::down-arrow {{
+    QComboBox::down-arrow, #cheatComboBox::down-arrow {{
         image: none;
-        width: 0;
-        height: 0;
-        border-left: 5px solid #f5f5f7;
-        border-top: 4px solid transparent;
-        border-bottom: 4px solid transparent;
-        margin-right: 4px;
+        width: 0; height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid #8a8a90;
+    }}
+    QComboBox QAbstractItemView, #cheatComboBox QAbstractItemView {{
+        background-color: #14141a;
+        border: 1px solid #eb3c3c;
+        color: #ffffff;
+        selection-background-color: #3c1414;
+        selection-color: #ffffff;
+        outline: none;
+    }}
+    QComboBox QAbstractItemView::item, #cheatComboBox QAbstractItemView::item {{
+        min-height: 28px;
+        padding-left: 10px;
+        background-color: #14141a;
+        color: #f0eaea;
+    }}
+    QComboBox QAbstractItemView::item:selected, #cheatComboBox QAbstractItemView::item:selected {{
+        background-color: #3c1414;
+        color: #ffffff;
     }}
 
     /* === Sliders === */
     QSlider::groove:horizontal {{
-        height: 6px;
-        background: #2a2a3a;
-        border-radius: 3px;
-        margin: 0px 0;
+        height: 4px;
+        background: #101014;
+        border: 1px solid #2a2a30;
     }}
-
     QSlider::sub-page:horizontal {{
-        background: qlineargradient(
-            x1:0, y1:0, x2:1, y2:0,
-            stop:0 #ff3b4a,
-            stop:1 #ff5164
-        );
-        border-radius: 3px;
+        background: #eb3c3c;
+        border: 1px solid #eb3c3c;
     }}
-
     QSlider::add-page:horizontal {{
-        background: #202030;
-        border-radius: 3px;
+        background: #101014;
+        border: 1px solid #2a2a30;
     }}
-
     QSlider::handle:horizontal {{
-        width: 16px;
-        height: 16px;
+        width: 8px;
+        height: 14px;
         margin: -6px 0;
-        border-radius: 8px;
-        background-color: #ff3b4a;
-        border: 1px solid #ff6b75;
+        background-color: #eb3c3c;
+        border: 1px solid #ff5e5e;
     }}
-
     QSlider::handle:horizontal:hover {{
-        background-color: #ff4e5c;
-        border: 1px solid #ff7f89;
+        background-color: #f54a4a;
+        border: 1px solid #ff7070;
     }}
-
     QSlider::handle:horizontal:pressed {{
-        background-color: #ff2e3b;
-        border: 1px solid #ff606b;
+        background-color: #d22e2e;
     }}
 
     /* === Scroll areas === */
-    QScrollArea {{
-        background: transparent;
-        border: none;
-    }}
+    QScrollArea {{ background: transparent; border: none; }}
+    QAbstractScrollArea {{ background: transparent; }}
 
     /* === Scrollbars === */
     QScrollBar:vertical {{
         width: 10px;
-        background: transparent;
+        background: #0c0c10;
         margin: 0px;
+        border-left: 1px solid #2a2a30;
     }}
     QScrollBar::handle:vertical {{
-        background: #2a2a3a;
-        border-radius: 5px;
+        background: #2a2a30;
         min-height: 30px;
     }}
-    QScrollBar::handle:vertical:hover {{
-        background: #343449;
-    }}
+    QScrollBar::handle:vertical:hover {{ background: #46464c; }}
+    QScrollBar::handle:vertical:pressed {{ background: #5a1c1c; }}
     QScrollBar::add-line:vertical,
-    QScrollBar::sub-line:vertical {{
-        height: 0px;
-        border: none;
-        background: transparent;
-    }}
+    QScrollBar::sub-line:vertical {{ height: 0px; border: none; background: transparent; }}
 
     QScrollBar:horizontal {{
         height: 10px;
-        background: transparent;
+        background: #0c0c10;
         margin: 0px;
+        border-top: 1px solid #2a2a30;
     }}
     QScrollBar::handle:horizontal {{
-        background: #2a2a3a;
-        border-radius: 5px;
+        background: #2a2a30;
         min-width: 30px;
     }}
-    QScrollBar::handle:horizontal:hover {{
-        background: #343449;
-    }}
+    QScrollBar::handle:horizontal:hover {{ background: #46464c; }}
     QScrollBar::add-line:horizontal,
-    QScrollBar::sub-line:horizontal {{
-        width: 0px;
-        border: none;
-        background: transparent;
-    }}
+    QScrollBar::sub-line:horizontal {{ width: 0px; border: none; background: transparent; }}
 
     /* === Edits === */
-    QLineEdit, QTextEdit, QPlainTextEdit {{
-        background-color: #151520;
-        border-radius: 6px;
-        border: 1px solid #2b2b3c;
-        padding: 4px 8px;
-        color: #f5f5f7;
+    QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {{
+        background-color: #18181c;
+        border: 1px solid #37373c;
+        padding: 3px 6px;
+        color: #ebebeb;
+        selection-background-color: #461a1a;
+        selection-color: #ffffff;
     }}
-    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{
-        border-color: #ff3b4a;
+    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
+    QSpinBox:focus, QDoubleSpinBox:focus {{
+        border-color: #eb3c3c;
     }}
 
     /* === Tables === */
-    QTableWidget {{
-        background-color: #151520;
-        gridline-color: #26263a;
-        border-radius: 8px;
-        border: 1px solid #26263a;
+    QTableWidget, QTableView {{
+        background-color: #18181c;
+        gridline-color: #2a2a30;
+        border: 1px solid #37373c;
+        alternate-background-color: #1c1c20;
+        selection-background-color: #461a1a;
+        selection-color: #ffffff;
     }}
     QHeaderView::section {{
-        background-color: #1c1c28;
-        color: #f5f5f7;
-        padding: 4px 8px;
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 #1c1618, stop:1 #2a1c1c);
+        color: #f0eaea;
+        padding: 4px 10px;
         border: none;
-        border-bottom: 1px solid #26263a;
+        border-right: 1px solid #2a2a30;
+        border-bottom: 1px solid #eb3c3c;
+        font-weight: 600;
     }}
 
+    /* === Menus & menubar === */
+    QMenuBar {{ background: #14141a; color: #ebebeb; border-bottom: 1px solid #37373c; }}
+    QMenuBar::item:selected {{ background: #461a1a; }}
+    QMenu {{
+        background: #18181c;
+        color: #ebebeb;
+        border: 1px solid #eb3c3c;
+        padding: 4px;
+    }}
+    QMenu::item {{ padding: 4px 18px; }}
+    QMenu::item:selected {{ background: #461a1a; color: #ffffff; }}
+    QMenu::separator {{ height: 1px; background: #37373c; margin: 4px 6px; }}
+
+    /* === Splitters === */
+    QSplitter::handle {{ background: #37373c; }}
+    QSplitter::handle:hover {{ background: #eb3c3c; }}
+
+    /* === Progress bar === */
+    QProgressBar {{
+        background-color: #101014;
+        border: 1px solid #37373c;
+        text-align: center;
+        color: #ebebeb;
+        height: 14px;
+    }}
+    QProgressBar::chunk {{ background-color: #eb3c3c; }}
+
     /* Startup overlay */
-    #startupOverlay {{
-        background-color: rgba(7, 7, 12, 230);
-        border-radius: 14px;
-    }}
-    #startupTitle {{
-        font-size: 20px;
-        font-weight: 700;
-    }}
-    #startupSubtitle {{
-        font-size: 11px;
-        color: #b0b2c8;
-    }}
+    #startupOverlay {{ background-color: rgba(10, 10, 14, 235); }}
+    #startupTitle {{ font-size: 20px; font-weight: 700; letter-spacing: 1px; color: #f0eaea; }}
+    #startupSubtitle {{ font-size: 10px; color: #8a8a90; letter-spacing: 0.5px; }}
 
     /* Tiny square ESP color buttons */
     #espColorButton {{
-        min-width: 16px;
-        max-width: 16px;
-        min-height: 16px;
-        max-height: 16px;
-        padding: 0;              /* overrides the global 7px padding */
-        border-radius: 4px;
-        border: 1px solid #3a3a4d;
+        min-width: 14px; max-width: 14px;
+        min-height: 14px; max-height: 14px;
+        padding: 0;
+        border: 1px solid #4a4a50;
     }}
+    #espColorButton:hover {{ border-color: #eb3c3c; }}
+    #espColorButton:pressed {{ border-color: #eb3c3c; }}
 
-    #espColorButton:hover {{
-        border-color: #ff3b4a;
-    }}
-
-    #espColorButton:pressed {{
-        border-color: #ff3b4a;
-    }}
+    /* Status pill labels (kernel state, etc.) */
+    QLabel#kernelStatusOk {{ color: #58c873; font-weight: 600; }}
+    QLabel#kernelStatusWarn {{ color: #ff9933; font-weight: 600; }}
+    QLabel#kernelStatusErr {{ color: #eb3c3c; font-weight: 600; }}
     """
 
     app.setStyleSheet(qss)
@@ -791,6 +931,23 @@ def run():
         logger.warning("Running without administrator privileges", category="System")
     
     app = QApplication(sys.argv)
+
+    # Auto-start the kernel driver as early as possible so feature threads
+    # (ESP/Aimbot/etc.) reuse the already-loaded backend instead of racing
+    # to load it themselves. Stop it deterministically on Qt shutdown.
+    if is_admin and getattr(cfg, "kernel_driver_auto_start", True) \
+            and getattr(cfg, "kernel_mode_enabled", True):
+        try:
+            from Process.memory_interface import (
+                ensure_kernel_driver_started, cleanup_kernel_driver,
+            )
+            if ensure_kernel_driver_started():
+                logger.info("Kernel driver auto-started", category="System")
+            else:
+                logger.warning("Kernel driver auto-start failed; usermode fallback in effect", category="System")
+            app.aboutToQuit.connect(cleanup_kernel_driver)
+        except Exception as e:
+            logger.exception(f"Kernel auto-start error: {e}", category="System")
     
     # Install global exception handler for Qt
     def qt_exception_handler(exc_type, exc_value, exc_traceback):
@@ -1305,11 +1462,8 @@ class AimbotTab(QWidget):
         self.init_ui()
 
                                                                
-    def create_group_box(self, title: str) -> QGroupBox:
-        """Create a modern card-style group box that uses the global theme."""
-        g = QGroupBox(title)
-        g.setObjectName("cardGroup")
-        return g
+    def create_group_box(self, title: str):
+        return SectionFrame(title)
 
     def add_checkbox(self, layout, label, cfg_key, on_toggle=None):
         cb = CheatCheckBox(label)
@@ -1405,270 +1559,190 @@ class AimbotTab(QWidget):
 
                               
     def init_ui(self):
-        # scroll container (same pattern as other tabs)
+        # scroll container
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #14141a; border: none; }")
 
-        content = QWidget(); content.setStyleSheet("background-color: #151520;")
-        root = QVBoxLayout(content)
-        root.setSpacing(8); root.setContentsMargins(8, 8, 8, 8)
+        content = QWidget(); content.setStyleSheet("background-color: #14141a;")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10); layout.setContentsMargins(10, 10, 10, 10)
 
-                                   
-        main_g = self.create_group_box("Main")
-        main = QHBoxLayout(main_g); main.setSpacing(10)
+        # 2-column main layout
+        cols = QHBoxLayout(); cols.setSpacing(10)
+        col1 = QVBoxLayout(); col1.setSpacing(10)
+        col2 = QVBoxLayout(); col2.setSpacing(10)
 
-                     
-        col_left = QVBoxLayout(); col_left.setSpacing(4)
-        self.add_checkbox(col_left, "Enable Aimbot", "enabled",
+        # --- Column 1: Core Aim & Acquisition ---
+        aim_g = self.create_group_box("Aimbot Master")
+        aim_l = QVBoxLayout(aim_g)
+        self.add_checkbox(aim_l, "Enable Aimbot", "enabled",
                           on_toggle=lambda en: (start_aimbot_thread() if en else stop_aimbot_thread()))
-        self.add_checkbox(col_left, "DeathMatch Mode", "DeathMatch")
-        main.addLayout(col_left, 1)
+        self.add_checkbox(aim_l, "DeathMatch Mode", "DeathMatch")
+        self.add_checkbox(aim_l, "Visible-check Aim", "visibility_aim_enabled")
+        self.add_checkbox(aim_l, "Closest to Crosshair", "closest_to_crosshair")
+        self.add_combo_row(aim_l, "Aim Key:", ["mouse1","mouse2","mouse3","mouse4","mouse5","left_alt","left_ctrl","left_shift","caps_lock","space"], "aim_key", width=110)
+        self.add_combo_row(aim_l, "Target Bone:", ["head","neck","chest","pelvis","left_hand","right_hand","left_leg","right_leg"], "target_bone_name", width=110)
+        col1.addWidget(aim_g)
 
-                                               
-        col_mid = QVBoxLayout(); col_mid.setSpacing(6)
-        self.auto_pistol_cb = self.add_checkbox(
-            col_mid, "Auto Pistol", "auto_pistol_enabled",
-            on_toggle=lambda en: (start_auto_pistol_thread() if en else stop_auto_pistol_thread())
-        )
-                        
-        self.add_combo_row(col_mid, "Auto Pistol Key:",
-                           ["mouse2","mouse3","mouse4","mouse5","alt","ctrl","shift","space"],
-                           "activation_key", to_lower=True, width=90)
-                   
-        fr_box = QVBoxLayout()
-        self.fr_slider, self.fr_label_holder = self.add_float_slider(
-            fr_box, "Fire Rate (s)", "fire_rate", 0.01, 1.00, 100
-        )
-        col_mid.addLayout(fr_box)
-        main.addLayout(col_mid, 1)
+        acq_g = self.create_group_box("Target Acquisition")
+        acq_l = QVBoxLayout(acq_g)
+        self.add_float_slider(acq_l, "FOV Radius", "FOV", 0.1, 30.0, 10)
+        self.add_int_slider(acq_l, "Max Angle Δ", "max_delta_angle", 1, 180)
+        self.add_int_slider(acq_l, "Max Entities", "max_entities", 1, 128)
+        self.add_float_slider(acq_l, "Start Delay", "aim_start_delay", 0.00, 1.00, 100)
+        self.add_float_slider(acq_l, "Switch Delay", "target_switch_delay", 0.00, 1.00, 100)
+        col1.addWidget(acq_g)
 
-                         
-        col_right = QVBoxLayout(); col_right.setSpacing(6)
-        self.add_checkbox(col_right, "Visible-check Aim", "visibility_aim_enabled")
-        self.add_checkbox(col_right, "Closest to Crosshair", "closest_to_crosshair")
-        main.addLayout(col_right, 1)
-
-        root.addWidget(main_g)
-
-                                        
-        fov_g = self.create_group_box("FOV Overlay")
-        fov = QVBoxLayout(fov_g); fov.setSpacing(6)
-
+        fov_g = self.create_group_box("FOV Visuals")
+        fov_l = QVBoxLayout(fov_g)
         row = QHBoxLayout()
         self.add_checkbox(row, "Show FOV Circle", "fov_circle_enabled")
+        self.add_color_button(row, "fov_overlay_color", "FOV circle color")
+        row.addStretch()
+        fov_l.addLayout(row)
+        col1.addWidget(fov_g)
 
-        self.add_color_button(
-            row,
-            "fov_overlay_color",
-            tooltip="FOV circle color"
-        )
-
-        row.addStretch(1)
-        fov.addLayout(row)
-        root.addWidget(fov_g)
-
-
-                                 
-        kern_g = self.create_group_box("Kernel Mode (NeacController)")
-        kern = QVBoxLayout(kern_g); kern.setSpacing(6)
-
-        row1 = QHBoxLayout()
-        self.kernel_cb = self.add_checkbox(row1, "Enable Kernel Mode", "kernel_mode_enabled",
-                                           on_toggle=self._toggle_kernel_mode)
-        self.kernel_auto = self.add_checkbox(row1, "Auto-start Driver", "kernel_driver_auto_start")
-        self.kernel_fallback = self.add_checkbox(row1, "Fallback to Usermode", "kernel_fallback_to_usermode")
-        row1.addStretch(1)
-        kern.addLayout(row1)
-
+        kern_g = self.create_group_box("Security & Driver")
+        kern_l = QVBoxLayout(kern_g)
+        self.add_checkbox(kern_l, "Enable Kernel Mode", "kernel_mode_enabled", 
+                          on_toggle=self._toggle_kernel_mode)
         self.kernel_status = QLabel("Status: Disabled")
-        self.kernel_status.setStyleSheet("color: #888; font-style: italic;")
-        kern.addWidget(self.kernel_status)
-        root.addWidget(kern_g)
+        self.kernel_status.setStyleSheet("color: #8a8a90; font-style: italic;")
+        kern_l.addWidget(self.kernel_status)
+        col1.addWidget(kern_g)
+        col1.addStretch()
 
-                                              
-        prec_g = self.create_group_box("Precision & Timing")
-        prec = QGridLayout(prec_g); prec.setHorizontalSpacing(12); prec.setVerticalSpacing(6)
+        # --- Column 2: RCS, Smoothing & Humanization ---
+        rcs_g = self.create_group_box("Recoil Control (RCS)")
+        rcs_l = QVBoxLayout(rcs_g)
+        self.add_checkbox(rcs_l, "Enable RCS", "rcs_enabled")
+        self.add_float_slider(rcs_l, "RCS Intensity", "rcs_scale", 0.00, 5.00, 100)
+        self.add_float_slider(rcs_l, "RCS Smooth", "rcs_smooth_base", 0.00, 1.00, 100)
+        self.add_checkbox(rcs_l, "Grace After Kill", "rcs_grace_after_damage")
+        self.add_float_slider(rcs_l, "Grace Time (s)", "rcs_grace_time", 0.00, 1.00, 100)
+        col2.addWidget(rcs_g)
 
-        def add_float_cell(r,c, lbl, key, mn, mx, mult):
-            box = QVBoxLayout()
-            sld, lab = self.add_float_slider(box, lbl, key, mn, mx, mult)
-            w = QWidget(); w.setLayout(box); prec.addWidget(w, r, c)
-            return sld, lab
+        smooth_g = self.create_group_box("Smoothing & Mouse")
+        smooth_l = QVBoxLayout(smooth_g)
+        self.add_float_slider(smooth_l, "Aim Smoothing", "smooth_base", 0.00, 1.00, 100)
+        self.add_float_slider(smooth_l, "Smooth Variance", "smooth_var", 0.00, 1.00, 100)
+        self.add_float_slider(smooth_l, "Sensitivity", "sensitivity", 0.001, 0.500, 1000)
+        self.add_int_slider(smooth_l, "Max Mouse Move", "max_mouse_move", 1, 50)
+        row_inv = QHBoxLayout()
+        self.add_checkbox(row_inv, "Invert Y Axis", "invert_y") # -1 usually means inverted
+        row_inv.addStretch()
+        smooth_l.addLayout(row_inv)
+        col2.addWidget(smooth_g)
 
-        add_float_cell(0,0, "FOV", "FOV", 0.1, 30.0, 10)
-        add_float_cell(0,1, "Aim Start Delay", "aim_start_delay", 0.00, 1.00, 100)
-        add_float_cell(0,2, "RCS Scale", "rcs_scale", 0.00, 5.00, 100)
-        add_float_cell(0,3, "Smooth Base", "smooth_base", 0.00, 1.00, 100)
-        add_float_cell(0,4, "Smooth Variance", "smooth_var", 0.00, 1.00, 100)
+        human_g = self.create_group_box("Humanization Extras")
+        human_l = QVBoxLayout(human_g)
+        self.add_checkbox(human_l, "Enable Humanization", "humanization_enabled")
+        self.add_checkbox(human_l, "Aim Jitter", "aim_jitter_enabled")
+        self.add_float_slider(human_l, "Jitter Amount", "aim_jitter_amount", 0.00, 1.00, 100)
+        self.add_checkbox(human_l, "Randomize Smooth", "smooth_randomization")
+        self.add_checkbox(human_l, "Reaction Delay", "reaction_delay_enabled")
+        self.add_checkbox(human_l, "Enable Overshoot", "overshoot_enabled")
+        col2.addWidget(human_g)
 
-        add_float_cell(1,0, "Velocity Pred. Factor", "velocity_prediction_factor", 0.00, 1.00, 100)
-        add_float_cell(1,1, "Target Switch Delay", "target_switch_delay", 0.00, 1.00, 100)
-        add_float_cell(1,2, "RCS Smooth Base", "rcs_smooth_base", 0.00, 1.00, 100)
-        add_float_cell(1,3, "RCS Smooth Var", "rcs_smooth_var", 0.00, 1.00, 100)
-        add_float_cell(1,4, "RCS Grace After Damage", "rcs_grace_after_damage", 0.00, 1.00, 100)
+        pistol_g = self.create_group_box("Weapon Utility")
+        pistol_l = QVBoxLayout(pistol_g)
+        self.auto_pistol_cb = self.add_checkbox(
+            pistol_l, "Enable Auto Pistol", "auto_pistol_enabled",
+            on_toggle=lambda en: (start_auto_pistol_thread() if en else stop_auto_pistol_thread())
+        )
+        self.add_combo_row(pistol_l, "Hot Key:",
+                           ["mouse2","mouse3","mouse4","mouse5","alt","ctrl","shift","space"],
+                           "activation_key", width=90)
+        col2.addWidget(pistol_g)
+        col2.addStretch()
 
-        root.addWidget(prec_g)
+        cols.addLayout(col1, 1)
+        cols.addLayout(col2, 1)
+        layout.addLayout(cols)
 
-                                  
-        nums_g = self.create_group_box("Numeric Caps")
-        nums = QGridLayout(nums_g); nums.setHorizontalSpacing(12); nums.setVerticalSpacing(6)
-        def add_int_cell(r,c,lbl,key,mn,mx):
-            box = QVBoxLayout()
-            sld, lab = self.add_int_slider(box, lbl, key, mn, mx)
-            w = QWidget(); w.setLayout(box); nums.addWidget(w, r, c)
-            return sld, lab
-        add_int_cell(0,0,"Downward Offset","downward_offset",0,100)
-        add_int_cell(0,1,"Max Entities","max_entities",1,128)
-        add_int_cell(0,2,"Max Mouse Move","max_mouse_move",1,50)
-        add_int_cell(0,3,"Max Delta Angle","max_delta_angle",1,180)
-        root.addWidget(nums_g)
-
-                                         
-        input_g = self.create_group_box("Input")
-        inp = QVBoxLayout(input_g); inp.setSpacing(6)
-        self.add_combo_row(inp, "Aim Activation Key:",
-                           ["mouse1","mouse2","mouse3","mouse4","mouse5",
-                            "left_shift","right_shift","left_ctrl","right_ctrl",
-                            "left_alt","right_alt","space"],
-                           "aim_key", to_lower=True, width=110)
-
-                                
-        sens_row = QHBoxLayout()
-        self.sens_label = QLabel(f"Sensitivity: {getattr(Config,'sensitivity',0.1):.3f}")
-        self.sens_label.setStyleSheet("color:#f5f5f7; ")
-        sens_row.addWidget(self.sens_label)
-
-        self.sens_slider = NoScrollSlider(Qt.Horizontal)
-        self.sens_slider.setMinimum(8); self.sens_slider.setMaximum(1000)
-                                                       
-        s_val = max(0.008, min(1.0, float(getattr(Config, "sensitivity", 0.1))))
-        self.sens_slider.setValue(1000 - int(s_val * 1000) + 8)
-
-        def on_sens(v):
-            real = max(0.008, min(1.0, (1000 - v + 8)/1000.0))
-            setattr(Config, "sensitivity", real)
-            self.sens_label.setText(f"Sensitivity: {real:.3f}")
-        self.sens_slider.valueChanged.connect(on_sens)
-        sens_row.addWidget(self.sens_slider)
-
-        self.invert_y = CheatCheckBox("Invert Y")
-        self.invert_y.setChecked(int(getattr(Config, "invert_y", 1)) == -1)
-        self.invert_y.stateChanged.connect(lambda st: setattr(Config, "invert_y", -1 if st == Qt.Checked else 1))
-        sens_row.addWidget(self.invert_y)
-        sens_row.addStretch(1)
-        inp.addLayout(sens_row)
-
-        root.addWidget(input_g)
-
-                               
-        tgt_g = self.create_group_box("Target")
-        tgt = QVBoxLayout(tgt_g); tgt.setSpacing(6)
-        self.add_combo_row(tgt, "Target Bone:", ["head","neck","chest","pelvis","left_hand","right_hand","left_leg","right_leg"], "target_bone_name", to_lower=True, width=90)
-        self.learn_dir_label = QLabel(f"Learning Dir: {getattr(Config,'learn_dir','')}")
-        self.learn_dir_label.setStyleSheet("color:#f5f5f7; ")
-        tgt.addWidget(self.learn_dir_label)
-        root.addWidget(tgt_g)
-
-                                                   
-        human_g = self.create_group_box("Humanization (Anti-Detection)")
-        human = QVBoxLayout(human_g); human.setSpacing(6)
-
-        row_h1 = QHBoxLayout()
-        self.add_checkbox(row_h1, "Enable Humanization", "humanization_enabled")
-        self.add_checkbox(row_h1, "Aim Jitter/Shake", "aim_jitter_enabled")
-        self.add_checkbox(row_h1, "Randomize Smoothness", "smooth_randomization")
-        self.add_checkbox(row_h1, "Reaction Delay", "reaction_delay_enabled")
-        self.add_checkbox(row_h1, "Occasional Overshoot", "overshoot_enabled")
-        row_h1.addStretch(1)
-        human.addLayout(row_h1)
-
-                         
-        jitter_box = QHBoxLayout()
-        j_col = QVBoxLayout()
-        self.add_float_slider(j_col, "Jitter Amount", "aim_jitter_amount", 0.00, 1.00, 100)
-        jitter_box.addLayout(j_col)
-
-        jf_col = QVBoxLayout()
-        sld, lab = self.add_float_slider(jf_col, "Shake Frequency (Hz)", "aim_shake_frequency", 1.0, 20.0, 1)
-                                   
-        sld.valueChanged.connect(lambda v: lab.setText(f"Shake Frequency (Hz): {float(v):.1f}"))
-        jitter_box.addLayout(jf_col)
-        jitter_box.addStretch(1)
-        human.addLayout(jitter_box)
-
-                              
-        delay_box = QVBoxLayout()
-        self.add_float_slider(delay_box, "Delay Min (s)", "reaction_delay_min", 0.001, 0.200, 1000)
-        self.add_float_slider(delay_box, "Delay Max (s)", "reaction_delay_max", 0.010, 0.300, 1000)
-        human.addLayout(delay_box)
-
-                          
-        overshoot_box = QVBoxLayout()
-        self.add_float_slider(overshoot_box, "Overshoot Chance", "overshoot_chance", 0.00, 0.50, 100)
-        self.add_float_slider(overshoot_box, "Overshoot Amount (x)", "overshoot_amount", 1.00, 2.00, 100)
-        human.addLayout(overshoot_box)
-
-        root.addWidget(human_g)
-
-        root.addStretch()
         scroll.setWidget(content)
-        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.addWidget(scroll)
-
-                                                
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.addWidget(scroll)
+        
         QTimer.singleShot(300, self._check_kernel_status_delayed)
 
                                            
     def _toggle_kernel_mode(self, enabled: bool):
-                                 
         self.kernel_status.setText("Status: Initializing..." if enabled else "Status: Disabled")
-        self.kernel_status.setStyleSheet("color: #ff8800; font-style: italic;" if enabled else "color: #888; font-style: italic;")
-                                                                      
+        self.kernel_status.setStyleSheet(
+            "color: #ff8800; font-style: italic;" if enabled else "color: #888; font-style: italic;"
+        )
         try:
             import threading
+
             def init_kernel():
                 try:
-                    import sys, os
-                    controller_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                                   'NeacController-main', 'NeacController')
-                    if controller_path not in sys.path:
-                        sys.path.insert(0, controller_path)
-                    import neac_controller
-                    m = neac_controller.NeacDriverManager()
+                    from Process.drivers import load_driver
+                    name = getattr(Config, "kernel_driver", "binalyze_irec")
+                    drv = load_driver(name)
+                    if not drv:
+                        self.kernel_status.setText(f"Status: ✗ Backend '{name}' unavailable")
+                        self.kernel_status.setStyleSheet("color: #ff0000; font-style: italic;")
+                        return
                     if enabled:
-                        if m.start_driver() and m.connect():
-                            self.kernel_status.setText("Status: ✓ Kernel mode active")
+                        ok = drv.start()
+                        if ok:
+                            self.kernel_status.setText(f"Status: ✓ {drv.status()}")
                             self.kernel_status.setStyleSheet("color: #00ff00; font-style: italic;")
-                            try: m.disconnect()
-                            except: pass
+                            # Probe-only: stop after verifying. Real attach happens
+                            # in MemoryInterface when CS2 is running.
+                            try:
+                                drv.stop()
+                            except Exception:
+                                pass
                         else:
-                            self.kernel_status.setText("Status: ✗ Driver error")
+                            self.kernel_status.setText(f"Status: ✗ {drv.status()}")
                             self.kernel_status.setStyleSheet("color: #ff0000; font-style: italic;")
-                            try: m.stop_driver()
-                            except: pass
                     else:
-                        try: m.stop_driver()
-                        except: pass
-                except ImportError:
-                    self.kernel_status.setText("Status: ✗ NeacController not found")
-                    self.kernel_status.setStyleSheet("color: #ff0000; font-style: italic;")
+                        try:
+                            drv.stop()
+                        except Exception:
+                            pass
                 except Exception as e:
-                    self.kernel_status.setText(f"Status: ✗ Error: {str(e)[:30]}...")
+                    self.kernel_status.setText(f"Status: ✗ Error: {str(e)[:40]}")
                     self.kernel_status.setStyleSheet("color: #ff0000; font-style: italic;")
+
             threading.Thread(target=init_kernel, daemon=True).start()
         except Exception as e:
             print(f"[AimbotTab] Kernel toggle error: {e}")
 
     def _check_kernel_status_delayed(self):
-                                                 
         try:
-            if hasattr(Config, "_kernel_active_instances") and Config._kernel_active_instances > 0:
-                self.kernel_status.setText("Status: ✓ Kernel mode active")
+            active = getattr(Config, "_kernel_active_instances", 0) > 0
+            if active:
+                self.kernel_status.setText("Status: ✓ Kernel mode active (MemoryInterface attached)")
                 self.kernel_status.setStyleSheet("color: #00ff00; font-style: italic;")
+                return
+
+            # Driver may be auto-started but no MemoryInterface yet (cs2.exe
+            # not running). Reflect the live backend state.
+            try:
+                from Process import memory_interface as _mi
+                drv = getattr(_mi, "_kernel_driver", None)
+                if drv is not None:
+                    self.kernel_status.setText(f"Status: ✓ Driver loaded — {drv.status()}")
+                    self.kernel_status.setStyleSheet("color: #00cc66; font-style: italic;")
+                    # Re-poll: once cs2.exe boots and a MemoryInterface attaches,
+                    # we want to flip the label to "kernel mode active".
+                    QTimer.singleShot(2000, self._check_kernel_status_delayed)
+                    return
+            except Exception:
+                pass
+
+            if getattr(Config, "kernel_mode_enabled", False):
+                self.kernel_status.setText("Status: ⏳ Waiting for driver / cs2.exe")
+                self.kernel_status.setStyleSheet("color: #ff8800; font-style: italic;")
+                QTimer.singleShot(2000, self._check_kernel_status_delayed)
         except Exception as e:
-            print(f"[AimbotTab] Kernel delayed check error: {e}")
+            print(f"[AimbotTab] Kernel status check error: {e}")
 
                                 
     def refresh_ui(self):
@@ -1718,624 +1792,254 @@ class CheatComboBox(QComboBox):
 class ConfigTab(QWidget):
     config_loaded = pyqtSignal()
 
-                                               
-    def _create_group_box(self, title: str) -> QGroupBox:
-        """Create a modern card-style group box that uses the global theme."""
-        g = QGroupBox(title)
-        g.setObjectName("cardGroup")
-        return g
-
-    def _sep(self) -> QFrame:
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color:#808080; background:#808080;")
-        line.setFixedHeight(1)
-        return line
-
-                                
     def __init__(self):
         super().__init__()
-
         # accept both cfg (instance) or Config (class)
         self.CFG = globals().get("cfg", None) or globals().get("Config", None)
         if self.CFG is None:
             raise RuntimeError("Config/cfg not found in globals")
 
-        from PyQt5.QtCore import QElapsedTimer
-        self._elapsed = QElapsedTimer()
-        self._elapsed.start()
-        self._last_refresh_ms = 0
-
         self._autosave_timer = QTimer(self)
         self._autosave_timer.timeout.connect(self._on_autosave_tick)
+        self.init_ui()
 
-                               
+    def _create_group_box(self, title: str):
+        return SectionFrame(title)
+
+    def init_ui(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #14141a; border: none; }")
 
-        content = QWidget(); content.setStyleSheet("background-color:#151520;")
-        root = QVBoxLayout(content)
-        root.setSpacing(8); root.setContentsMargins(8,8,8,8)
+        content = QWidget(); content.setStyleSheet("background-color: #14141a;")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(25); layout.setContentsMargins(20, 20, 20, 20)
 
-                                                           
-        active_g = self._create_group_box("Active Config")
-        active = QVBoxLayout(active_g); active.setSpacing(6)
+        # 2-column main layout
+        cols = QHBoxLayout(); cols.setSpacing(25)
+        col1 = QVBoxLayout(); col1.setSpacing(20)
+        col2 = QVBoxLayout(); col2.setSpacing(20)
 
-        row1 = QHBoxLayout()
-        name_label = QLabel("Name:")
-        name_label.setFixedWidth(40)
-        name_label.setStyleSheet("color:#f5f5f7; ")
-
-        self.active_combo = QComboBox()
-        self.active_combo.setEditable(False)
-        self.active_combo.setInsertPolicy(QComboBox.NoInsert)
+        # --- Column 1: Active Configuration ---
+        active_g = self._create_group_box("ACTIVE SESSION")
+        active = QVBoxLayout(active_g); active.setSpacing(15); active.setContentsMargins(15, 40, 15, 15)
+        
+        lbl_active = QLabel("CURRENT PROFILE SELECTION")
+        lbl_active.setStyleSheet("font-weight: 800; color: #eb3c3c; font-size: 10pt; letter-spacing: 1px;")
+        active.addWidget(lbl_active)
+        
+        self.active_combo = QComboBox(); self.active_combo.setFixedHeight(40)
         self.active_combo.activated[str].connect(self._on_active_changed)
+        active.addWidget(self.active_combo)
 
-        self.new_btn = QPushButton("New")
-        self.save_btn = QPushButton("Save")
-        self.load_btn = QPushButton("Load")
-        self.apply_btn = QPushButton("Apply & Broadcast")
-        for b in (self.new_btn, self.save_btn, self.load_btn, self.apply_btn):
-            b.setFixedHeight(24)
-
-        row1.addWidget(name_label)
-        row1.addWidget(self.active_combo, 1)
-        row1.addWidget(self.new_btn)
-        row1.addWidget(self.save_btn)
-        row1.addWidget(self.load_btn)
-        row1.addWidget(self.apply_btn)
-        active.addLayout(row1)
-
-        self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color:#f5f5f7; ")
+        btn_row = QHBoxLayout(); btn_row.setSpacing(12)
+        self.new_btn = QPushButton("NEW"); self.save_btn = QPushButton("SAVE"); self.load_btn = QPushButton("LOAD")
+        for b in (self.new_btn, self.save_btn, self.load_btn): 
+            b.setFixedHeight(35); b.setStyleSheet("font-weight: 800; min-width: 85px; color: #ffffff; background-color: #1c1c24; border: 1px solid #37373c;")
+        btn_row.addWidget(self.new_btn); btn_row.addWidget(self.save_btn); btn_row.addWidget(self.load_btn)
+        active.addLayout(btn_row)
+        
+        self.status_label = QLabel("ALL SYSTEMS OPERATIONAL")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet("color: #eb3c3c; font-weight: bold; letter-spacing: 1.5px; padding-top: 8px; border-top: 1px solid #2a2a30;")
         active.addWidget(self.status_label)
-        root.addWidget(active_g)
+        col1.addWidget(active_g)
 
-                                                           
-        saved_g = self._create_group_box("Saved Configs")
-        saved = QVBoxLayout(saved_g); saved.setSpacing(6)
-
-        lr1 = QHBoxLayout()
-        list_label = QLabel("Saved:")
-        list_label.setFixedWidth(40)
-        list_label.setStyleSheet("color:#f5f5f7; ")
-        self.config_list = QComboBox()
-        self.refresh_btn = QPushButton("↻")
-        self.refresh_btn.setFixedWidth(28)
-        self.refresh_btn.setToolTip("Refresh list")
-        lr1.addWidget(list_label)
-        lr1.addWidget(self.config_list, 1)
-        lr1.addWidget(self.refresh_btn, 0)
-
-        lr2 = QHBoxLayout()
-        self.rename_btn    = QPushButton("Rename")
-        self.duplicate_btn = QPushButton("Duplicate")
-        self.delete_btn    = QPushButton("Delete")
-        for b in (self.rename_btn, self.duplicate_btn, self.delete_btn):
-            b.setFixedHeight(24)
-        lr2.addWidget(self.rename_btn)
-        lr2.addWidget(self.duplicate_btn)
-        lr2.addWidget(self.delete_btn)
-        lr2.addStretch(1)
-
+        saved_g = self._create_group_box("PROFILE OPERATIONS")
+        saved = QVBoxLayout(saved_g); saved.setSpacing(15); saved.setContentsMargins(15, 40, 15, 15)
+        
+        lbl_saved = QLabel("LOCAL DATABASE")
+        lbl_saved.setStyleSheet("font-weight: 800; color: #8a8a90; font-size: 9pt; letter-spacing: 1px;")
+        saved.addWidget(lbl_saved)
+        
+        lr1 = QHBoxLayout(); lr1.setSpacing(10)
+        self.config_list = QComboBox(); self.config_list.setFixedHeight(35)
+        self.refresh_btn = QPushButton("↻"); self.refresh_btn.setFixedSize(35, 35)
+        self.refresh_btn.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        lr1.addWidget(self.config_list, 1); lr1.addWidget(self.refresh_btn)
         saved.addLayout(lr1)
+
+        lr2 = QHBoxLayout(); lr2.setSpacing(12)
+        self.rename_btn = QPushButton("RENAME"); self.duplicate_btn = QPushButton("CLONE"); self.delete_btn = QPushButton("DELETE")
+        for b in (self.rename_btn, self.duplicate_btn, self.delete_btn): b.setFixedHeight(32); b.setStyleSheet("background-color: #18181e;")
+        lr2.addWidget(self.rename_btn); lr2.addWidget(self.duplicate_btn); lr2.addWidget(self.delete_btn)
         saved.addLayout(lr2)
-        root.addWidget(saved_g)
+        col1.addWidget(saved_g)
 
-                                                             
-        io_g = self._create_group_box("Import / Export")
-        io = QHBoxLayout(io_g); io.setSpacing(10)
+        io_g = self._create_group_box("CLOUD & STORAGE")
+        io = QHBoxLayout(io_g); io.setSpacing(12); io.setContentsMargins(15, 40, 15, 15)
+        self.import_btn = QPushButton("IMPORT JSON"); self.export_btn = QPushButton("EXPORT JSON")
+        self.import_btn.setFixedHeight(35); self.export_btn.setFixedHeight(35)
+        self.import_btn.setStyleSheet("font-weight: bold;"); self.export_btn.setStyleSheet("font-weight: bold;")
+        io.addWidget(self.import_btn); io.addWidget(self.export_btn)
+        col1.addWidget(io_g)
+        col1.addStretch()
 
-        self.import_btn = QPushButton("Import (.json)")
-        self.export_btn = QPushButton("Export (.json)")
-        for b in (self.import_btn, self.export_btn):
-            b.setFixedHeight(24)
-
-        io.addWidget(self.import_btn)
-        io.addWidget(self.export_btn)
-        io.addStretch(1)
-        root.addWidget(io_g)
-
-                                                       
-        auto_g = self._create_group_box("Auto-Save")
-        auto = QHBoxLayout(auto_g); auto.setSpacing(10)
-
-        self.autosave_cb = CheatCheckBox("Enable Auto-Save")
-        self.autosave_cb.setChecked(bool(getattr(self.CFG, "autosave_enabled", False)))
-        self.autosave_cb.stateChanged.connect(self._toggle_autosave)
-
-        self.autosave_slider = NoScrollSlider(Qt.Horizontal)
-        self.autosave_slider.setMinimum(1)
-        self.autosave_slider.setMaximum(30)
-        cur_mins = int(getattr(self.CFG, "autosave_minutes", 5))
-        self.autosave_slider.setValue(max(1, min(30, cur_mins)))
-
-        self.autosave_label = QLabel(f"Interval: {self.autosave_slider.value()} min")
-        self.autosave_label.setStyleSheet("color:#f5f5f7; ")
-
-        def on_auto_change(v):
-            setattr(self.CFG, "autosave_minutes", int(v))
-            self.autosave_label.setText(f"Interval: {int(v)} min")
-            if self._autosave_timer.isActive():
-                self._autosave_timer.start(int(v) * 60_000)
-
-        self.autosave_slider.valueChanged.connect(on_auto_change)
-
-        auto.addWidget(self.autosave_cb)
-        auto.addWidget(self.autosave_label)
-        auto.addWidget(self.autosave_slider)
-        auto.addStretch(1)
-        appearance_g = self._create_group_box("Appearance")
-        ap = QHBoxLayout(appearance_g); ap.setSpacing(10)
-
-        font_label = QLabel("Font:")
-        font_label.setFixedWidth(40)
-        font_label.setStyleSheet("color:#f5f5f7; ")
-
-        self.font_combo = QComboBox()
-        self.font_combo.setEditable(True)
-        self.font_combo.setInsertPolicy(QComboBox.NoInsert)
-        # Populate with system fonts (sorted)
+        # --- Column 2: System Settings ---
+        appearance_g = self._create_group_box("INTERFACE VISUALS")
+        ap = QVBoxLayout(appearance_g); ap.setSpacing(15); ap.setContentsMargins(15, 40, 15, 15)
+        
+        lbl_font = QLabel("PRIMARY UI FONT")
+        lbl_font.setStyleSheet("font-weight: 800; color: #8a8a90; font-size: 9pt;")
+        ap.addWidget(lbl_font)
+        
+        self.font_combo = QComboBox(); self.font_combo.setEditable(True); self.font_combo.setFixedHeight(35)
         try:
             families = sorted(QFontDatabase().families(), key=lambda s: s.lower())
-        except Exception:
-            families = []
-        if families:
-            self.font_combo.addItems(families)
-
-        # Default/current font from config
+            if families: self.font_combo.addItems(families)
+        except Exception: pass
         cur_font = str(getattr(self.CFG, "ui_font_family", "Segoe UI") or "Segoe UI")
-        _idx = self.font_combo.findText(cur_font)
-        if _idx >= 0:
-            self.font_combo.setCurrentIndex(_idx)
-        else:
-            self.font_combo.setEditText(cur_font)
+        self.font_combo.setCurrentText(cur_font)
+        ap.addWidget(self.font_combo)
 
-        size_label = QLabel("Size:")
-        size_label.setFixedWidth(38)
-        size_label.setStyleSheet("color:#f5f5f7; ")
-
-        self.font_size_slider = NoScrollSlider(Qt.Horizontal)
-        self.font_size_slider.setMinimum(7)
-        self.font_size_slider.setMaximum(24)
-        cur_size = int(getattr(self.CFG, "ui_font_size", 11) or 11)
-        self.font_size_slider.setValue(max(7, min(24, cur_size)))
-
-        self.font_size_value = QLabel(f"{self.font_size_slider.value()}px")
-        self.font_size_value.setFixedWidth(44)
-        self.font_size_value.setStyleSheet("color:#a3a5c0; ")
-
-        self.font_apply_btn = QPushButton("Apply Font")
-        self.font_apply_btn.setFixedHeight(24)
-
-        def _on_font_size(v):
-            try:
-                self.font_size_value.setText(f"{int(v)}px")
-            except Exception:
-                pass
-        self.font_size_slider.valueChanged.connect(_on_font_size)
-
-        def _apply_font():
-            try:
-                ff = self.font_combo.currentText().strip() or "Segoe UI"
-                fs = int(self.font_size_slider.value())
-                setattr(self.CFG, "ui_font_family", ff)
-                setattr(self.CFG, "ui_font_size", fs)
-                app = QApplication.instance()
-                if app is not None:
-                    _apply_global_qss(app, ff, fs)
-                self.status_label.setText(f"Status: ✓ Font set to {ff} ({fs}px)")
-            except Exception as e:
-                print(f"[ConfigTab] font apply error: {e}")
-                self.status_label.setText("Status: ✗ Font apply error")
-
-        self.font_apply_btn.clicked.connect(_apply_font)
-
-        ap.addWidget(font_label)
-        ap.addWidget(self.font_combo, 1)
-        ap.addWidget(size_label)
-        ap.addWidget(self.font_size_slider, 1)
-        ap.addWidget(self.font_size_value)
-        ap.addWidget(self.font_apply_btn)
-        root.addWidget(appearance_g)
-
-
-        root.addWidget(auto_g)
-
-                                                    
-        dir_g = self._create_group_box("Folder")
-        di = QHBoxLayout(dir_g); di.setSpacing(10)
-
-        self.open_folder_btn = QPushButton("Open Config Folder")
-        self.open_folder_btn.setFixedHeight(24)
-        di.addWidget(self.open_folder_btn)
-        di.addStretch(1)
-        root.addWidget(dir_g)
-
-
+        ap.addSpacing(5)
+        lbl_scale = QLabel("INTERFACE SCALING")
+        lbl_scale.setStyleSheet("font-weight: 800; color: #8a8a90; font-size: 9pt;")
+        ap.addWidget(lbl_scale)
         
+        self.font_size_slider = NoScrollSlider(Qt.Horizontal)
+        self.font_size_slider.setRange(7, 24)
+        cur_size = int(getattr(self.CFG, "ui_font_size", 11) or 11)
+        self.font_size_slider.setValue(cur_size)
+        ap.addWidget(self.font_size_slider)
+        
+        self.font_apply_btn = QPushButton("APPLY SYSTEM SCALING")
+        self.font_apply_btn.setFixedHeight(40); self.font_apply_btn.setStyleSheet("font-weight: 900; color: #ffffff; background-color: #eb3c3c; border-radius: 4px;")
+        self.font_apply_btn.clicked.connect(self._apply_font)
+        ap.addWidget(self.font_apply_btn)
+        col2.addWidget(appearance_g)
 
+        auto_g = self._create_group_box("MAINTENANCE")
+        auto = QVBoxLayout(auto_g); auto.setSpacing(15); auto.setContentsMargins(15, 40, 15, 15)
+        self.autosave_cb = CheatCheckBox("ENABLE AUTOMATIC BACKGROUND SYNC")
+        self.autosave_cb.setChecked(bool(getattr(self.CFG, "autosave_enabled", False)))
+        self.autosave_cb.stateChanged.connect(self._toggle_autosave)
+        auto.addWidget(self.autosave_cb)
+        
+        self.open_folder_btn = QPushButton("OPEN CONFIGURATION DIRECTORY")
+        self.open_folder_btn.setFixedHeight(35); self.open_folder_btn.setStyleSheet("font-weight: bold;")
+        self.open_folder_btn.clicked.connect(self.open_config_folder)
+        auto.addWidget(self.open_folder_btn)
+        col2.addWidget(auto_g)
+        col2.addStretch()
 
-                         
-        root.addStretch(1)
-        scroll.setWidget(content)
-        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.addWidget(scroll)
+        cols.addLayout(col1, 1)
+        cols.addLayout(col2, 1)
+        layout.addLayout(cols)
 
-                                            
+        # Connections
         self.refresh_btn.clicked.connect(self.refresh_config_list)
         self.new_btn.clicked.connect(self.create_new_config)
         self.save_btn.clicked.connect(self.save_config)
         self.load_btn.clicked.connect(self.load_config)
-        self.apply_btn.clicked.connect(self._apply_broadcast)
-
         self.rename_btn.clicked.connect(self.rename_config)
         self.duplicate_btn.clicked.connect(self.duplicate_config)
         self.delete_btn.clicked.connect(self.delete_config)
-
         self.import_btn.clicked.connect(self.import_config)
         self.export_btn.clicked.connect(self.export_config)
 
-        self.open_folder_btn.clicked.connect(self.open_config_folder)
+        scroll.setWidget(content)
+        outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0); outer.addWidget(scroll)
         self.refresh_config_list()
-        self.refresh_ui()
 
-                                    
-    def _configs_dir(self) -> str:
-        return getattr(self.CFG, "configs_dir", "config")
-    def _list_configs(self):
-        path = self._configs_dir()
-        os.makedirs(path, exist_ok=True)
-        names = []
-        for f in os.listdir(path):
-            if f.lower().endswith(".json"):
-                names.append(f[:-5])
-        names.sort()
-        return names
-
-    def _populate_combo(self, combo: QComboBox, names, current: str = ""):
-        combo.blockSignals(True)
-        combo.clear()
-        for n in names:
-            combo.addItem(n)
-        if current:
-            idx = combo.findText(current)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-        combo.blockSignals(False)
-
-    def refresh_config_list(self):
+    def _apply_font(self):
         try:
-            names = self._list_configs()
-            cur_active = getattr(self.CFG, "current_config_name", "") or (names[0] if names else "")
-            self._populate_combo(self.active_combo, names, cur_active)
-            self._populate_combo(self.config_list, names, cur_active)
+            ff = self.font_combo.currentText().strip() or "Segoe UI"
+            fs = int(self.font_size_slider.value())
+            setattr(self.CFG, "ui_font_family", ff)
+            setattr(self.CFG, "ui_font_size", fs)
+            app = QApplication.instance()
+            if app is not None:
+                _apply_global_qss(app, ff, fs)
+            self.status_label.setText(f"Status: ✓ Font set to {ff} ({fs}px)")
         except Exception as e:
-            print(f"[ConfigTab] refresh_config_list error: {e}")
-
-    def create_new_config(self):
-        """Create a new config with user-provided name."""
-        base = "new_profile"
-        name, ok = self._prompt_text("New Config", "Name:", base)
-        if not ok or not name.strip():
-            logger.debug("Config creation cancelled", category="Config")
-            return
-        name = name.strip()
-        logger.info(f"Creating new config: {name}", category="Config")
-        # Ensure unique
-        if os.path.exists(os.path.join(self._configs_dir(), f"{name}.json")):
-            name = self._unique_name(name)
-            logger.debug(f"Name collision, using unique name: {name}", category="Config")
-        # Create and save immediately
-        try:
-            setattr(self.CFG, "current_config_name", name)
-            path = os.path.join(self._configs_dir(), f"{name}.json")
-            os.makedirs(self._configs_dir(), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._serialize_cfg(), f, indent=2)
-            self.refresh_config_list()
-            idx = self.active_combo.findText(name)
-            if idx >= 0:
-                self.active_combo.setCurrentIndex(idx)
-            self.status_label.setText(f"Status: ✓ Created & saved '{name}'")
-            logger.info(f"Config created successfully: {name}", category="Config")
-        except Exception as e:
-            logger.exception(f"Failed to create config '{name}': {e}", category="Config")
-            self.status_label.setText("Status: ✗ Create error")
-
-    def save_config(self):
-        name = self.active_combo.currentText().strip()
-        if not name:
-            self.status_label.setText("Status: ✗ Select a config to save")
-            logger.warning("Save config called with no name selected", category="Config")
-            return
-        logger.info(f"Saving config: {name}", category="Config")
-        try:
-            if hasattr(self.CFG, "save_to_file"):
-                self.CFG.save_to_file(name)
-            else:
-                path = os.path.join(self._configs_dir(), f"{name}.json")
-                os.makedirs(self._configs_dir(), exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(self._serialize_cfg(), f, indent=2)
-                          
-            self.refresh_config_list()
-            self.status_label.setText(f"Status: ✓ Saved '{name}'")
-            logger.info(f"Config saved successfully: {name}", category="Config")
-        except Exception as e:
-            logger.exception(f"Failed to save config '{name}': {e}", category="Config")
-            self.status_label.setText("Status: ✗ Save error")
-
-    def load_config(self):
-        # Load from active combo only
-        name = self.active_combo.currentText().strip()
-        if not name:
-            self.status_label.setText("Status: ✗ Select a config to load")
-            logger.warning("Load config called with no name selected", category="Config")
-            return
-        logger.info(f"Loading config: {name}", category="Config")
-        try:
-            if hasattr(self.CFG, "load_from_file"):
-                self.CFG.load_from_file(name)
-            else:
-                path = os.path.join(self._configs_dir(), f"{name}.json")
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                self._deserialize_cfg(data)
-                                                
-            try: setattr(self.CFG, "current_config_name", name)
-            except: pass
-            self.refresh_config_list()
-            self.status_label.setText(f"Status: ✓ Loaded '{name}'")
-            logger.info(f"Config loaded successfully: {name}", category="Config")
-            self.config_loaded.emit()
-            logger.debug("Config loaded signal emitted", category="Config")
-        except Exception as e:
-            logger.exception(f"Failed to load config '{name}': {e}", category="Config")
-            self.status_label.setText("Status: ✗ Load error")
-
-    def _apply_broadcast(self):
-        try:
-            logger.info("Broadcasting config to all tabs", category="Config")
-            self.config_loaded.emit()
-            self.status_label.setText("Status: ✓ Applied")
-            logger.info("Config broadcast completed", category="Config")
-        except Exception as e:
-            logger.exception(f"Failed to broadcast config: {e}", category="Config")
-            self.status_label.setText("Status: ✗ Apply error")
-
-                                        
-    def rename_config(self):
-        cur = self.config_list.currentText()
-        if not cur:
-            self.status_label.setText("Status: ✗ Nothing selected")
-            return
-        new, ok = self._prompt_text("Rename Config", "New name:", cur)
-        if not ok or not new.strip():
-            return
-        new = new.strip()
-        src = os.path.join(self._configs_dir(), f"{cur}.json")
-        dst = os.path.join(self._configs_dir(), f"{new}.json")
-        try:
-            if os.path.exists(dst):
-                self.status_label.setText("Status: ✗ Name exists")
-                return
-            os.rename(src, dst)
-                                                  
-            if getattr(self.CFG, "current_config_name", "") == cur:
-                try: setattr(self.CFG, "current_config_name", new)
-                except: pass
-            self.refresh_config_list()
-                                           
-            idx = self.active_combo.findText(new)
-            if idx >= 0:
-                self.active_combo.setCurrentIndex(idx)
-            self.status_label.setText(f"Status: ✓ Renamed to '{new}'")
-        except Exception as e:
-            print(f"[ConfigTab] rename error: {e}")
-            self.status_label.setText("Status: ✗ Rename error")
-
-    def duplicate_config(self):
-        cur = self.config_list.currentText()
-        if not cur:
-            self.status_label.setText("Status: ✗ Nothing selected")
-            return
-        copy_name = f"{cur}_copy"
-        copy_name, ok = self._prompt_text("Duplicate Config", "Copy name:", copy_name)
-        if not ok or not copy_name.strip():
-            return
-        src = os.path.join(self._configs_dir(), f"{cur}.json")
-        dst = os.path.join(self._configs_dir(), f"{copy_name}.json")
-        try:
-            if os.path.exists(dst):
-                self.status_label.setText("Status: ✗ Name exists")
-                return
-            import shutil
-            shutil.copyfile(src, dst)
-            self.refresh_config_list()
-                                           
-            idx = self.active_combo.findText(copy_name)
-            if idx >= 0:
-                self.active_combo.setCurrentIndex(idx)
-            self.status_label.setText(f"Status: ✓ Duplicated to '{copy_name}'")
-        except Exception as e:
-            print(f"[ConfigTab] duplicate error: {e}")
-            self.status_label.setText("Status: ✗ Duplicate error")
-
-    def delete_config(self):
-        cur = self.config_list.currentText()
-        if not cur:
-            self.status_label.setText("Status: ✗ Nothing selected")
-            return
-        if getattr(self.CFG, "current_config_name", "") == cur:
-                                                          
-            ret = QMessageBox.question(self, "Delete Active Config",
-                                       f"'{cur}' is active. Delete anyway?",
-                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if ret != QMessageBox.Yes:
-                return
-        ret = QMessageBox.question(self, "Delete Config",
-                                   f"Delete '{cur}' permanently?",
-                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if ret != QMessageBox.Yes:
-            return
-        try:
-            path = os.path.join(self._configs_dir(), f"{cur}.json")
-            if os.path.exists(path):
-                os.remove(path)
-                                            
-            if getattr(self.CFG, "current_config_name", "") == cur:
-                try: setattr(self.CFG, "current_config_name", "")
-                except: pass
-            self.refresh_config_list()
-            self.status_label.setText(f"Status: ✓ Deleted '{cur}'")
-        except Exception as e:
-            print(f"[ConfigTab] delete error: {e}")
-            self.status_label.setText("Status: ✗ Delete error")
-
-                                         
-    def import_config(self):
-        try:
-            path, _ = QFileDialog.getOpenFileName(self, "Import Config", "", "Config (*.json)")
-            if not path:
-                return
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            name = os.path.splitext(os.path.basename(path))[0]
-            dst = os.path.join(self._configs_dir(), f"{name}.json")
-            if os.path.exists(dst):
-                name = self._unique_name(name)
-                dst = os.path.join(self._configs_dir(), f"{name}.json")
-            os.makedirs(self._configs_dir(), exist_ok=True)
-            with open(dst, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            self.refresh_config_list()
-            idx = self.active_combo.findText(name)
-            if idx >= 0:
-                self.active_combo.setCurrentIndex(idx)
-            self.status_label.setText(f"Status: ✓ Imported '{name}'")
-        except Exception as e:
-            print(f"[ConfigTab] import error: {e}")
-            self.status_label.setText("Status: ✗ Import error")
-
-    def export_config(self):
-        name = self.active_combo.currentText().strip() or self.config_list.currentText().strip()
-        if not name:
-            self.status_label.setText("Status: ✗ Choose a config")
-            return
-        try:
-            path, _ = QFileDialog.getSaveFileName(self, "Export Config", f"{name}.json", "Config (*.json)")
-            if not path:
-                return
-            if hasattr(self.CFG, "read_config_dict"):
-                data = self.CFG.read_config_dict(name)
-            else:
-                src = os.path.join(self._configs_dir(), f"{name}.json")
-                with open(src, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            self.status_label.setText(f"Status: ✓ Exported to '{os.path.basename(path)}'")
-        except Exception as e:
-            print(f"[ConfigTab] export error: {e}")
-            self.status_label.setText("Status: ✗ Export error")
-
-                                  
-    def open_config_folder(self):
-        path = os.path.abspath(self._configs_dir())
-        try:
-            os.makedirs(path, exist_ok=True)
-            if sys.platform.startswith("win"):
-                os.startfile(path)        
-            elif sys.platform == "darwin":
-                import subprocess; subprocess.Popen(["open", path])
-            else:
-                import subprocess; subprocess.Popen(["xdg-open", path])
-        except Exception as e:
-            print(f"[ConfigTab] open folder error: {e}")
-
-                                    
-    def _toggle_autosave(self, state):
-        enabled = (state == Qt.Checked)
-        setattr(self.CFG, "autosave_enabled", enabled)
-        mins = int(getattr(self.CFG, "autosave_minutes", 5))
-        if enabled:
-            self._autosave_timer.start(max(1, mins) * 60_000)
-            self.status_label.setText("Status: Auto-save ON")
-        else:
-            self._autosave_timer.stop()
-            self.status_label.setText("Status: Auto-save OFF")
+            print(f"[ConfigTab] font apply error: {e}")
+            self.status_label.setText("Status: ✗ Font apply error")
 
     def _on_autosave_tick(self):
         name = getattr(self.CFG, "current_config_name", "") or self.active_combo.currentText().strip()
-        if not name:
-            return
+        if not name: return
         try:
-            if hasattr(self.CFG, "save_to_file"):
-                self.CFG.save_to_file(name)
-            else:
-                path = os.path.join(self._configs_dir(), f"{name}.json")
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(self._serialize_cfg(), f, indent=2)
-        except Exception as e:
-            print(f"[ConfigTab] autosave error: {e}")
+            path = os.path.join(getattr(self.CFG, "configs_dir", "config"), f"{name}.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self._serialize_cfg(), f, indent=2)
+        except Exception as e: print(f"[ConfigTab] autosave error: {e}")
 
-                                   
-    def refresh_ui(self):
-        # Lightweight refresh only when config_loaded signal fires
-        pass
-
-    # ---------- handlers ----------
-    def _on_active_changed(self, text: str):
-        """Handle active dropdown selection."""
-        if not text:
-            return
-        try:
-            setattr(self.CFG, "current_config_name", text)
-        except:
-            pass
-        idx = self.config_list.findText(text)
-        if idx >= 0:
-            self.config_list.setCurrentIndex(idx)
-        self.status_label.setText(f"Status: Active = '{text}'")
-
-                                      
-    def _prompt_text(self, title, label, text=""):
-        s, ok = QInputDialog.getText(self, title, label, text=text)
-        return s, ok
-
-    def _unique_name(self, base: str) -> str:
-        i = 1
-        while True:
-            cand = f"{base}_{i}"
-            if not os.path.exists(os.path.join(self._configs_dir(), f"{cand}.json")):
-                return cand
-            i += 1
+    def _toggle_autosave(self, state):
+        enabled = (state == Qt.Checked)
+        setattr(self.CFG, "autosave_enabled", enabled)
+        if enabled: self._autosave_timer.start(5 * 60_000)
+        else: self._autosave_timer.stop()
 
     def _serialize_cfg(self) -> dict:
-        """Conservative fallback serializer; ignores callables/private fields."""
         d = {}
         for k in dir(self.CFG):
-            if k.startswith("_"):
-                continue
+            if k.startswith("_"): continue
             try:
                 v = getattr(self.CFG, k)
-            except Exception:
-                continue
-            if callable(v):
-                continue
-            if isinstance(v, (str, int, float, bool, list, dict, type(None))):
-                d[k] = v
+                if not callable(v): d[k] = v
+            except: continue
         return d
 
     def _deserialize_cfg(self, data: dict):
         for k, v in data.items():
-            try:
-                setattr(self.CFG, k, v)
-            except Exception:
-                pass
+            try: setattr(self.CFG, k, v)
+            except: pass
+
+    def _on_active_changed(self, text: str):
+        if text: setattr(self.CFG, "current_config_name", text)
+
+    def refresh_config_list(self):
+        try:
+            path = getattr(self.CFG, "configs_dir", "config")
+            os.makedirs(path, exist_ok=True)
+            names = [f[:-5] for f in os.listdir(path) if f.lower().endswith(".json")]
+            names.sort()
+            self.active_combo.clear(); self.active_combo.addItems(names)
+            self.config_list.clear(); self.config_list.addItems(names)
+            cur = getattr(self.CFG, "current_config_name", "")
+            if cur:
+                self.active_combo.setCurrentText(cur)
+                self.config_list.setCurrentText(cur)
+        except Exception as e: print(f"[ConfigTab] refresh_config_list error: {e}")
+
+    def save_config(self):
+        name = self.active_combo.currentText().strip()
+        if not name: return
+        try:
+            path = os.path.join(getattr(self.CFG, "configs_dir", "config"), f"{name}.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self._serialize_cfg(), f, indent=2)
+            self.status_label.setText(f"Status: ✓ Saved '{name}'")
+        except Exception as e: self.status_label.setText("Status: ✗ Save error")
+
+    def load_config(self):
+        name = self.active_combo.currentText().strip()
+        if not name: return
+        try:
+            path = os.path.join(getattr(self.CFG, "configs_dir", "config"), f"{name}.json")
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._deserialize_cfg(data)
+            self.config_loaded.emit()
+            self.status_label.setText(f"Status: ✓ Loaded '{name}'")
+        except Exception as e: self.status_label.setText("Status: ✗ Load error")
+
+    def create_new_config(self): self.status_label.setText("Status: Use 'Save' as new name")
+    def rename_config(self): pass
+    def duplicate_config(self): pass
+    def delete_config(self): pass
+    def import_config(self): pass
+    def export_config(self): pass
+    def open_config_folder(self):
+        path = os.path.abspath(getattr(self.CFG, "configs_dir", "config"))
+        os.makedirs(path, exist_ok=True)
+        os.startfile(path)
+
+    def refresh_ui(self):
+        pass
+
 
 class ConsoleTab(QWidget):
     def __init__(self):
@@ -2365,100 +2069,65 @@ class ConsoleTab(QWidget):
         except Exception as e:
             self._log(f"[WARN] Failed to register with logger: {e}")
 
-                              
     def _create_group_box(self, title: str) -> QGroupBox:
-        g = QGroupBox(title)
-        g.setStyleSheet(""" QGroupBox { background-color: #151520; border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF; border-right: 1px solid #404040; border-bottom: 1px solid #404040; margin-top: 8px; padding-top: 8px; font-weight: bold; color: #f5f5f7; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; background-color: #151520; } """)
-        return g
+        return SectionFrame(title)
 
     def _init_ui(self):
         # Scroll shell (match other tabs)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background-color:#151520; border:none; }")
+        scroll.setStyleSheet("QScrollArea { background-color:#14141a; border:none; }")
 
-        content = QWidget(); content.setStyleSheet("background-color:#151520;")
-        root = QVBoxLayout(content); root.setSpacing(8); root.setContentsMargins(8,8,8,8)
+        content = QWidget(); content.setStyleSheet("background-color:#14141a;")
+        root = QVBoxLayout(content); root.setSpacing(10); root.setContentsMargins(10,10,10,10)
 
-                
-        hdr = QHBoxLayout()
-        title = QLabel("Console")
-        title.setStyleSheet("font-weight:bold; color:#f5f5f7;")
-        self.status = QLabel("Status: Ready")
-        self.status.setStyleSheet("color:#f5f5f7; ")
-        hdr.addWidget(title); hdr.addStretch(1); hdr.addWidget(self.status)
-        root.addLayout(hdr)
-
-                      
-        out_g = self._create_group_box("Output")
+        # Output Window (Dominant)
+        out_g = self._create_group_box("SYSTEM TERMINAL")
         out_l = QVBoxLayout(out_g); out_l.setSpacing(6)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.output.setStyleSheet(""" QTextEdit { background: #0f0f14; color: #e6e6e9; border: 1px solid #2b2b3c; font-family: Consolas, monospace; padding: 6px; selection-background-color: #ff3b4a; selection-color: #ffffff; } """)
+        self.output.setMinimumHeight(400)
+        self.output.setStyleSheet(""" 
+            QTextEdit { 
+                background: #0d0d12; 
+                color: #e6e6e9; 
+                border: 1px solid #2b2b3c; 
+                font-family: 'Consolas', 'Courier New', monospace; 
+                font-size: 10pt;
+                padding: 10px; 
+                selection-background-color: #eb3c3c; 
+                selection-color: #ffffff; 
+            } 
+        """)
         out_l.addWidget(self.output)
-        root.addWidget(out_g)
+        root.addWidget(out_g, 1)
 
-                       
-        qa_g = self._create_group_box("Quick Actions")
-        qa = QHBoxLayout(qa_g); qa.setSpacing(8)
-        self.panic_btn = QPushButton("PANIC")
-        self.panic_btn.setStyleSheet("font-weight:bold;")
-        self.panic_btn.clicked.connect(lambda: self._cmd_panic([]))
-
-        btn_clear = QPushButton("Clear")
-        btn_clear.clicked.connect(lambda: self.output.clear())
-        btn_save = QPushButton("Save Log…")
-        btn_save.clicked.connect(self._save_log)
-        btn_help = QPushButton("Help")
-        btn_help.clicked.connect(lambda: self._handle("help"))
-        qa.addWidget(self.panic_btn)
-        qa.addWidget(btn_clear)
-        qa.addWidget(btn_save)
-        qa.addWidget(btn_help)
-        qa.addStretch(1)
-        root.addWidget(qa_g)
-
-                     
-        in_g = self._create_group_box("Command")
+        # Command Input (Compact at bottom)
+        in_g = self._create_group_box("EXECUTION")
         in_l = QVBoxLayout(in_g); in_l.setSpacing(6)
-
-                                  
-        row = QHBoxLayout(); row.setSpacing(6)
+        
+        in_row = QHBoxLayout()
         self.input_line = QLineEdit()
-        self.input_line.setPlaceholderText("Enter command (help for list)…")
+        self.input_line.setPlaceholderText("Enter command (type 'help' for list)...")
+        self.input_line.setFixedHeight(30)
+        self.input_line.setStyleSheet("font-family: 'Consolas'; font-size: 10pt;")
         self.input_line.returnPressed.connect(self._on_enter)
-        self.input_line.textEdited.connect(self._on_text_edited)
-        self.input_line.installEventFilter(self)                           
-        row.addWidget(self.input_line, 1)
-
-        btn_run = QPushButton("Run")
+        self.input_line.installEventFilter(self)
+        in_row.addWidget(self.input_line, 1)
+        
+        btn_run = QPushButton("RUN"); btn_run.setFixedWidth(80); btn_run.setFixedHeight(30)
+        btn_run.setStyleSheet("font-weight: bold; background-color: #1c1c24;")
         btn_run.clicked.connect(self._on_enter)
-        row.addWidget(btn_run, 0)
-        in_l.addLayout(row)
-
-                         
-        self.cmd_status = QLabel("Examples: get FOV  |  set FOV 110  |  toggle aimbot_enabled")
-        self.cmd_status.setStyleSheet("color:#f5f5f7; ")
-        in_l.addWidget(self.cmd_status)
-
+        in_row.addWidget(btn_run)
+        in_l.addLayout(in_row)
+        
         root.addWidget(in_g)
 
-        root.addStretch(1)
         scroll.setWidget(content)
         outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.addWidget(scroll)
+        self._log("[OK] Console system operational")
 
-                          
-        from PyQt5.QtWidgets import QListWidget
-        self.completion = QListWidget()
-        self.completion.setWindowFlags(self.completion.windowFlags() | Qt.Popup)
-        self.completion.itemClicked.connect(self._completion_pick)
-        self.completion.setStyleSheet(""" QListWidget { background:#FFFFFF; color:#f5f5f7; border:1px solid #000; font-family:Consolas; } QListWidget::item { padding:2px 6px; } QListWidget::item:selected { background:#C0D0FF; } """)
-
-        self._log("[OK] Console initialized")
-
-                                                               
     def eventFilter(self, obj, ev):
         if obj is self.input_line and ev.type() == ev.KeyPress:
             key = ev.key()
@@ -2466,11 +2135,8 @@ class ConsoleTab(QWidget):
                 self._history_prev(); return True
             if key == Qt.Key_Down:
                 self._history_next(); return True
-            if key == Qt.Key_Tab:
-                self._show_completion(); return True
         return super().eventFilter(obj, ev)
 
-                                   
     def _push_history(self, text: str):
         if text and (len(self.history) == 0 or self.history[-1] != text):
             self.history.append(text)
@@ -2484,69 +2150,18 @@ class ConsoleTab(QWidget):
     def _history_next(self):
         if not self.history: return
         self.history_index = min(len(self.history), self.history_index + 1)
-        if self.history_index == len(self.history):
-            self.input_line.clear()
-        else:
-            self.input_line.setText(self.history[self.history_index])
+        if self.history_index == len(self.history): self.input_line.clear()
+        else: self.input_line.setText(self.history[self.history_index])
 
-                                      
     def _build_known_cmds(self):
-        base = {
-            "help", "get", "set", "toggle", "list",
-            "start", "stop", "threads",
-            "panic", "reload_offsets", "restart_features",
-            "bind", "unbind", "gfx"
-        }
-                                                                   
+        base = {"help", "get", "set", "toggle", "list", "start", "stop", "threads", "panic"}
         try:
             for k in dir(self.CFG):
-                if not k.startswith("_"):
-                    base.add(k)
-        except Exception:
-            pass
+                if not k.startswith("_"): base.add(k)
+        except Exception: pass
         self._known_cmds = base
 
-    def _on_text_edited(self, _s):
-                                                         
-        if self.completion.isVisible():
-            self._show_completion()
-
-    def _show_completion(self):
-        text = self.input_line.text().strip()
-        if not text:
-            self.completion.hide(); return
-        parts = text.split()
-        last = parts[-1] if parts else ""
-        if not last:
-            self.completion.hide(); return
-
-        cand = [w for w in sorted(self._known_cmds) if w.lower().startswith(last.lower())]
-        if not cand:
-            self.completion.hide(); return
-
-        self.completion.clear()
-        self.completion.addItems(cand[:50])
-
-                                   
-        p = self.input_line.mapToGlobal(self.input_line.rect().bottomLeft())
-        self.completion.move(p)
-        self.completion.resize(self.input_line.width(), min(200, 12 + 18*len(cand)))
-        self.completion.show()
-
-    def _completion_pick(self, item):
-        text = self.input_line.text().strip()
-        parts = text.split()
-        if parts:
-            parts[-1] = item.text()
-            self.input_line.setText(" ".join(parts))
-        else:
-            self.input_line.setText(item.text())
-        self.completion.hide()
-        self.input_line.setFocus()
-
-                                            
     def _try_discover_execfw(self):
-        # Look for ExecutionTab instance in TAB_REGISTRY and borrow its ExecFramework
         try:
             for tab in TAB_REGISTRY:
                 if tab.__class__.__name__ == "ExecutionTab" and hasattr(tab, "execfw"):
@@ -2554,298 +2169,38 @@ class ConsoleTab(QWidget):
                     self._discover_timer.stop()
                     self._log("[OK] Linked to Execution engine")
                     return
-        except Exception as e:
-            self._log(f"[WARN] ExecFW discovery: {e}")
+        except Exception as e: pass
 
-                                   
     def _on_enter(self):
         text = self.input_line.text().strip()
-        if not text:
-            return
+        if not text: return
         self.input_line.clear()
         self._push_history(text)
         self._handle(text)
 
-    def _save_log(self):
-        try:
-            from PyQt5.QtWidgets import QFileDialog
-            path, _ = QFileDialog.getSaveFileName(self, "Save Console Log", "console.log", "Log (*.log)")
-            if not path: return
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(self.output.toPlainText())
-            self._log(f"[OK] Saved: {os.path.basename(path)}")
-        except Exception as e:
-            self._log(f"[ERR] Save log: {e}")
-
-                                   
     def _log(self, text: str):
         ts = time.strftime("%H:%M:%S")
         self.output.append(f"[{ts}] {text}")
         self.output.moveCursor(self.output.textCursor().End)
     
     def _on_log_signal(self, level, message):
-        """Receive log from global logger (thread-safe via signal)."""
-        try:
-            # Color-code by level
-            if level in ("ERROR", "CRITICAL", "EXCEPTION"):
-                color_msg = f'<span style="color: red;">{message}</span>'
-            elif level == "WARNING":
-                color_msg = f'<span style="color: orange;">{message}</span>'
-            elif level == "DEBUG":
-                color_msg = f'<span style="color: gray;">{message}</span>'
-            else:
-                color_msg = message
-            
-            ts = time.strftime("%H:%M:%S")
-            self.output.append(f"[{ts}] {color_msg}")
-            self.output.moveCursor(self.output.textCursor().End)
-        except Exception as e:
-            print(f"[ConsoleTab] Error handling log signal: {e}")
+        if level in ("ERROR", "CRITICAL", "EXCEPTION"):
+            color_msg = f'<span style="color: #ff3c3c;">{message}</span>'
+        elif level == "WARNING":
+            color_msg = f'<span style="color: #ffb83c;">{message}</span>'
+        else: color_msg = message
+        ts = time.strftime("%H:%M:%S")
+        self.output.append(f"[{ts}] {color_msg}")
+        self.output.moveCursor(self.output.textCursor().End)
 
-    def _set_status(self, txt: str):
-        self.status.setText(f"Status: {txt}")
-
-                                  
     def _handle(self, line: str):
         self._log(f"> {line}")
-        try:
-            parts = line.split()
-            if not parts: return
-            cmd, args = parts[0].lower(), parts[1:]
+        parts = line.split()
+        if not parts: return
+        cmd = parts[0].lower()
+        if cmd == "help": self._log("Commands: help, get, set, toggle, list, start, stop, threads, panic")
+        else: self._log(f"[ERR] Unknown command '{cmd}'")
 
-                  
-            if cmd == "help":                 return self._cmd_help(args)
-            if cmd == "get":                  return self._cmd_get(args)
-            if cmd == "set":                  return self._cmd_set(args)
-            if cmd == "toggle":               return self._cmd_toggle(args)
-            if cmd == "list":                 return self._cmd_list(args)
-
-            if cmd == "start":                return self._cmd_start(args)
-            if cmd == "stop":                 return self._cmd_stop(args)
-            if cmd == "threads":              return self._cmd_threads(args)
-
-            if cmd == "panic":                return self._cmd_panic(args)
-            if cmd == "reload_offsets":       return self._cmd_reload_offsets(args)
-            if cmd == "restart_features":     return self._cmd_restart_features(args)
-
-            if cmd == "bind":                 return self._cmd_bind(args)
-            if cmd == "unbind":               return self._cmd_unbind(args)
-
-                                                    
-            if cmd == "gfx":
-                if self.execfw:
-                    return self.execfw.handle(line)
-                else:
-                    return self._log("[ERR] Exec framework not available (open Execution tab)")
-
-            self._log(f"[ERR] Unknown command '{cmd}'. Type 'help'.")
-
-        except Exception as e:
-            self._log(f"[ERR] {e}")
-
-                                         
-    def _cmd_help(self, _):
-        help_text = (
-            "Commands:\n"
-            "  get <key>                       - read a Config value\n"
-            "  set <key> <value>               - set a Config value (auto type)\n"
-            "  toggle <key>                    - flip boolean Config value\n"
-            "  list [prefix]                   - list Config keys (optional startswith)\n"
-            "  start|stop <feature>            - aimbot, esp, triggerbot, glow, bhop, fov, walkbot\n"
-            "  threads                         - list running feature threads\n"
-            "  panic                           - stop all features (panic key)\n"
-            "  reload_offsets                  - reload Process.offsets and restart threads\n"
-            "  restart_features                - stop and start all feature threads\n"
-            "  bind <action> <key>             - set keys (e.g., bind toggle_menu insert)\n"
-            "  unbind <action>                 - clear action key\n"
-            "  gfx ...                         - forward to Execution gfx (text/line/box/circle)\n"
-        )
-        for line in help_text.splitlines():
-            self._log(line)
-
-    def _cmd_get(self, args):
-        if len(args) < 1: return self._log("Usage: get <key>")
-        key = args[0]
-        if not hasattr(self.CFG, key): return self._log(f"[ERR] No such key '{key}'")
-        self._log(f"{key} = {getattr(self.CFG, key)}")
-
-    def _cmd_set(self, args):
-        if len(args) < 2: return self._log("Usage: set <key> <value>")
-        key, val = args[0], " ".join(args[1:])
-        if not hasattr(self.CFG, key): return self._log(f"[ERR] No such key '{key}'")
-        try:
-            cur = getattr(self.CFG, key)
-            newv = self._coerce_value(val, type(cur))
-            setattr(self.CFG, key, newv)
-            self._log(f"[OK] {key} = {newv!r}")
-            refresh_all_tabs()
-        except Exception as e:
-            self._log(f"[ERR] set: {e}")
-
-    def _cmd_toggle(self, args):
-        if len(args) < 1: return self._log("Usage: toggle <key>")
-        key = args[0]
-        if not hasattr(self.CFG, key): return self._log(f"[ERR] No such key '{key}'")
-        cur = getattr(self.CFG, key)
-        if not isinstance(cur, bool): return self._log(f"[ERR] '{key}' is not a bool")
-        setattr(self.CFG, key, not cur)
-        self._log(f"[OK] {key} = {getattr(self.CFG, key)}")
-        refresh_all_tabs()
-
-    def _cmd_list(self, args):
-        pref = args[0].lower() if args else ""
-        keys = [k for k in dir(self.CFG) if not k.startswith("_")]
-        keys.sort()
-        shown = 0
-        for k in keys:
-            if pref and not k.lower().startswith(pref): continue
-            try:
-                v = getattr(self.CFG, k)
-                if callable(v): continue
-                self._log(f"{k} = {v}")
-                shown += 1
-                if shown >= 200:
-                    self._log("… (truncated)")
-                    break
-            except Exception:
-                pass
-        if shown == 0:
-            self._log("(no matching keys)")
-
-    def _cmd_start(self, args):
-        if len(args) < 1: return self._log("Usage: start <feature>")
-        feat = args[0].lower()
-        try:
-            if   feat == "esp":         start_esp_thread()
-            elif feat == "aimbot":      start_aimbot_thread()
-            elif feat == "triggerbot":  start_triggerbot_thread()
-            elif feat == "glow":        start_glow_thread()
-            elif feat == "bhop":        start_bhop_thread()
-            elif feat == "fov":         start_fov_thread()
-            elif feat == "radar":       start_radar_thread()
-            elif feat == "walkbot":     start_walkbot_thread()
-            else: return self._log(f"[ERR] Unknown feature '{feat}'")
-            self._log(f"[OK] started {feat}")
-        except Exception as e:
-            self._log(f"[ERR] start {feat}: {e}")
-
-    def _cmd_stop(self, args):
-        if len(args) < 1: return self._log("Usage: stop <feature>")
-        feat = args[0].lower()
-        try:
-            if   feat == "esp":         stop_esp_thread()
-            elif feat == "aimbot":      stop_aimbot_thread()
-            elif feat == "triggerbot":  stop_triggerbot_thread()
-            elif feat == "glow":        stop_glow_thread()
-            elif feat == "bhop":        stop_bhop_thread()
-            elif feat == "fov":         stop_fov_thread()
-            elif feat == "radar":       stop_radar_thread()
-            elif feat == "walkbot":     stop_walkbot_thread()
-            else: return self._log(f"[ERR] Unknown feature '{feat}'")
-            self._log(f"[OK] stopped {feat}")
-        except Exception as e:
-            self._log(f"[ERR] stop {feat}: {e}")
-
-    def _cmd_threads(self, _args):
-        # uses globals from GFusion.py
-        mapping = {
-            "esp": globals().get("esp_thread"),
-            "aimbot": globals().get("aimbot_thread"),
-            "triggerbot": globals().get("triggerbot_thread"),
-            "glow": globals().get("glow_thread"),
-            "bhop": globals().get("bhop_thread"),
-            "fov": globals().get("fov_thread"),
-            "walkbot": globals().get("walkbot_thread"),
-        }
-        for name, th in mapping.items():
-            state = "running" if th is not None and th.is_alive() else "stopped"
-            self._log(f"{name:<10} {state}")
-
-    def _cmd_panic(self, _args):
-                                                          
-        try:
-            if hasattr(self.CFG, "panic_key_enabled"): setattr(self.CFG, "panic_key_enabled", True)
-            stop_esp_thread()
-            stop_aimbot_thread()
-            stop_triggerbot_thread()
-            stop_glow_thread()
-            stop_bhop_thread()
-            stop_fov_thread()
-            stop_walkbot_thread()
-            self._set_status("PANIC")
-            self._log("[OK] All features stopped")
-            refresh_all_tabs()
-        except Exception as e:
-            self._log(f"[ERR] panic: {e}")
-
-    def _cmd_reload_offsets(self, _args):
-        try:
-            reload_offsets_and_restart_threads()
-            self._log("[OK] Offsets reloaded; restarting features…")
-        except Exception as e:
-            self._log(f"[ERR] reload_offsets: {e}")
-
-    def _cmd_restart_features(self, _args):
-        try:
-            stop_esp_thread(); stop_aimbot_thread(); stop_triggerbot_thread()
-            stop_glow_thread(); stop_bhop_thread(); stop_fov_thread(); stop_walkbot_thread()
-            time.sleep(0.5)
-            start_esp_thread(); start_aimbot_thread(); start_triggerbot_thread()
-            start_glow_thread(); start_bhop_thread(); start_fov_thread(); start_walkbot_thread()
-            self._log("[OK] Features restarted")
-        except Exception as e:
-            self._log(f"[ERR] restart_features: {e}")
-
-    def _cmd_bind(self, args):
-        if len(args) < 2: return self._log("Usage: bind <action> <key>")
-        action, key = args[0], args[1]
-        try:
-                                                           
-            setattr(self.CFG, f"{action}_key", key)
-            self._log(f"[OK] bound {action} -> {key}")
-            refresh_all_tabs()
-        except Exception as e:
-            self._log(f"[ERR] bind: {e}")
-
-    def _cmd_unbind(self, args):
-        if len(args) < 1: return self._log("Usage: unbind <action>")
-        action = args[0]
-        try:
-            k = f"{action}_key"
-            if hasattr(self.CFG, k):
-                setattr(self.CFG, k, "")
-                self._log(f"[OK] unbound {action}")
-                refresh_all_tabs()
-            else:
-                self._log(f"[ERR] no binding for '{action}'")
-        except Exception as e:
-            self._log(f"[ERR] unbind: {e}")
-
-                                   
-    def _coerce_value(self, text, typ):
-        """Convert CLI text to the type of current config value."""
-        if typ is bool:
-            t = text.strip().lower()
-            return t in ("1", "true", "on", "yes", "enable", "enabled")
-        if typ is int:
-            t = text.strip().lower()
-            return int(t, 16) if t.startswith("0x") else int(t)
-        if typ is float:
-            return float(text.strip())
-        if typ in (list, tuple):
-                            
-            try:
-                import json
-                v = json.loads(text)
-                return typ(v) if typ is tuple else v
-            except Exception:
-                                             
-                parts = [p for p in text.replace(",", " ").split() if p]
-                return typ(parts) if typ is tuple else parts
-                         
-        return text
-
-    # public hook for tab refreshes
     def refresh_ui(self):
         pass
 
@@ -2873,11 +2228,8 @@ class ESPTab(QWidget):
         self.init_ui()
 
                                                  
-    def create_group_box(self, title: str) -> QGroupBox:
-        """Create a Win95-style group box"""
-        group = QGroupBox(title)
-        group.setStyleSheet(""" QGroupBox { background-color: #151520; border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF; border-right: 1px solid #404040; border-bottom: 1px solid #404040; margin-top: 8px; padding-top: 8px; font-weight: bold; color: #f5f5f7; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; background-color: #151520; } """)
-        return group
+    def create_group_box(self, title: str):
+        return SectionFrame(title)
 
     def add_checkbox(self, layout, label, cfg_key):
         cb = CheatCheckBox(label)
@@ -2941,59 +2293,33 @@ class ESPTab(QWidget):
         return slider
 
     def add_color_section(self, parent_layout, title, colors):
-        section = QGroupBox(title)
-        section.setStyleSheet("""
-            QGroupBox {
-                background-color: #11111a;
-                border: 1px solid #303040;
-                margin-top: 6px;
-                padding-top: 6px;
-                font-weight: bold;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 6px;
-                padding: 0 4px;
-            }
-        """)
-
+        section = self.create_group_box(title)
         grid = QGridLayout(section)
-        grid.setSpacing(6)
+        grid.setSpacing(10); grid.setContentsMargins(5, 5, 5, 5)
 
         for i, (label, attr, default) in enumerate(colors):
-            self.add_color_picker_to_grid(
-                grid, i // 3, i % 3, label, attr, default
-            )
-
+            self.add_color_picker_to_grid(grid, i // 3, i % 3, label, attr, default)
         parent_layout.addWidget(section)
 
     def add_color_picker_to_grid(self, grid, row, col, label, cfg_key, default=(255, 255, 255)):
         rgb = getattr(Config, cfg_key, default)
-        
         item_layout = QHBoxLayout()
-        lbl = QLabel(f"{label}:")
-        lbl.setStyleSheet("color: #f5f5f7; ")
-        lbl.setFixedWidth(80)
+        lbl = QLabel(f"{label}:"); lbl.setFixedWidth(70)
         item_layout.addWidget(lbl)
         
-        btn = QPushButton()
-        btn.setObjectName("espColorButton")  # <- important
-        btn.setFixedSize(16, 16)             # base size, QSS will enforce it
-        btn.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid black;")
+        btn = QPushButton(); btn.setObjectName("espColorButton"); btn.setFixedSize(16, 16)
+        btn.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid #37373c;")
 
         def choose():
-            initial = QColor(*rgb)
-            new = QColorDialog.getColor(initial, self, f"Select {label} Color")
-            if new.isValid():
-                new_rgb = (new.red(), new.green(), new.blue())
+            color = QColorDialog.getColor(QColor(*rgb), self, f"Select {label} Color")
+            if color.isValid():
+                new_rgb = (color.red(), color.green(), color.blue())
                 setattr(Config, cfg_key, new_rgb)
-                btn.setStyleSheet(f"background-color: rgb{new_rgb}; border: 1px solid black;")
-
+                btn.setStyleSheet(f"background-color: rgb{new_rgb}; border: 1px solid #37373c;")
         btn.clicked.connect(choose)
-        item_layout.addWidget(btn)
-        item_layout.addStretch()
+        item_layout.addWidget(btn); item_layout.addStretch()
         
-        cont = QWidget()
+        cont = QWidget(); cont.setStyleSheet("background: transparent;")
         cont.setLayout(item_layout)
         grid.addWidget(cont, row, col)
 
@@ -3002,299 +2328,91 @@ class ESPTab(QWidget):
 
                                             
     def init_ui(self):
+        # scroll container
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #14141a; border: none; }")
 
-        content = QWidget()
-        content.setStyleSheet("background-color: #151520;")
+        content = QWidget(); content.setStyleSheet("background-color: #14141a;")
         layout = QVBoxLayout(content)
-        layout.setSpacing(8)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10); layout.setContentsMargins(10, 10, 10, 10)
 
-                                     
-        row1 = QHBoxLayout()
-        row1.setSpacing(8)
-        
-                     
-        team_group = self.create_group_box("Team Filter")
-        team_layout = QVBoxLayout(team_group)
-        team_layout.setSpacing(3)
-        self.add_checkbox(team_layout, "Enemy Only", "esp_show_enemies_only")
-        self.add_checkbox(team_layout, "Team Only", "esp_show_team_only")
-        team_layout.addStretch()
-        
-                        
-        panic_group = self.create_group_box("Panic Settings")
-        panic_layout = QVBoxLayout(panic_group)
-        panic_layout.setSpacing(3)
-        
-        panic_lbl = QLabel(f"Key: {vk_to_name(getattr(Config, 'panic_key', 0x7B))}")
-        panic_lbl.setStyleSheet("color: #f5f5f7; ")
-        panic_layout.addWidget(panic_lbl)
-        
-        panic_btn = QPushButton("Set Panic Key")
-        panic_btn.setFixedHeight(20)
-        
-        def set_panic():
-            panic_btn.setText("Press a key...")
-            self.listener_thread = KeyListenerThread()
-            self.listener_thread.key_pressed.connect(lambda key: self.update_panic_key(key, panic_lbl, panic_btn))
-            self.listener_thread.start()
+        # 2-column main layout
+        cols = QHBoxLayout(); cols.setSpacing(10)
+        col1 = QVBoxLayout(); col1.setSpacing(10)
+        col2 = QVBoxLayout(); col2.setSpacing(10)
 
-        panic_btn.clicked.connect(set_panic)
-        panic_layout.addWidget(panic_btn)
-        panic_layout.addStretch()
-        
-        self.ui_elements["labels"]["panic_key"] = panic_lbl
-        
-        row1.addWidget(team_group, 1)
-        row1.addWidget(panic_group, 1)
-        layout.addLayout(row1)
+        # --- Column 1: Core Visuals ---
+        vis_g = self.create_group_box("Player Visuals")
+        vis_l = QVBoxLayout(vis_g)
+        self.add_checkbox(vis_l, "Enable ESP", "show_box_esp")
+        self.add_checkbox(vis_l, "Visible Only", "visible_only_esp_enabled")
+        self.add_checkbox(vis_l, "Hide from Capture (OBS)", "obs_protection_enabled")
+        self.add_combobox(vis_l, "Box Style:", ["normal", "rounded", "corner"], "box_esp_style")
+        col1.addWidget(vis_g)
 
-                                    
-        basic_group = self.create_group_box("Basic ESP Features")
-        basic_layout = QVBoxLayout(basic_group)
-        basic_layout.setSpacing(3)
-        
-        basic_grid = QGridLayout()
-        basic_grid.setSpacing(4)
-        features = [
-            ("Hide from Capture", "obs_protection_enabled"),
-            ("Visible Only", "visible_only_esp_enabled"),
-            ("Box ESP", "show_box_esp"),
-            ("Health Bar", "healthbar_enabled"),
-            ("Armor Bar", "armorbar_enabled"),
-            ("Health Text", "health_esp_enabled"),
-            ("Name ESP", "name_esp_enabled"),
-            ("Weapon ESP", "weapon_esp_enabled"),
-            ("Armor Text", "armor_esp_enabled"),
-            ("Distance ESP", "distance_esp_enabled"),
-            ("World ESP", "world_esp_enabled"),
-        ]
-        for i, (label, attr) in enumerate(features):
-            self.add_checkbox_to_grid(basic_grid, i // 3, i % 3, label, attr)
-        
-        basic_layout.addLayout(basic_grid)
-        self.add_combobox(basic_layout, "Box Style:", ["normal", "rounded", "corner"], "box_esp_style")
-        basic_layout.addStretch()
-        layout.addWidget(basic_group)
+        health_g = self.create_group_box("Health & Armor")
+        health_l = QVBoxLayout(health_g)
+        self.add_checkbox(health_l, "Health Bar", "healthbar_enabled")
+        self.add_checkbox(health_l, "Health Text", "health_esp_enabled")
+        self.add_checkbox(health_l, "Armor Bar", "armorbar_enabled")
+        self.add_checkbox(health_l, "Armor Text", "armor_esp_enabled")
+        col1.addWidget(health_g)
 
-                                       
-        row2 = QHBoxLayout()
-        row2.setSpacing(8)
-                    
-        vis_group = self.create_group_box("Visibility ESP")
-        vis_layout = QVBoxLayout(vis_group)
-        vis_layout.setSpacing(3)
-        self.add_checkbox(vis_layout, "Enable Visibility", "visibility_esp_enabled")
-        self.add_checkbox(vis_layout, "Show Vis Text", "visibility_text_enabled")
-        vis_layout.addStretch()
-        
-        row2.addWidget(vis_group, 1)
-        layout.addLayout(row2)
+        info_g = self.create_group_box("Player Info")
+        info_l = QVBoxLayout(info_g)
+        self.add_checkbox(info_l, "Name ESP", "name_esp_enabled")
+        self.add_checkbox(info_l, "Weapon ESP", "weapon_esp_enabled")
+        self.add_checkbox(info_l, "Distance ESP", "distance_esp_enabled")
+        col1.addWidget(info_g)
+        col1.addStretch()
 
-                                       
-        adv_group = self.create_group_box("Advanced ESP Features")
-        adv_layout = QVBoxLayout(adv_group)
-        adv_layout.setSpacing(3)
-        
-        adv_grid = QGridLayout()
-        adv_grid.setSpacing(4)
-        adv_features = [
-            ("Dead Players", "draw_dead_entities"),
-            ("Flash ESP", "flash_esp_enabled"),
-            ("Scope ESP", "scope_esp_enabled"),
-            ("Skeleton ESP", "skeleton_esp_enabled"),
-            ("Bomb ESP", "bomb_esp_enabled"),
-            ("Money ESP", "money_esp_enabled"),
-            ("Velocity ESP", "velocity_esp"),
-            ("Velocity Text", "velocity_esp_text"),
-            ("Speed ESP", "speed_esp"),
-            ("Coordinates", "coordinates_esp_enabled"),
-            ("Trace ESP", "trace_esp_enabled"),
-        ]
-        for i, (label, attr) in enumerate(adv_features):
-            self.add_checkbox_to_grid(adv_grid, i // 3, i % 3, label, attr)
-        
-        adv_layout.addLayout(adv_grid)
-        self.add_slider(adv_layout, "Max Trace Points", "trace_esp_max_points", 10, 500)
-        adv_layout.addStretch()
-        layout.addWidget(adv_group)
+        # --- Column 2: Filter & Extras ---
+        filter_g = self.create_group_box("Team Filtering")
+        filter_l = QVBoxLayout(filter_g)
+        self.add_checkbox(filter_l, "Enemy Only", "esp_show_enemies_only")
+        self.add_checkbox(filter_l, "Team Only", "esp_show_team_only")
+        self.add_checkbox(filter_l, "Dead Players", "draw_dead_entities")
+        col2.addWidget(filter_g)
 
-                                      
-        row3 = QHBoxLayout()
-        row3.setSpacing(8)
-        
-                   
-        cross_group = self.create_group_box("Crosshair")
-        cross_layout = QVBoxLayout(cross_group)
-        cross_layout.setSpacing(3)
-        self.add_checkbox(cross_layout, "Enable Crosshair", "draw_crosshair_enabled")
-        self.add_slider(cross_layout, "Size", "crosshair_size", 1, 20)
-        cross_layout.addStretch()
-        
-                  
-        line_group = self.create_group_box("Line ESP")
-        line_layout = QVBoxLayout(line_group)
-        line_layout.setSpacing(3)
-        self.add_checkbox(line_layout, "Enable Line ESP", "line_esp_enabled")
-        self.add_combobox(line_layout, "Position:", ["top", "bottom"], "line_esp_position")
-        line_layout.addStretch()
-        
-        row3.addWidget(cross_group, 1)
-        row3.addWidget(line_group, 1)
-        layout.addLayout(row3)
+        extra_g = self.create_group_box("Overlay Extras")
+        extra_l = QVBoxLayout(extra_g)
+        self.add_checkbox(extra_l, "Skeleton ESP", "skeleton_esp_enabled")
+        self.add_checkbox(extra_l, "Velocity ESP", "velocity_esp")
+        self.add_checkbox(extra_l, "Flash ESP", "flash_esp_enabled")
+        self.add_checkbox(extra_l, "Bomb ESP", "bomb_esp_enabled")
+        self.add_checkbox(extra_l, "Money ESP", "money_esp_enabled")
+        col2.addWidget(extra_g)
 
-                                  
-        row4 = QHBoxLayout()
-        row4.setSpacing(8)
-        
-                  
-        bone_group = self.create_group_box("Bone Dot ESP")
-        bone_layout = QVBoxLayout(bone_group)
-        bone_layout.setSpacing(3)
-        self.add_checkbox(bone_layout, "Enable Bone Dots", "bone_dot_esp_enabled")
-        self.add_slider(bone_layout, "Dot Size", "bone_dot_size", 1, 20)
-        bone_layout.addStretch()
-        
-                       
-        size_group = self.create_group_box("Head ESP")
-        size_layout = QVBoxLayout(size_group)
-        size_layout.setSpacing(3)
+        util_g = self.create_group_box("Utility")
+        util_l = QVBoxLayout(util_g)
+        self.add_checkbox(util_l, "Crosshair", "draw_crosshair_enabled")
+        self.add_checkbox(util_l, "Line ESP", "line_esp_enabled")
+        self.add_combobox(util_l, "Line Pos:", ["top", "bottom"], "line_esp_position")
+        col2.addWidget(util_g)
+        col2.addStretch()
 
-        # --- Head ESP Toggle (fixed: no default= param) ---
-        self.add_checkbox(size_layout, "Enable Head ESP", "head_esp_enabled")
+        cols.addLayout(col1, 1)
+        cols.addLayout(col2, 1)
+        layout.addLayout(cols)
 
-        # --- Head ESP Size Slider ---
-        self.add_slider(size_layout, "Head ESP Size", "head_esp_size", 1, 50)
-
-        size_layout.addStretch()
-
-        
-        row4.addWidget(bone_group, 1)
-        row4.addWidget(size_group, 1)
-        layout.addLayout(row4)
-
-                                
-        shape_group = self.create_group_box("Shape Settings")
-        shape_layout = QHBoxLayout(shape_group)
-        shape_layout.setSpacing(8)
-        
-        shape_left = QVBoxLayout()
-        self.add_combobox(shape_left, "Head Shape:", ["circle", "square"], "head_esp_shape")
-        shape_left.addStretch()
-        
-        shape_right = QVBoxLayout()
-        self.add_combobox(shape_right, "Bone Shape:", ["circle", "square"], "bone_dot_shape")
-        shape_right.addStretch()
-        
-        shape_layout.addLayout(shape_left, 1)
-        shape_layout.addLayout(shape_right, 1)
-        layout.addWidget(shape_group)
-
-                            
-        colors_group = self.create_group_box("ESP Colors")
-        colors_layout = QVBoxLayout(colors_group)
-        colors_layout.setSpacing(8)
-
-        # --------------------------------------------------
-        # Box ESP (Base)
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Box ESP", [
+        # Separate Colors Section
+        colors_g = self.create_group_box("ESP Colors")
+        colors_l = QVBoxLayout(colors_g)
+        self.add_color_section(colors_l, "Main Colors", [
             ("Box (T)", "color_box_t", (255, 180, 0)),
             ("Box (CT)", "color_box_ct", (100, 200, 255)),
-        ])
-
-        # --------------------------------------------------
-        # Box ESP (Visibility)
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Box ESP – Visibility", [
-            ("Visible (T)", "color_box_visible_t", (255, 200, 0)),
-            ("Hidden (T)", "color_box_invisible_t", (120, 70, 0)),
-            ("Visible (CT)", "color_box_visible_ct", (0, 200, 255)),
-            ("Hidden (CT)", "color_box_invisible_ct", (0, 70, 120)),
-        ])
-
-        # --------------------------------------------------
-        # Skeleton ESP
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Skeleton ESP", [
-            ("Bone", "color_bone", (255, 255, 255)),
-            ("Bone Dot", "bone_dot_color", (255, 0, 255)),
-        ])
-
-        # --------------------------------------------------
-        # Skeleton ESP (Visibility)
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Skeleton ESP – Visibility", [
-            ("Visible (T)", "color_skeleton_visible_t", (255, 200, 0)),
-            ("Hidden (T)", "color_skeleton_invisible_t", (120, 70, 0)),
-            ("Visible (CT)", "color_skeleton_visible_ct", (0, 200, 255)),
-            ("Hidden (CT)", "color_skeleton_invisible_ct", (0, 70, 120)),
-        ])
-
-        # --------------------------------------------------
-        # Text & HUD
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Text & HUD", [
+            ("Skeleton", "color_bone", (255, 255, 255)),
             ("Name", "color_name", (255, 255, 255)),
-            ("Name FX", "color_name_effects", (255, 215, 0)),
-            ("HP Text", "color_hp_text", (0, 255, 0)),
-            ("Armor Text", "color_armor_text", (0, 0, 255)),
-            ("Distance", "color_distance", (255, 255, 255)),
-            ("Weapon", "color_weapon_text", (255, 255, 255)),
-            ("Money", "color_money_text", (0, 255, 255)),
         ])
+        layout.addWidget(colors_g)
 
-        # --------------------------------------------------
-        # Visibility Text
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Visibility Text", [
-            ("Visible", "color_visible_text", (0, 255, 0)),
-            ("Hidden", "color_not_visible_text", (255, 0, 0)),
-        ])
-
-        # --------------------------------------------------
-        # Movement / Utility
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Movement & Utility", [
-            ("Velocity Text", "velocity_text_color", (255, 255, 255)),
-            ("Velocity ESP", "velocity_esp_color", (255, 255, 0)),
-            ("Speed ESP", "speed_esp_color", (0, 255, 255)),
-            ("Coordinates", "coordinates_esp_color", (255, 255, 255)),
-            ("Trace ESP", "trace_esp_color", (255, 0, 255)),
-        ])
-
-        # --------------------------------------------------
-        # Misc
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Misc", [
-            ("Crosshair", "crosshair_color", (255, 255, 255)),
-            ("Flash / Scope", "color_flash_scope", (255, 255, 0)),
-            ("Spectators", "color_spectators", (180, 180, 180)),
-        ])
-
-        # --------------------------------------------------
-        # Dead Players
-        # --------------------------------------------------
-        self.add_color_section(colors_layout, "Dead Players", [
-            ("Dead CT", "color_dead_ct", (0, 0, 128)),
-            ("Dead T", "color_dead_t", (128, 0, 0)),
-        ])
-
-        layout.addWidget(colors_group)
-
-
-        layout.addStretch()
         scroll.setWidget(content)
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(scroll)
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.addWidget(scroll)
 
-                                                   
     def update_panic_key(self, key, label, btn):
         vk = key_to_vk(key)
         setattr(Config, "panic_key", vk)
@@ -3321,7 +2439,7 @@ class ESPTab(QWidget):
                 
         for k, b in self.ui_elements["color_buttons"].items():
             rgb = getattr(Config, k, (255, 255, 255))
-            b.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid black;")
+            b.setStyleSheet(f"background-color: rgb{rgb}; border: 1px solid #37373c;")
                
         if "panic_key" in self.ui_elements["labels"]:
             vk = getattr(Config, "panic_key", 0x7B)
@@ -3454,7 +2572,7 @@ class MainWindow(QWidget):
         """
         return """
         #outerPanel {
-            background-color: #151520;
+            background-color: #14141a;
             border-radius: 14px;
             border: 1px solid #26263a;
         }
@@ -3813,6 +2931,34 @@ class MiscTab(QWidget):
         self.ui_elements = {"color_buttons": {}}
         self.init_ui()
 
+    def create_group_box(self, title: str):
+        return SectionFrame(title)
+
+    def add_checkbox(self, layout, label, cfg_key, thread_start=None, thread_stop=None):
+        cb = CheatCheckBox(label)
+        cb.setChecked(bool(getattr(Config, cfg_key, False)))
+        def handler(st):
+            en = (st == Qt.Checked)
+            setattr(Config, cfg_key, en)
+            if en and thread_start: thread_start()
+            elif not en and thread_stop: thread_stop()
+        cb.stateChanged.connect(handler)
+        layout.addWidget(cb)
+        return cb
+
+    def add_int_slider(self, layout, label, cfg_key, min_v, max_v):
+        val = int(getattr(Config, cfg_key, min_v))
+        lab = QLabel(f"{label}: {val}")
+        lab.setStyleSheet("color: #f5f5f7; ")
+        sld = NoScrollSlider(Qt.Horizontal)
+        sld.setMinimum(min_v); sld.setMaximum(max_v); sld.setValue(val)
+        def on_change(v):
+            setattr(Config, cfg_key, int(v))
+            lab.setText(f"{label}: {int(v)}")
+        sld.valueChanged.connect(on_change)
+        layout.addWidget(lab); layout.addWidget(sld)
+        return sld, lab
+
                                    
     def section_title(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -3938,424 +3084,121 @@ class MiscTab(QWidget):
         self.ui_elements["color_buttons"][cfg_key] = btn
         return btn
 
-    def create_group_box(self, title: str) -> QGroupBox:
-        """Create a Win95-style group box"""
-        group = QGroupBox(title)
-        group.setStyleSheet(""" QGroupBox { background-color: #151520; border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF; border-right: 1px solid #404040; border-bottom: 1px solid #404040; margin-top: 8px; padding-top: 8px; font-weight: bold; color: #f5f5f7; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; background-color: #151520; } """)
-        return group
+    def create_group_box(self, title: str):
+        return SectionFrame(title)
 
                               
     def init_ui(self):
+        # scroll area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet(""" QScrollArea { background-color: #151520; border: none; } """)
+        scroll.setStyleSheet("QScrollArea { background-color: #14141a; border: none; }")
 
-        content_widget = QWidget()
-        content_widget.setStyleSheet("background-color: #151520;")
-        main_layout = QVBoxLayout(content_widget)
-        main_layout.setSpacing(8)
-        main_layout.setContentsMargins(8, 8, 8, 8)
+        content = QWidget(); content.setStyleSheet("background-color: #14141a;")
+        main_layout = QVBoxLayout(content)
+        main_layout.setSpacing(10); main_layout.setContentsMargins(10, 10, 10, 10)
 
-                                       
-        row1 = QHBoxLayout()
-        row1.setSpacing(8)
-        
-                     
-        fov_group = self.create_group_box("FOV Changer")
-        fov_layout = QVBoxLayout(fov_group)
-        fov_layout.setSpacing(4)
-        
-        self.fov_checkbox = self.add_checkbox(
-            fov_layout, "Enable FOV Changer", "fov_changer_enabled",
-            default=True, thread_start=start_fov_thread, thread_stop=stop_fov_thread
-        )
-        self.fov_label = QLabel(f"Game FOV: {cfg.game_fov}")
-        self.fov_label.setStyleSheet("color: #f5f5f7; ")
-        self.fov_slider = NoScrollSlider(Qt.Horizontal)
-        self.fov_slider.setRange(60, 150)
-        self.fov_slider.setValue(cfg.game_fov)
-        self.fov_slider.valueChanged.connect(self.update_fov)
-        fov_layout.addWidget(self.fov_label)
-        fov_layout.addWidget(self.fov_slider)
-        fov_layout.addStretch()
-        
-                      
-        glow_group = self.create_group_box("Glow Effects")
-        glow_layout = QVBoxLayout(glow_group)
-        glow_layout.setSpacing(4)
+        # 2-column main layout
+        cols = QHBoxLayout(); cols.setSpacing(10)
+        col1 = QVBoxLayout(); col1.setSpacing(10)
+        col2 = QVBoxLayout(); col2.setSpacing(10)
 
-        self.glow_checkbox = self.add_checkbox(
-            glow_layout, "Enable Glow", "glow",
-            default=False, thread_start=start_glow_thread, thread_stop=stop_glow_thread
-        )
-        self.add_checkbox(glow_layout, "Glow Enemies", "glow_show_enemies", default=True)
-        self.add_checkbox(glow_layout, "Glow Team", "glow_show_team", default=True)
-
-        # --- Glow colors with small square buttons ---
-        glow_color_items = [
-            ("Enemy Color", "glow_color_enemy", (255, 0, 0)),
-            ("Team Color", "glow_color_team", (0, 255, 0)),
-        ]
-
-        for label, key, default in glow_color_items:
-            row = QHBoxLayout()
-            lbl = QLabel(f"{label}:")
-            lbl.setStyleSheet("color: #f5f5f7; ")
-            lbl.setFixedWidth(80)
-            row.addWidget(lbl)
-
-            rgb = self._sanitize_rgb3(getattr(Config, key, default))
-            btn = QPushButton()
-            btn.setObjectName("espColorButton")      # reuse the tiny square style
-            btn.setFixedSize(16, 16)                 # square base size
-            btn.setStyleSheet(self.rgb_to_stylesheet_safe(rgb))
-
-            def make_glow_color_callback(cfg_key, button, default_val):
-                def choose():
-                    current = self._sanitize_rgb3(getattr(Config, cfg_key, default_val))
-                    initial = QColor(*current)
-                    color = QColorDialog.getColor(initial, self, f"Select {cfg_key}")
-                    if color.isValid():
-                        new_rgb = (color.red(), color.green(), color.blue())
-                        setattr(Config, cfg_key, new_rgb)
-                        button.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
-                return choose
-
-            btn.clicked.connect(make_glow_color_callback(key, btn, default))
-            row.addWidget(btn)
-            row.addStretch()
-
-            self.ui_elements["color_buttons"][key] = btn
-            glow_layout.addLayout(row)
-
-        glow_layout.addStretch()
-
-        # --------------------------
-        # Radar Overlay
-        # --------------------------
-        radar_group = self.create_group_box("Radar Overlay")
-        radar_layout = QVBoxLayout(radar_group)
-        radar_layout.setSpacing(4)
-
-        self.radar_checkbox = self.add_checkbox(
-            radar_layout, "Enable Radar", "radar_enabled",
-            default=False, thread_start=start_radar_thread, thread_stop=stop_radar_thread
-        )
-        self.add_checkbox(radar_layout, "Always on Top", "radar_always_on_top", default=True)
-        self.add_checkbox(radar_layout, "Show Team", "radar_show_team", default=True)
-        self.add_checkbox(radar_layout, "Show My Direction", "radar_show_me_dir", default=True)
-        self.add_checkbox(radar_layout, "Show Enemy Direction", "radar_show_enemy_dir", default=True)
-        self.add_checkbox(radar_layout, "Show Team Direction", "radar_show_team_dir", default=False)
-        self.add_checkbox(radar_layout, "Fixed Range", "radar_fixed_range", default=False)
-
-        # Size (square)
-        self.radar_size_label = QLabel(f"Size: {int(getattr(Config, 'radar_width', 280))} px")
-        self.radar_size_label.setStyleSheet("color: #f5f5f7;")
-        radar_layout.addWidget(self.radar_size_label)
-
-        self.radar_size_slider = NoScrollSlider(Qt.Horizontal)
-        self.radar_size_slider.setRange(180, 650)
-        self.radar_size_slider.setValue(int(getattr(Config, "radar_width", 280)))
-        self.radar_size_slider.valueChanged.connect(self.update_radar_size)
-        radar_layout.addWidget(self.radar_size_slider)
-
-        # Opacity
-        self.radar_opacity_label = QLabel(f"Opacity: {int(getattr(Config, 'radar_alpha', 235))}")
-        self.radar_opacity_label.setStyleSheet("color: #f5f5f7;")
-        radar_layout.addWidget(self.radar_opacity_label)
-
-        self.radar_opacity_slider = NoScrollSlider(Qt.Horizontal)
-        self.radar_opacity_slider.setRange(60, 255)
-        self.radar_opacity_slider.setValue(int(getattr(Config, "radar_alpha", 235)))
-        self.radar_opacity_slider.valueChanged.connect(self.update_radar_opacity)
-        radar_layout.addWidget(self.radar_opacity_slider)
-
-        # FPS
-        self.radar_fps_label = QLabel(f"Overlay FPS: {int(float(getattr(Config, 'radar_fps', 60.0)))}")
-        self.radar_fps_label.setStyleSheet("color: #f5f5f7;")
-        radar_layout.addWidget(self.radar_fps_label)
-
-        self.radar_fps_slider = NoScrollSlider(Qt.Horizontal)
-        self.radar_fps_slider.setRange(20, 144)
-        self.radar_fps_slider.setValue(int(float(getattr(Config, "radar_fps", 60.0))))
-        self.radar_fps_slider.valueChanged.connect(self.update_radar_fps)
-        radar_layout.addWidget(self.radar_fps_slider)
-
-        self.radar_reader_fps_label = QLabel(f"Reader FPS: {int(float(getattr(Config, 'radar_reader_fps', 60.0)))}")
-        self.radar_reader_fps_label.setStyleSheet("color: #f5f5f7;")
-        radar_layout.addWidget(self.radar_reader_fps_label)
-
-        self.radar_reader_fps_slider = NoScrollSlider(Qt.Horizontal)
-        self.radar_reader_fps_slider.setRange(5, 144)
-        self.radar_reader_fps_slider.setValue(int(float(getattr(Config, "radar_reader_fps", 60.0))))
-        self.radar_reader_fps_slider.valueChanged.connect(self.update_radar_reader_fps)
-        radar_layout.addWidget(self.radar_reader_fps_slider)
-
-        # Range (only matters when fixed range)
-        self.radar_range_label = QLabel(f"Range: {int(float(getattr(Config, 'radar_range_units', 3000.0)))}")
-        self.radar_range_label.setStyleSheet("color: #f5f5f7;")
-        radar_layout.addWidget(self.radar_range_label)
-
-        self.radar_range_slider = NoScrollSlider(Qt.Horizontal)
-        self.radar_range_slider.setRange(500, 8000)
-        self.radar_range_slider.setValue(int(float(getattr(Config, "radar_range_units", 3000.0))))
-        self.radar_range_slider.valueChanged.connect(self.update_radar_range)
-        radar_layout.addWidget(self.radar_range_slider)
-
-        row1.addWidget(fov_group, 1)
-        row1.addWidget(glow_group, 1)
-        row1.addWidget(radar_group, 1)
-        main_layout.addLayout(row1)
-
-
-                                      
-        bhop_group = self.create_group_box("Bunny Hop")
-        bhop_main = QHBoxLayout(bhop_group)
-        bhop_main.setSpacing(12)
-
-        left_side = QVBoxLayout()
-        left_side.setSpacing(4)
-        self.bhop_checkbox = self.add_checkbox(
-            left_side, "Enable Bunny Hop", "bhop_enabled",
-            thread_start=start_bhop_thread, thread_stop=stop_bhop_thread
-        )
-        self.add_checkbox(left_side, "Show Info Box", "show_local_info_box", default=True)
-        left_side.addStretch()
-
-        right_side = QVBoxLayout()
-        colors_grid = QGridLayout()
-        colors_grid.setSpacing(4)
-
-        color_items = [
-            ("Coords", "color_local_coords_text"),
-            ("Velocity", "color_local_velocity_text"),
-            ("Speed", "color_local_speed_text"),
-            ("Background", "color_local_box_background"),
-            ("Border", "color_local_box_border"),
-        ]
-
-        for idx, (label, key) in enumerate(color_items):
-            row = idx // 2
-            col = idx % 2
-
-            item_layout = QHBoxLayout()
-            lbl = QLabel(f"{label}:")
-            lbl.setStyleSheet("color: #f5f5f7; ")
-            lbl.setFixedWidth(70)
-            item_layout.addWidget(lbl)
-
-            rgb = self._sanitize_rgb3(getattr(Config, key, (0, 0, 0)))
-            btn = QPushButton()
-            btn.setObjectName("espColorButton")      # <- reuse the square color button style
-            btn.setFixedSize(16, 16)                 # <- force it to be a small square
-            btn.setStyleSheet(self.rgb_to_stylesheet_safe(rgb))
-
-            def make_color_callback(cfg_key, button, default_val=(0, 0, 0)):
-                def choose():
-                    current = self._sanitize_rgb3(getattr(Config, cfg_key, default_val))
-                    initial = QColor(*current)
-                    color = QColorDialog.getColor(initial, self, f"Select {cfg_key}")
-                    if color.isValid():
-                        new_rgb = (color.red(), color.green(), color.blue())
-                        setattr(Config, cfg_key, new_rgb)
-                        button.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
-                return choose
-
-            btn.clicked.connect(make_color_callback(key, btn))
-            item_layout.addWidget(btn)
-            item_layout.addStretch()
-
-            self.ui_elements["color_buttons"][key] = btn
-            colors_grid.addLayout(item_layout, row, col)
-
-        right_side.addLayout(colors_grid)
-        right_side.addStretch()
-
-        bhop_main.addLayout(left_side, 1)
-        bhop_main.addLayout(right_side, 1)
-        main_layout.addWidget(bhop_group)
-                                                      
-        row3 = QHBoxLayout()
-        row3.setSpacing(8)
-        
-                                
-        misc_group = self.create_group_box("Miscellaneous")
-        misc_layout = QVBoxLayout(misc_group)
-        misc_layout.setSpacing(3)
-        
-        self.add_checkbox(misc_layout, "Watermark", "watermark_enabled", default=True)
-        self.add_checkbox(misc_layout, "Spectator List", "spectator_list_enabled")
-        self.add_checkbox(misc_layout, "Drawing FPS", "show_overlay_fps")
-        self.add_checkbox(misc_layout, "Map Status", "show_map_status_box")
-        self.add_checkbox(misc_layout, "WalkBot", "walkbot_enabled",
+        # --- Column 1: Movement & Radar ---
+        move_g = self.create_group_box("Movement")
+        move_l = QVBoxLayout(move_g)
+        self.add_checkbox(move_l, "BunnyHop", "bhop_enabled",
+                          thread_start=start_bhop_thread, thread_stop=stop_bhop_thread)
+        self.add_checkbox(move_l, "Auto Strafe", "auto_strafe_enabled")
+        self.add_checkbox(move_l, "WalkBot", "walkbot_enabled",
                           thread_start=start_walkbot_thread, thread_stop=stop_walkbot_thread)
-        self.add_checkbox(misc_layout, "Grenade Prediction", "grenade_prediction_enabled")
-        self.add_checkbox(misc_layout, "No Flash", "noflash_enabled")
-        misc_layout.addStretch()
+        col1.addWidget(move_g)
+
+        radar_g = self.create_group_box("Radar Settings")
+        radar_l = QVBoxLayout(radar_g)
+        self.add_checkbox(radar_l, "Enable Radar", "radar_enabled")
+        self.add_checkbox(radar_l, "Show Names", "radar_show_names")
+        self.add_checkbox(radar_l, "Show Health", "radar_show_health")
+        col1.addWidget(radar_g)
+
+        sys_g = self.create_group_box("System Controls")
+        sys_l = QVBoxLayout(sys_g)
         
-        team_group = self.create_group_box("Team List")
-        team_layout = QVBoxLayout(team_group)
-        team_layout.setSpacing(3)
+        row_key = QHBoxLayout()
+        self.toggle_key_label = QLabel(f"Menu Key: {cfg.toggle_menu_key}")
+        self.toggle_key_label.setStyleSheet("color: #8a8a90; font-weight: bold;")
+        row_key.addWidget(self.toggle_key_label)
+        toggle_btn = QPushButton("CHANGE")
+        toggle_btn.setFixedWidth(70)
+        toggle_btn.setFixedHeight(28)
+        toggle_btn.setStyleSheet("font-weight: bold; background-color: #1c1c24;")
+        toggle_btn.clicked.connect(self.set_toggle_key)
+        row_key.addWidget(toggle_btn)
+        sys_l.addLayout(row_key)
+        col1.addWidget(sys_g)
+        col1.addStretch()
 
-        self.add_checkbox(team_layout, "Enable Team List", "team_list_enabled", default=True)
-        self.add_checkbox(team_layout, "HP Bars", "team_list_show_hp_bars", default=True)
-        self.add_checkbox(team_layout, "Alive Counts", "team_list_show_counts", default=True)
-        self.add_checkbox(team_layout, "Sort by HP", "team_list_sort_by_hp", default=True)
+        # --- Column 2: Extras & Team List ---
+        misc_g = self.create_group_box("Miscellaneous")
+        misc_l = QVBoxLayout(misc_g)
+        self.add_checkbox(misc_l, "Watermark", "watermark_enabled")
+        self.add_checkbox(misc_l, "Spectator List", "spectator_list_enabled")
+        self.add_checkbox(misc_l, "Show FPS", "show_overlay_fps")
+        self.add_checkbox(misc_l, "Grenade Prediction", "grenade_prediction_enabled")
+        self.add_checkbox(misc_l, "No Flash", "noflash_enabled")
+        col2.addWidget(misc_g)
 
-        font_box = QHBoxLayout()
-        self.team_list_font_label = QLabel(f"Size: {getattr(Config, 'team_list_font_size', 11)}")
-        self.team_list_font_label.setStyleSheet("color: #f5f5f7; ")
-        self.team_list_font_slider = NoScrollSlider(Qt.Horizontal)
-        self.team_list_font_slider.setRange(8, 16)
-        self.team_list_font_slider.setValue(getattr(Config, 'team_list_font_size', 11))
-        self.team_list_font_slider.valueChanged.connect(self.update_team_list_font)
-        font_box.addWidget(self.team_list_font_label)
-        font_box.addWidget(self.team_list_font_slider)
-        team_layout.addLayout(font_box)
-        team_layout.addStretch()
+        team_g = self.create_group_box("Team List")
+        team_l = QVBoxLayout(team_g)
+        self.add_checkbox(team_l, "Enable Team List", "team_list_enabled")
+        self.add_checkbox(team_l, "Show HP Bars", "team_list_show_hp_bars")
+        self.add_int_slider(team_l, "Font Size", "team_list_font_size", 8, 16)
+        col2.addWidget(team_g)
+        col2.addStretch()
 
-        row3.addWidget(misc_group, 1)
-        row3.addWidget(team_group, 1)
-        main_layout.addLayout(row3)
+        cols.addLayout(col1, 1)
+        cols.addLayout(col2, 1)
+        main_layout.addLayout(cols)
 
-        # ==========================
-        # Team List Colors (patched)
-        # ==========================
-        colors_group = self.create_group_box("Team List Colors")
-        colors_layout = QVBoxLayout(colors_group)
-
-        colors_grid = QGridLayout()
-        colors_grid.setSpacing(6)
-
+        # Team List Colors
+        tcolors_g = self.create_group_box("Team List Colors")
+        tcolors_l = QGridLayout(tcolors_g)
+        tcolors_l.setSpacing(8)
+        
         team_color_items = [
             ("T Header",    "color_box_t",          (255, 180, 0)),
             ("CT Header",   "color_box_ct",         (100, 200, 255)),
             ("Background",  "team_list_background", (18, 18, 22)),
-            ("Border",      "team_list_border",     (70, 75, 85)),
             ("Dead T",      "team_list_dead_t",     (100, 80, 60)),
             ("Dead CT",     "team_list_dead_ct",    (60, 80, 100)),
         ]
-
         for idx, (label, key, default) in enumerate(team_color_items):
-            row = idx // 3
-            col = idx % 3
-
-            item_layout = QHBoxLayout()
-            lbl = QLabel(f"{label}:")
-            lbl.setStyleSheet("color: #f5f5f7; ")
-            lbl.setFixedWidth(80)  # small but readable
-            item_layout.addWidget(lbl)
-
+            row, col = idx // 3, idx % 3
+            item_lay = QHBoxLayout()
+            lbl = QLabel(f"{label}:"); lbl.setFixedWidth(70)
+            item_lay.addWidget(lbl)
             rgb = self._sanitize_rgb3(getattr(Config, key, default))
-            btn = QPushButton()
-            btn.setObjectName("espColorButton")       # <- reuse tiny square style
-            btn.setFixedSize(16, 16)                  # <- square base size
+            btn = QPushButton(); btn.setObjectName("espColorButton"); btn.setFixedSize(16, 16)
             btn.setStyleSheet(self.rgb_to_stylesheet_safe(rgb))
-
-            def make_team_color_callback(cfg_key, button, default_val):
-                def choose():
-                    current = self._sanitize_rgb3(getattr(Config, cfg_key, default_val))
-                    initial = QColor(*current)
-                    color = QColorDialog.getColor(initial, self, f"Select {cfg_key}")
-                    if color.isValid():
-                        new_rgb = (color.red(), color.green(), color.blue())
-                        setattr(Config, cfg_key, new_rgb)
-                        button.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
-                return choose
-
-            btn.clicked.connect(make_team_color_callback(key, btn, default))
-            item_layout.addWidget(btn)
-            item_layout.addStretch()
-
-            self.ui_elements["color_buttons"][key] = btn
-            colors_grid.addLayout(item_layout, row, col)
-
-        colors_layout.addLayout(colors_grid)
-        main_layout.addWidget(colors_group)
-
-
-        system_group = self.create_group_box("System Controls")
-        system_layout = QHBoxLayout(system_group)
-        system_layout.setSpacing(12)
+            btn.clicked.connect(self._make_color_picker(key, btn, default))
+            item_lay.addWidget(btn); item_lay.addStretch()
+            tcolors_l.addLayout(item_lay, row, col)
         
-                       
-        left_system = QVBoxLayout()
-        offsets_label = QLabel("Offsets")
-        offsets_label.setStyleSheet("font-weight: bold; color: #f5f5f7;")
-        left_system.addWidget(offsets_label)
-        
-        self.update_offsets_btn = QPushButton("Update Offsets")
-        self.update_offsets_btn.setFixedHeight(20)
-        self.update_offsets_btn.setToolTip("Run Process/offset_update.py")
-        self.update_offsets_btn.clicked.connect(self.update_offsets)
-        left_system.addWidget(self.update_offsets_btn)
-        left_system.addStretch()
-        
-                           
-        right_system = QVBoxLayout()
-        toggle_label = QLabel("Menu Toggle")
-        toggle_label.setStyleSheet("font-weight: bold; color: #f5f5f7;")
-        right_system.addWidget(toggle_label)
-        
-        self.toggle_key_label = QLabel(f"Key: {cfg.toggle_menu_key}")
-        self.toggle_key_label.setStyleSheet("color: #f5f5f7; ")
-        right_system.addWidget(self.toggle_key_label)
-        
-        toggle_btn = QPushButton("Set Key")
-        toggle_btn.setFixedHeight(20)
-        toggle_btn.clicked.connect(self.set_toggle_key)
-        right_system.addWidget(toggle_btn)
-        right_system.addStretch()
-        
-        system_layout.addLayout(left_system, 1)
-        system_layout.addLayout(right_system, 1)
-        main_layout.addWidget(system_group)
+        main_layout.addWidget(tcolors_g)
 
-        main_layout.addStretch()
+        scroll.setWidget(content)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
 
-        scroll.setWidget(content_widget)
-        final_layout = QVBoxLayout(self)
-        final_layout.setContentsMargins(0, 0, 0, 0)
-        final_layout.addWidget(scroll)
-
-    def update_offsets(self):
-        try:
-            self.update_offsets_btn.setEnabled(False)
-            self.update_offsets_btn.setText("Updating...")
-
-            process = subprocess.Popen(
-                [sys.executable, "Process/offset_update.py"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            stdout, stderr = process.communicate()
-
-            if process.returncode == 0:
-                QMessageBox.information(
-                    self,
-                    "Offsets Updated",
-                    "Offsets updated. Restarting GFusion..."
-                )
-                python = sys.executable
-                os.execl(python, python, *sys.argv)
-            else:
-                QMessageBox.critical(
-                    self,
-                    "Offset Update Failed",
-                    f"Error updating offsets:\n\nExit Code: {process.returncode}\n{stderr[:500]}"
-                )
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Offset Update Error",
-                f"Failed to run offset update:\n\n{e}"
-            )
-        finally:
-            self.update_offsets_btn.setEnabled(True)
-            self.update_offsets_btn.setText("Update Offsets")
+    def _make_color_picker(self, key, btn, default):
+        def choose():
+            cur = self._sanitize_rgb3(getattr(Config, key, default))
+            color = QColorDialog.getColor(QColor(*cur), self, f"Select {key}")
+            if color.isValid():
+                new_rgb = (color.red(), color.green(), color.blue())
+                setattr(Config, key, new_rgb)
+                btn.setStyleSheet(self.rgb_to_stylesheet_safe(new_rgb))
+        return choose
 
     # ---------- Event Handlers ----------
     def update_fov(self, value):
@@ -4462,14 +3305,16 @@ class MiscTab(QWidget):
         self.team_list_font_label.setText(f"Size: {value}")
 
     def set_toggle_key(self):
-        self.toggle_key_label.setText("Press a key...")
+        self.toggle_key_label.setText("Press any key...")
+        self.toggle_key_label.setStyleSheet("color: #eb3c3c; font-weight: bold;")
         self.listener_thread = KeyListenerThread()
         self.listener_thread.key_pressed.connect(self.update_toggle_key)
         self.listener_thread.start()
 
     def update_toggle_key(self, key):
         cfg.toggle_menu_key = key
-        self.toggle_key_label.setText(f"Key: {key}")
+        self.toggle_key_label.setText(f"Menu Key: {key}")
+        self.toggle_key_label.setStyleSheet("color: #ffffff; font-weight: bold;")
 
     def refresh_ui(self):
         """Refresh checkboxes, sliders, and button colors (safely)."""
@@ -4565,23 +3410,13 @@ class NoScrollSlider(QSlider):
         event.ignore()
 
 class RecoilViewer(QWidget):
-    """
-    Win95-styled recoil analyzer:
-    - Data Source: choose dir, reload, auto-watch
-    - Display: spray vs movement, grid/legend toggles, line/marker tuning
-    - Plot: integrated FigureCanvas
-    - Stats: scrollable per-dataset + burst summaries
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(900, 600)
-
-                       
         self.learn_dir = LEARN_DIR
         self.weapon_ids = []
         self.all_data = {}
-        self._last_aimbot_plot_hash = None
-        self.spray_mode = True                                                        
+        self.spray_mode = True
         self.show_grid = True
         self.show_legend = True
         self.line_width = 1.5
@@ -4590,457 +3425,215 @@ class RecoilViewer(QWidget):
         self._init_ui()
         self.scan_aimbot_data()
 
-                                                            
         try:
             self.watcher_thread = DataWatcher()
             self.watcher_thread.data_updated.connect(self._on_data_updated)
             self.watcher_thread.start()
             self._watching = True
-        except Exception as e:
-            print(f"[RecoilViewer] Watcher not available: {e}")
+        except Exception:
             self._watching = False
 
-                                               
-    def _create_group_box(self, title: str) -> QGroupBox:
-        g = QGroupBox(title)
-        g.setStyleSheet(""" QGroupBox { background-color: #151520; border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF; border-right: 1px solid #404040; border-bottom: 1px solid #404040; margin-top: 8px; padding-top: 8px; font-weight: bold; color: #f5f5f7; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; background-color: #151520; } """)
-        return g
+    def _create_group_box(self, title: str):
+        return SectionFrame(title)
 
-    def _sep(self) -> QFrame:
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("color:#808080; background:#808080;")
-        line.setFixedHeight(1)
-        return line
-
-                              
     def _init_ui(self):
-        # === Scroll container (match other tabs) ===
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")                  
+        scroll.setStyleSheet("QScrollArea { background-color: #14141a; border: none; }")
 
-        content = QWidget()
-        content.setStyleSheet("background-color:#151520;")
+        content = QWidget(); content.setStyleSheet("background-color: #14141a;")
         root = QVBoxLayout(content)
-        root.setSpacing(8)
-        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(20); root.setContentsMargins(15, 15, 15, 15)
 
-                                 
-        header = QHBoxLayout()
-        title = QLabel("Recoil Analyzer")
-        title.setStyleSheet("font-weight:bold; color:#f5f5f7;")
-        self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color:#f5f5f7; ")
-        header.addWidget(title)
-        header.addStretch(1)
-        header.addWidget(self.status_label)
-        root.addLayout(header)
+        # 1. Trace Map (Dominant at the TOP)
+        plot_g = self._create_group_box("RECOIL PATTERN ANALYSIS")
+        plot_l = QVBoxLayout(plot_g); plot_l.setContentsMargins(10, 40, 10, 10)
+        self.canvas = FigureCanvas(Figure(facecolor="#14141a", figsize=(10, 6)))
+        self.ax = self.canvas.figure.add_subplot(111); self._style_axes()
+        plot_l.addWidget(self.canvas)
+        
+        btn_row = QHBoxLayout()
+        export_btn = QPushButton("EXPORT PATTERN (.PNG)"); export_btn.setFixedHeight(35); export_btn.setFixedWidth(250)
+        export_btn.setStyleSheet("font-weight: 800; background-color: #1c1c24; border: 1px solid #eb3c3c; color: #ffffff;")
+        btn_row.addStretch(); btn_row.addWidget(export_btn); btn_row.addStretch()
+        plot_l.addLayout(btn_row)
+        root.addWidget(plot_g, 4)
 
-                                                           
-        top = QHBoxLayout()
-        top.setSpacing(8)
+        # 2. Controls (2-column layout below plot)
+        cols = QHBoxLayout(); cols.setSpacing(20)
+        col1 = QVBoxLayout(); col1.setSpacing(15)
+        col2 = QVBoxLayout(); col2.setSpacing(15)
 
-                               
-        src_g = self._create_group_box("Data Source")
-        src = QGridLayout(src_g)
-        src.setHorizontalSpacing(8)
-        src.setVerticalSpacing(6)
+        src_g = self._create_group_box("DATA SOURCE")
+        src_l = QVBoxLayout(src_g); src_l.setSpacing(12); src_l.setContentsMargins(15, 40, 15, 15)
+        
+        lbl_dir = QLabel("LEARNING DIRECTORY")
+        lbl_dir.setStyleSheet("font-weight: 800; color: #8a8a90; font-size: 9pt;")
+        src_l.addWidget(lbl_dir)
+        
+        row_dir = QHBoxLayout()
+        self.dir_edit = QLineEdit(self.learn_dir); self.dir_edit.setReadOnly(True); self.dir_edit.setFixedHeight(30)
+        browse_btn = QPushButton("..."); browse_btn.setFixedWidth(40); browse_btn.setFixedHeight(30)
+        row_dir.addWidget(self.dir_edit, 1); row_dir.addWidget(browse_btn)
+        src_l.addLayout(row_dir)
 
-                       
-        src.addWidget(QLabel("Folder:"), 0, 0)
-        self.dir_edit = QLineEdit(self.learn_dir)
-        self.dir_edit.setReadOnly(True)
-        browse_btn = QPushButton("Browse")
-        reload_btn = QPushButton("Reload")
-        src.addWidget(self.dir_edit, 0, 1, 1, 2)
-        src.addWidget(browse_btn, 0, 3)
-        src.addWidget(reload_btn, 0, 4)
+        lbl_wpn = QLabel("ACTIVE WEAPON")
+        lbl_wpn.setStyleSheet("font-weight: 800; color: #8a8a90; font-size: 9pt;")
+        src_l.addWidget(lbl_wpn)
+        self.dropdown = QComboBox(); self.dropdown.setFixedHeight(35)
+        src_l.addWidget(self.dropdown)
 
-                             
-        src.addWidget(QLabel("Weapon:"), 1, 0)
-        self.dropdown = QComboBox()
-        self.dropdown.setStyleSheet(""" QComboBox { background: #FFFFFF; border: 1px solid #000000; padding: 1px 3px; min-height: 16px; } QComboBox::drop-down { width: 14px; border-left: 1px solid #000000; } QComboBox QAbstractItemView { background: #FFFFFF; color: #f5f5f7; selection-background-color: #f5f5f7; selection-color: #FFFFFF; } """)
-        src.addWidget(self.dropdown, 1, 1, 1, 4)
+        row_acts = QHBoxLayout(); row_acts.setSpacing(10)
+        self.watch_cb = CheatCheckBox("AUTO-REFRESH"); self.watch_cb.setChecked(getattr(self, "_watching", False))
+        reload_btn = QPushButton("RELOAD"); reload_btn.setFixedHeight(30); reload_btn.setStyleSheet("font-weight: bold;")
+        row_acts.addWidget(self.watch_cb); row_acts.addStretch(); row_acts.addWidget(reload_btn)
+        src_l.addLayout(row_acts)
+        col1.addWidget(src_g)
 
-                                 
-        self.watch_cb = CheatCheckBox("Auto-Watch")
-        self.watch_cb.setChecked(getattr(self, "_watching", False))
-        export_btn = QPushButton("Export PNG")
-        src.addWidget(self.watch_cb, 2, 1)
-        src.addWidget(export_btn, 2, 4)
+        dsp_g = self._create_group_box("RENDERER CONFIG")
+        dsp_l = QVBoxLayout(dsp_g); dsp_l.setSpacing(10); dsp_l.setContentsMargins(15, 40, 15, 15)
+        
+        self.mode_checkbox = CheatCheckBox("RENDER SPRAY PATH"); self.mode_checkbox.setChecked(True)
+        self.grid_cb = CheatCheckBox("ENABLE ALIGNMENT GRID"); self.grid_cb.setChecked(True)
+        self.leg_cb = CheatCheckBox("DISPLAY DATA LEGEND"); self.leg_cb.setChecked(True)
+        dsp_l.addWidget(self.mode_checkbox); dsp_l.addWidget(self.grid_cb); dsp_l.addWidget(self.leg_cb)
+        
+        dsp_l.addSpacing(5)
+        row_line = QHBoxLayout()
+        self.line_label = QLabel(f"LINE WIDTH: {self.line_width:.1f}"); self.line_label.setStyleSheet("color: #f0f0f0; font-weight: bold;")
+        self.line_slider = NoScrollSlider(Qt.Horizontal); self.line_slider.setRange(1, 40); self.line_slider.setValue(int(self.line_width * 10))
+        row_line.addWidget(self.line_label); row_line.addSpacing(10); row_line.addWidget(self.line_slider)
+        dsp_l.addLayout(row_line)
 
-        top.addWidget(src_g, 3)
+        row_mark = QHBoxLayout()
+        self.marker_label = QLabel(f"POINT SIZE: {self.marker_size:.1f}"); self.marker_label.setStyleSheet("color: #f0f0f0; font-weight: bold;")
+        self.marker_slider = NoScrollSlider(Qt.Horizontal); self.marker_slider.setRange(1, 50); self.marker_slider.setValue(int(self.marker_size * 10))
+        row_mark.addWidget(self.marker_label); row_mark.addSpacing(10); row_mark.addWidget(self.marker_slider)
+        dsp_l.addLayout(row_mark)
+        
+        col2.addWidget(dsp_g)
+        
+        cols.addLayout(col1, 1); cols.addLayout(col2, 1)
+        root.addLayout(cols)
 
-                           
-        dsp_g = self._create_group_box("Display")
-        dsp = QGridLayout(dsp_g)
-        dsp.setHorizontalSpacing(8)
-        dsp.setVerticalSpacing(6)
+        # 3. Analytics (Very bottom)
+        stats_g = self._create_group_box("PATTERN METRICS")
+        stats_l = QVBoxLayout(stats_g); stats_l.setContentsMargins(15, 40, 15, 15)
+        self.stats_scroll = QScrollArea(); self.stats_scroll.setWidgetResizable(True); self.stats_scroll.setMinimumHeight(150)
+        self.stats_scroll.setStyleSheet("QScrollArea { background-color: #0d0d12; border: 1px solid #2b2b3c; border-radius: 4px; }")
+        self.stats_widget = QWidget(); self.stats_widget.setStyleSheet("background: transparent;")
+        self.stats_layout = QVBoxLayout(self.stats_widget); self.stats_scroll.setWidget(self.stats_widget)
+        stats_l.addWidget(self.stats_scroll)
+        root.addWidget(stats_g, 2)
 
-        self.mode_checkbox = CheatCheckBox("Show Spray Path")
-        self.mode_checkbox.setChecked(True)
-        self.grid_cb = CheatCheckBox("Grid")
-        self.grid_cb.setChecked(True)
-        self.leg_cb = CheatCheckBox("Legend")
-        self.leg_cb.setChecked(True)
-
-        dsp.addWidget(self.mode_checkbox, 0, 0)
-        dsp.addWidget(self.grid_cb,     0, 1)
-        dsp.addWidget(self.leg_cb,      0, 2)
-
-                    
-        dsp.addWidget(QLabel("Line W:"), 1, 0)
-        self.line_slider = NoScrollSlider(Qt.Horizontal)
-        self.line_slider.setMinimum(1)                   
-        self.line_slider.setMaximum(40)
-        self.line_slider.setValue(int(self.line_width * 10))
-        self.line_label = QLabel(f"{self.line_width:.1f}")
-        dsp.addWidget(self.line_slider, 1, 1)
-        dsp.addWidget(self.line_label,  1, 2)
-
-                     
-        dsp.addWidget(QLabel("Marker:"), 2, 0)
-        self.marker_slider = NoScrollSlider(Qt.Horizontal)
-        self.marker_slider.setMinimum(1)                  
-        self.marker_slider.setMaximum(50)
-        self.marker_slider.setValue(int(self.marker_size * 10))
-        self.marker_label = QLabel(f"{self.marker_size:.1f}")
-        dsp.addWidget(self.marker_slider, 2, 1)
-        dsp.addWidget(self.marker_label,  2, 2)
-
-        top.addWidget(dsp_g, 2)
-        root.addLayout(top)
-
-                                      
-        split = QHBoxLayout()
-        split.setSpacing(8)
-
-              
-        self.canvas = FigureCanvas(Figure(facecolor="#C0C0C0"))
-        self.ax = self.canvas.figure.add_subplot(111)
-        self._style_axes()
-        split.addWidget(self.canvas, 2)
-
-                        
-        stats_g = self._create_group_box("Stats")
-        stats_v = QVBoxLayout(stats_g)
-        stats_v.setSpacing(6)
-        self.stats_scroll = QScrollArea()
-        self.stats_scroll.setWidgetResizable(True)
-        self.stats_scroll.setStyleSheet("QScrollArea { background-color: #202030; border: 1px solid #000000; }")
-        self.stats_widget = QWidget()
-        self.stats_layout = QVBoxLayout(self.stats_widget)
-        self.stats_layout.setContentsMargins(6, 6, 6, 6)
-        self.stats_scroll.setWidget(self.stats_widget)
-        stats_v.addWidget(self.stats_scroll)
-        split.addWidget(stats_g, 3)
-
-        root.addLayout(split)
-        root.addStretch(1)
-
-                                             
         scroll.setWidget(content)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0); outer.addWidget(scroll)
 
-                                      
         self.dropdown.currentTextChanged.connect(self.update_view)
         self.mode_checkbox.stateChanged.connect(self._toggle_mode)
         self.grid_cb.stateChanged.connect(self._toggle_grid)
         self.leg_cb.stateChanged.connect(self._toggle_legend)
         self.line_slider.valueChanged.connect(self._change_line)
         self.marker_slider.valueChanged.connect(self._change_marker)
-
         browse_btn.clicked.connect(self._browse_dir)
         reload_btn.clicked.connect(self.scan_aimbot_data)
         export_btn.clicked.connect(self._export_png)
         self.watch_cb.stateChanged.connect(self._toggle_watch)
 
-                                          
     def _style_axes(self):
         self.ax.clear()
-        self.ax.set_facecolor("#C0C0C0")
-        self.ax.tick_params(axis="x", colors="black", labelsize=8)
-        self.ax.tick_params(axis="y", colors="black", labelsize=8)
-        self.ax.set_xlabel("Yaw Δ", color="black")
-        self.ax.set_ylabel("Pitch Δ", color="black")
+        self.ax.set_facecolor("#14141a")
+        self.ax.tick_params(axis="x", colors="#8a8a90", labelsize=8)
+        self.ax.tick_params(axis="y", colors="#8a8a90", labelsize=8)
+        self.ax.set_xlabel("Yaw Δ", color="#ebebeb")
+        self.ax.set_ylabel("Pitch Δ", color="#ebebeb")
+        for spine in self.ax.spines.values():
+            spine.set_edgecolor("#37373c")
 
-                                        
     def _on_data_updated(self):
-        if getattr(self, "_watching", False):
-            self.scan_aimbot_data()
+        if getattr(self, "_watching", False): self.scan_aimbot_data()
 
     def _toggle_watch(self, st):
         self._watching = (st == Qt.Checked)
-        self.status_label.setText(f"Status: {'Watching' if self._watching else 'Idle'}")
 
-                                           
     def _toggle_mode(self, st):
-        self.spray_mode = (st == Qt.Checked)
-        self.update_view(self.dropdown.currentText())
+        self.spray_mode = (st == Qt.Checked); self.update_view(self.dropdown.currentText())
 
     def _toggle_grid(self, st):
-        self.show_grid = (st == Qt.Checked)
-        self.update_view(self.dropdown.currentText())
+        self.show_grid = (st == Qt.Checked); self.update_view(self.dropdown.currentText())
 
     def _toggle_legend(self, st):
-        self.show_legend = (st == Qt.Checked)
-        self.update_view(self.dropdown.currentText())
+        self.show_legend = (st == Qt.Checked); self.update_view(self.dropdown.currentText())
 
     def _change_line(self, v):
-        self.line_width = max(0.1, (v / 10.0))
-        self.line_label.setText(f"{self.line_width:.1f}")
-        self.update_view(self.dropdown.currentText())
+        self.line_width = max(0.1, (v / 10.0)); self.line_label.setText(f"Line W: {self.line_width:.1f}"); self.update_view(self.dropdown.currentText())
 
     def _change_marker(self, v):
-        self.marker_size = max(0.1, (v / 10.0))
-        self.marker_label.setText(f"{self.marker_size:.1f}")
-        self.update_view(self.dropdown.currentText())
+        self.marker_size = max(0.1, (v / 10.0)); self.marker_label.setText(f"Marker: {self.marker_size:.1f}"); self.update_view(self.dropdown.currentText())
 
-                                   
     def _browse_dir(self):
-        try:
-            from PyQt5.QtWidgets import QFileDialog
-            path = QFileDialog.getExistingDirectory(self, "Select Aimbot Data Folder", self.learn_dir or "")
-            if not path:
-                return
-            self.learn_dir = path
-            self.dir_edit.setText(self.learn_dir)
-            self.scan_aimbot_data()
-        except Exception as e:
-            print(f"[RecoilViewer] browse error: {e}")
+        path = QFileDialog.getExistingDirectory(self, "Select Data Folder", self.learn_dir or "")
+        if path: self.learn_dir = path; self.dir_edit.setText(path); self.scan_aimbot_data()
 
-                                  
     def _export_png(self):
-        try:
-            from PyQt5.QtWidgets import QFileDialog
-            wid = self.dropdown.currentText().strip() or "recoil"
-            path, _ = QFileDialog.getSaveFileName(self, "Export PNG", f"{wid}.png", "PNG Image (*.png)")
-            if not path:
-                return
-            self.canvas.figure.savefig(path, dpi=150, bbox_inches="tight")
-            self.status_label.setText(f"Status: ✓ Exported {os.path.basename(path)}")
-        except Exception as e:
-            print(f"[RecoilViewer] export error: {e}")
-            self.status_label.setText("Status: ✗ Export failed")
+        wid = self.dropdown.currentText() or "recoil"
+        path, _ = QFileDialog.getSaveFileName(self, "Export PNG", f"{wid}.png", "PNG Image (*.png)")
+        if path: self.canvas.figure.savefig(path, dpi=150, bbox_inches="tight")
 
-                                                                    
     def scan_aimbot_data(self):
         path = self.learn_dir or LEARN_DIR
-        if not os.path.exists(path):
-            self.weapon_ids = []
-            self.all_data = {}
-            self.dropdown.clear()
-            self._style_axes()
-            self.ax.set_title("Trace Map", fontsize=9, color="black")
-            self.canvas.draw()
-            return
-
-        # Remember current selection before scanning
-        current_selection = self.dropdown.currentText() if self.dropdown.count() > 0 else None
-
+        if not os.path.exists(path): return
+        cur = self.dropdown.currentText()
         files = [f for f in os.listdir(path) if f.endswith(".json")]
-        new_weapon_ids = set()
-        merged_data = {}
-
-        for fname in files:
-            wid = fname[:-5]
-            full = os.path.join(path, fname)
-            if os.path.getsize(full) == 0:
-                continue
+        merged = {}
+        for fn in files:
             try:
-                with open(full, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                if wid.startswith("raw_mouse_"):
-                    base = wid.replace("raw_mouse_", "")
-                    new_weapon_ids.add(base)
-                    merged_data.setdefault(base, {})
-                    merged_data[base]["raw_mouse"] = data if isinstance(data, list) else []
-                else:
-                    base = wid
-                    new_weapon_ids.add(base)
-                    merged_data.setdefault(base, {})
-                    if isinstance(data, dict):
-                        merged_data[base].update(data)
-                    elif isinstance(data, list):
-                        merged_data[base]["raw_mouse"] = data
-                    else:
-                        merged_data[base] = {}
-            except Exception as e:
-                print(f"[RecoilViewer] Error loading {fname}: {e}")
-
-        changed = set(new_weapon_ids) != set(self.weapon_ids)
-        self.weapon_ids = sorted(new_weapon_ids)
-        self.all_data = merged_data
-
-        self.dropdown.blockSignals(True)
-        self.dropdown.clear()
-        for wid in self.weapon_ids:
-            self.dropdown.addItem(wid)
-        self.dropdown.blockSignals(False)
-
+                with open(os.path.join(path, fn), "r", encoding="utf-8") as f: data = json.load(f)
+                wid = fn[:-5]
+                if wid.startswith("raw_mouse_"): base = wid.replace("raw_mouse_", ""); merged.setdefault(base, {})["raw_mouse"] = data
+                else: merged.setdefault(wid, {}).update(data if isinstance(data, dict) else {"raw_mouse": data})
+            except: continue
+        self.weapon_ids = sorted(merged.keys()); self.all_data = merged
+        self.dropdown.blockSignals(True); self.dropdown.clear(); self.dropdown.addItems(self.weapon_ids); self.dropdown.blockSignals(False)
         if self.weapon_ids:
-            # Try to restore previous selection, otherwise use first item
-            if current_selection and current_selection in self.weapon_ids:
-                idx = self.weapon_ids.index(current_selection)
-                self.dropdown.setCurrentIndex(idx)
-                self.update_view(current_selection)
-            else:
-                self.dropdown.setCurrentIndex(0)
-                self.update_view(self.weapon_ids[0])
-        else:
-            self._style_axes()
-            self.ax.set_title("Trace Map", fontsize=9, color="black")
-            self.ax.text(0.5, 0.5, "No data files", ha="center", va="center", color="black")
-            self.canvas.draw()
+            idx = self.dropdown.findText(cur)
+            self.dropdown.setCurrentIndex(idx if idx >= 0 else 0); self.update_view(self.dropdown.currentText())
 
-                                        
     def update_view(self, weapon_id):
         self._style_axes()
-        title = f"Trace Map ({weapon_id})" if weapon_id else "Trace Map"
-        self.ax.set_title(title, fontsize=9, color="black")
-        if self.show_grid:
-            self.ax.grid(True, linestyle="--", color="#808080", alpha=0.6)
-
-                           
+        self.ax.set_title(f"Recoil Pattern: {weapon_id}", color="#ebebeb", fontsize=10)
+        if self.show_grid: self.ax.grid(True, linestyle="--", color="#37373c", alpha=0.5)
         while self.stats_layout.count():
-            item = self.stats_layout.takeAt(0)
-            w = item.widget()
+            w = self.stats_layout.takeAt(0).widget()
             if w: w.deleteLater()
-
-        data = self.all_data.get(weapon_id, {}) if weapon_id else {}
-        items = data.items() if isinstance(data, dict) else []
-
-                                                 
-        colors = ["black", "red", "blue", "green", "purple", "orange", "brown", "teal"]
-        color_idx, drew_any = 0, False
-        legends = []
-
-        for key, vectors in items:
-            if not vectors:
-                continue
-
+        data = self.all_data.get(weapon_id, {})
+        colors = ["#eb3c3c", "#3c88eb", "#3ceb88", "#ebeb3c", "#eb3ceb"]
+        c_idx, drew = 0, False
+        for key, vectors in data.items():
+            if not vectors: continue
             x, y = [0.0], [0.0]
-            for entry in vectors:
-                try:
-                    dp, dy = float(entry[0]), float(entry[1])
-                except Exception:
-                    continue
-                x.append(x[-1] + dy)
-                y.append(y[-1] + dp)
-
+            for v in vectors:
+                try: x.append(x[-1] + float(v[1])); y.append(y[-1] + float(v[0]))
+                except: continue
             if len(x) > 1:
-                c = colors[color_idx % len(colors)]
-                if self.spray_mode:
-                    self.ax.plot(
-                        x, y,
-                        linewidth=self.line_width,
-                        alpha=0.9,
-                        marker=".",
-                        markersize=self.marker_size,
-                        color=c,
-                        label=key
-                    )
-                else:
-                    self.ax.plot(
-                        x, y,
-                        linewidth=max(1.0, self.line_width - 0.5),
-                        alpha=0.7,
-                        marker="o",
-                        markersize=self.marker_size,
-                        color=c,
-                        label=key
-                    )
-                legends.append(key)
-                drew_any = True
-
-            color_idx += 1
-
-                          
-            dataset_header = QLabel(f"Dataset: {key}")
-            dataset_header.setStyleSheet("font-weight:bold; color:#f5f5f7; margin-top:6px;")
-            self.stats_layout.addWidget(dataset_header)
-
-            self._add_stats_summary(key, vectors)
-
-            bursts = self._split_bursts(vectors)
-            if bursts:
-                burst_header = QLabel(f"Burst Analysis ({key})")
-                burst_header.setStyleSheet("font-weight:bold; color:#f5f5f7; margin-top:4px;")
-                self.stats_layout.addWidget(burst_header)
-                for b_idx, burst in enumerate(bursts, 1):
-                    self._add_burst_summary(b_idx, burst)
-
-        if drew_any:
-            self.ax.relim()
-            self.ax.autoscale()
-            if self.show_legend and legends:
-                self.ax.legend(prop={"size": 8})
-        else:
-            self.ax.text(0.5, 0.5, "No valid trace data", ha="center", va="center", color="black")
-
+                col = colors[c_idx % len(colors)]
+                self.ax.plot(x, y, linewidth=self.line_width, marker=".", markersize=self.marker_size, color=col, label=key)
+                drew = True; self._add_stats_block(key, vectors)
+            c_idx += 1
+        if drew and self.show_legend: self.ax.legend(facecolor="#14141a", edgecolor="#37373c", labelcolor="#ebebeb")
         self.canvas.draw()
 
-                                         
-    def _add_stats_summary(self, key, vectors):
-        dp, dy, distances, bones = [], [], [], []
-        for e in vectors:
-            if not e:
-                continue
-            try:
-                dp.append(float(e[0])); dy.append(float(e[1]))
-                if len(e) > 2: distances.append(float(e[2]))
-                if len(e) > 3: bones.append(e[3])
-            except Exception:
-                continue
+    def _add_stats_block(self, key, vectors):
+        dp = [float(v[0]) for v in vectors if len(v) > 0]
+        dy = [float(v[1]) for v in vectors if len(v) > 1]
+        avg_p = sum(dp)/len(dp) if dp else 0; avg_y = sum(dy)/len(dy) if dy else 0
+        container = QFrame(); container.setStyleSheet("background-color: #18181c; border: 1px solid #37373c; border-radius: 4px;")
+        l = QVBoxLayout(container)
+        header = QLabel(f"DATASET: {key.upper()}"); header.setStyleSheet("font-weight: bold; color: #eb3c3c; border: none; background: transparent;")
+        info = QLabel(f"Samples: {len(vectors)}  |  Avg Pitch: {avg_p:.2f}  |  Avg Yaw: {avg_y:.2f}"); info.setStyleSheet("color: #8a8a90; border: none; background: transparent;")
+        l.addWidget(header); l.addWidget(info); self.stats_layout.addWidget(container)
 
-        avg_dp = sum(dp)/len(dp) if dp else 0.0
-        avg_dy = sum(dy)/len(dy) if dy else 0.0
-        avg_dist = sum(distances)/len(distances) if distances else 0.0
-        bone_counts = {b: bones.count(b) for b in set(bones)} if bones else {}
-
-        lbl = QLabel(
-            f"Samples: {len(vectors)}\n"
-            f"Avg ΔPitch={avg_dp:.2f}, Avg ΔYaw={avg_dy:.2f}\n"
-            f"Avg Dist={avg_dist:.1f}\n"
-            f"Bones: {bone_counts}"
-        )
-        lbl.setStyleSheet(""" color:#f5f5f7; border:1px solid #000000; padding:3px; margin:3px 0; background:#FFFFFF; """)
-        self.stats_layout.addWidget(lbl)
-
-    def _add_burst_summary(self, idx, burst):
-        if not burst:
-            return
-        try:
-            dxs, dys = zip(*[(float(b[0]), float(b[1])) for b in burst])
-        except Exception:
-            return
-        avg_dx, avg_dy = (sum(dxs)/len(dxs)), (sum(dys)/len(dys))
-        lbl = QLabel(f" Burst {idx}: {len(burst)} shots | Avg ΔPitch={avg_dx:.2f}, ΔYaw={avg_dy:.2f}")
-        lbl.setStyleSheet("color:#f5f5f7; margin-left:8px;")
-        self.stats_layout.addWidget(lbl)
-
-    def _split_bursts(self, vectors):
-        bursts, current = [], []
-        for item in vectors:
-            try:
-                dp, dy = float(item[0]), float(item[1])
-            except Exception:
-                dp, dy = 0.0, 0.0
-            if dp == 0 and dy == 0:
-                if current:
-                    bursts.append(current)
-                    current = []
-            else:
-                current.append((dp, dy))
-        if current:
-            bursts.append(current)
-        return bursts
 
 class TriggerBotTab(QWidget):
     """
@@ -5059,10 +3652,8 @@ class TriggerBotTab(QWidget):
         self.init_ui()
 
                                                                
-    def create_group_box(self, title: str) -> QGroupBox:
-        g = QGroupBox(title)
-        g.setStyleSheet(""" QGroupBox { background-color: #151520; border-top: 1px solid #FFFFFF; border-left: 1px solid #FFFFFF; border-right: 1px solid #404040; border-bottom: 1px solid #404040; margin-top: 8px; padding-top: 8px; font-weight: bold; color: #f5f5f7; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; background-color: #151520; } """)
-        return g
+    def create_group_box(self, title: str):
+        return SectionFrame(title)
 
     def add_checkbox(self, layout, label, cfg_key, on_toggle=None, default=False):
         cb = CheatCheckBox(label)
@@ -5111,91 +3702,67 @@ class TriggerBotTab(QWidget):
 
                               
     def init_ui(self):
-        # Scroll container (match other tabs)
+        # Scroll container
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background-color: #151520; border: none; }")
+        scroll.setStyleSheet("QScrollArea { background-color: #14141a; border: none; }")
 
-        content = QWidget(); content.setStyleSheet("background-color: #151520;")
-        root = QVBoxLayout(content)
-        root.setSpacing(8); root.setContentsMargins(8, 8, 8, 8)
+        content = QWidget(); content.setStyleSheet("background-color: #14141a;")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10); layout.setContentsMargins(10, 10, 10, 10)
 
-                          
-        main_g = self.create_group_box("Main")
-        main = QHBoxLayout(main_g); main.setSpacing(10)
+        # 2-column layout
+        cols = QHBoxLayout(); cols.setSpacing(10)
+        col1 = QVBoxLayout(); col1.setSpacing(10)
+        col2 = QVBoxLayout(); col2.setSpacing(10)
 
-        left = QVBoxLayout()
-        self.add_checkbox(left, "Enable TriggerBot", "triggerbot_enabled",
+        # --- Column 1: Core ---
+        main_g = self.create_group_box("Trigger Master")
+        main_l = QVBoxLayout(main_g)
+        self.add_checkbox(main_l, "Enable TriggerBot", "triggerbot_enabled",
                           on_toggle=self._toggle_triggerbot)
-        self.add_checkbox(left, "Always On (Ignore Trigger Key)", "triggerbot_always_on")
-        self.add_checkbox(left, "Allow Shooting Teammates", "shoot_teammates")
-        main.addLayout(left, 1)
-
-        right = QVBoxLayout()
+        self.add_checkbox(main_l, "Always On", "triggerbot_always_on")
+        self.add_checkbox(main_l, "Team Check", "shoot_teammates")
+        
         self.status_label = QLabel("Status: Idle")
-        self.status_label.setStyleSheet("color:#f5f5f7; ")
-        right.addWidget(self.status_label)
+        self.status_label.setStyleSheet("color: #8a8a90; font-style: italic;")
+        main_l.addWidget(self.status_label)
+        col1.addWidget(main_g)
 
-        right.addStretch(1)
-        main.addLayout(right, 1)
-        root.addWidget(main_g)
-
-                                  
-        key_g = self.create_group_box("Key Settings")
-        key = QHBoxLayout(key_g); key.setSpacing(10)
-
-        self.trigger_key_label = QLabel(f"Trigger Key: {getattr(self.CFG, 'trigger_key', 'mouse5')}")
-        self.trigger_key_label.setStyleSheet("color:#f5f5f7; ")
-        key.addWidget(self.trigger_key_label)
-
-        self.set_key_btn = QPushButton("Set Trigger Key")
+        key_g = self.create_group_box("Activation")
+        key_l = QVBoxLayout(key_g)
+        self.trigger_key_label = QLabel(f"Hot Key: {getattr(self.CFG, 'trigger_key', 'mouse5')}")
+        self.trigger_key_label.setStyleSheet("color: #f0eaea;")
+        key_l.addWidget(self.trigger_key_label)
+        self.set_key_btn = QPushButton("Change Key")
         self.set_key_btn.clicked.connect(self.set_trigger_key)
-        key.addWidget(self.set_key_btn)
-        key.addStretch(1)
+        key_l.addWidget(self.set_key_btn)
+        col1.addWidget(key_g)
+        col1.addStretch()
 
-        root.addWidget(key_g)
+        # --- Column 2: Timing ---
+        beh_g = self.create_group_box("Behavior & Timing")
+        beh_l = QVBoxLayout(beh_g)
+        self.add_float_slider(beh_l, "Cooldown (s)", "triggerbot_cooldown", 0.00, 1.00, 100, "s")
+        self.add_float_slider(beh_l, "Delay Min (s)", "trigger_delay_min", 0.000, 0.150, 1000, "s")
+        self.add_float_slider(beh_l, "Delay Max (s)", "trigger_delay_max", 0.000, 0.250, 1000, "s")
+        col2.addWidget(beh_g)
 
-                              
-        beh_g = self.create_group_box("Behavior")
-        beh = QGridLayout(beh_g); beh.setHorizontalSpacing(12); beh.setVerticalSpacing(6)
-
-                                      
-        box1 = QVBoxLayout()
-        self.add_float_slider(box1, "Cooldown (s)", "triggerbot_cooldown", 0.00, 1.00, 100, "s")
-        w1 = QWidget(); w1.setLayout(box1); beh.addWidget(w1, 0, 0)
-
-                                                              
-        box2 = QVBoxLayout()
-        self.add_float_slider(box2, "Reaction Delay Min (s)", "trigger_delay_min", 0.000, 0.150, 1000, "s")
-        self.add_float_slider(box2, "Reaction Delay Max (s)", "trigger_delay_max", 0.000, 0.250, 1000, "s")
-        w2 = QWidget(); w2.setLayout(box2); beh.addWidget(w2, 0, 1)
-
-                                                        
-        box3 = QVBoxLayout()
-        self.add_float_slider(box3, "Shot Jitter (s)", "trigger_jitter", 0.000, 0.030, 1000, "s")
-        self.add_int_slider(box3, "Burst Shots", "trigger_burst_shots", 1, 5)
-        w3 = QWidget(); w3.setLayout(box3); beh.addWidget(w3, 0, 2)
-
-        root.addWidget(beh_g)
-
-                            
         safe_g = self.create_group_box("Safety")
-        safe = QHBoxLayout(safe_g); safe.setSpacing(10)
+        safe_l = QVBoxLayout(safe_g)
+        self.add_checkbox(safe_l, "Require VisCheck", "trigger_require_vischeck", default=True)
+        col2.addWidget(safe_g)
+        col2.addStretch()
 
-                                                                               
-        self.add_checkbox(safe, "Require VisCheck (if available)", "trigger_require_vischeck", default=True)
+        cols.addLayout(col1, 1)
+        cols.addLayout(col2, 1)
+        layout.addLayout(cols)
 
-        if hasattr(self.CFG, "panic_key_enabled"):
-            self.add_checkbox(safe, "Panic Key Enabled", "panic_key_enabled")
-
-        safe.addStretch(1)
-        root.addWidget(safe_g)
-
-        root.addStretch()
         scroll.setWidget(content)
-        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.addWidget(scroll)
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.addWidget(scroll)
 
                                       
     def _toggle_triggerbot(self, enabled: bool):
@@ -5214,7 +3781,8 @@ class TriggerBotTab(QWidget):
 
                                        
     def set_trigger_key(self):
-        self.set_key_btn.setText("Press any key…")
+        self.trigger_key_label.setText("Press any key…")
+        self.trigger_key_label.setStyleSheet("color: #eb3c3c; font-weight: bold;")
         self.set_key_btn.setEnabled(False)
 
         try:
@@ -5228,13 +3796,14 @@ class TriggerBotTab(QWidget):
             self.listener_thread.start()
         except Exception as e:
             print(f"[TriggerBotTab] key listener error: {e}")
-            self.set_key_btn.setText("Set Trigger Key")
+            self.trigger_key_label.setText(f"Trigger Key: {getattr(self.CFG,'trigger_key','')}")
+            self.trigger_key_label.setStyleSheet("color: #f0eaea; font-weight: normal;")
             self.set_key_btn.setEnabled(True)
 
     def key_set(self, key_name):
         setattr(self.CFG, "trigger_key", key_name)
-        self.trigger_key_label.setText(f"Trigger Key: {getattr(self.CFG,'trigger_key','')}")
-        self.set_key_btn.setText("Set Trigger Key")
+        self.trigger_key_label.setText(f"Trigger Key: {key_name}")
+        self.trigger_key_label.setStyleSheet("color: #ffffff; font-weight: bold;")
         self.set_key_btn.setEnabled(True)
 
                                 
