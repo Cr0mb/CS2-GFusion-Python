@@ -15,9 +15,7 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 
 ### Setup
 
-1. Place `IREC.sys` (Binalyze IREC, KDU provider #41, CVE-2023-41444 —
-   **NOT** on the Microsoft driver blocklist) at
-   `.\drivers\IREC.sys`.
+1. Place `IREC.sys` (CVE-2023-41444) at `.\drivers\IREC.sys`.
 2. Run `python GFusion.py`
 
 On launch, the driver is installed as kernel service `GFusionIREC`, loaded with
