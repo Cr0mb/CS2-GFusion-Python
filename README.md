@@ -18,18 +18,13 @@ irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFus
 1. Place `IREC.sys` (Binalyze IREC, KDU provider #41, CVE-2023-41444 —
    **NOT** on the Microsoft driver blocklist) at
    `.\drivers\IREC.sys`.
-2. Run `start.pyw` (or `python GFusion.py` from an elevated terminal if you
-   want live console logs).
+2. Run `python GFusion.py`
 
-`start.pyw` self-elevates via UAC, then launches `GFusion.py`. On launch,
-the driver is installed as kernel service `GFusionIREC`, loaded with
+On launch, the driver is installed as kernel service `GFusionIREC`, loaded with
 `NtLoadDriver`, and the device `\\.\IREC` is opened. On a normal window
 close the driver is unloaded and the service registry key is wiped — no
 forensic traces. Loading is pure Python; no `kdmapper.exe`, no `KDU.exe`,
 nothing external.
-
-To smoke-test the driver in isolation: `python test_irec.py` (requires
-admin; reads cs2.exe if running, otherwise explorer.exe).
 
 <div style="display:flex; gap:250px;">
   <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
@@ -39,14 +34,14 @@ admin; reads cs2.exe if running, otherwise explorer.exe).
 ```
 05/02/2026
 V3.7
-[+] Replaced NeacController / NeacSafe64 backend with Binalyze IREC (KDU provider #41, CVE-2023-41444 — NOT on the Microsoft driver blocklist).
-[+] Pure-Python kernel driver loader — no kdmapper.exe, no KDU.exe, no external binaries. SeLoadDriverPrivilege + NtLoadDriver via ctypes.
+[+] Replaced backend with Binalyze IREC (CVE-2023-41444).
+[+] Pure-Python kernel driver loader. SeLoadDriverPrivilege + NtLoadDriver via ctypes.
 [+] Auto-start on launch: GFusion.py installs the IREC service, loads the driver, and opens \\.\IREC before the Qt event loop starts.
 [+] Auto-cleanup on exit: aboutToQuit + atexit close the device handle, NtUnloadDriver, and wipe HKLM\...\Services\GFusionIREC — no forensic traces.
 [+] MemoryInterface now reuses a single shared driver instance across ESP / Aimbot / FOV / Glow threads instead of racing to load it per-feature.
 [+] Aimbot tab "Kernel Mode" status reflects live driver state (Driver loaded / Kernel mode active / Waiting), polling every 2s.
 [+] Added new entry point start.pyw — self-elevates via UAC and launches GFusion.py in the same interpreter.
-[+] Reconfigured stdio to UTF-8 at startup so emoji log lines (✓ ✗ ⚠ 🚀) no longer crash MemoryInterface init on cp1252 consoles.
+[+] Reconfigured stdio to UTF-8 at startup so emoji log lines no longer crash MemoryInterface init on cp1252 consoles.
 [+] Fixed CS2 build 14154 skeleton breakage — bone indices renumbered (head 6→7, pelvis 0→1, leg cluster shifted), per-bone 12-byte reads.
 [+] Fixed broken map-status pointer — dwGameTypes corrected to 0x1B0F80 from cs2-dumper-main (build 14158).
 [+] Fixed recoil control — m_aimPunchAngle was removed in 14154; rewired to read AimPunchServices → m_predictableBaseAngle chain with legacy fallback.
