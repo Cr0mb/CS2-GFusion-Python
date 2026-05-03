@@ -1,10 +1,10 @@
 # GFusion — Counter-Strike 2 Closet Cheat
 
-The most advanced Counter-Strike closet cheat written in Python. Kernel-driver backed, fully self-contained, **no external loaders required**.
+The most advanced Counter-Strike closet cheat written in Python. Kernel-driver backed, fully self-contained, with no external loaders required at runtime.
 
-[![UC Forum](https://img.shields.io/badge/UC-Forum-orange)](https://www.unknowncheats.me/forum/counter-strike-2-releases/711867-gfusion-closet-cheat.html)
-[![YouTube](https://img.shields.io/badge/YouTube-cr0mble-red)](https://www.youtube.com/@cr0mble)
-[![Install Guide](https://img.shields.io/badge/Install-Guide-blue)](https://www.youtube.com/watch?v=i3q_ryNTHww&lc=Ugz-S0AoR0fkkcZhfXZ4AaABAg)
+[UC Forum](https://www.unknowncheats.me/forum/counter-strike-2-releases/711867-gfusion-closet-cheat.html) &nbsp;·&nbsp;
+[YouTube](https://www.youtube.com/@cr0mble) &nbsp;·&nbsp;
+[Install Walkthrough](https://www.youtube.com/watch?v=i3q_ryNTHww&lc=Ugz-S0AoR0fkkcZhfXZ4AaABAg)
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/b25d707d-16bd-4897-8f27-b983e8657148" width="850" alt="GFusion menu">
@@ -14,26 +14,31 @@ The most advanced Counter-Strike closet cheat written in Python. Kernel-driver b
 
 ## Quick Start
 
-### 1. Install dependencies (PowerShell as Administrator)
+### 1. Install Python dependencies
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-irm https://raw.githubusercontent.com/Cr0mb/CS2-GFusion-Python/main/Install-GFusion.ps1 | iex
+```
+pip install PyQt5 keyboard matplotlib requests pywin32
 ```
 
-### 2. Make sure the driver is in place
+Python **3.14** is recommended — `vischeck.pyd` ships precompiled for that version. For other Python versions, rebuild it from `VisCheckCS2/`.
 
-`drivers\IREC.sys` ships with the repo. If it's missing, drop it back in.
+### 2. Confirm the kernel driver is in place
+
+`drivers\IREC.sys` ships with the repo. If it's missing, restore it before launching.
 
 ### 3. Launch
 
 Double-click **`start.pyw`** — it self-elevates via UAC and brings up the menu.
 
-> **Tip:** Launch with `python start.pyw` instead of `pythonw start.pyw` if you want a console window with live driver / memory logs.
+For live driver / memory logs, launch from a console:
+
+```
+python start.pyw
+```
 
 ### 4. Open in-game
 
-Start CS2 → join a match → press **`Insert`** to toggle the menu.
+Start CS2, join a match, and press **`Insert`** to toggle the menu.
 
 ---
 
@@ -42,7 +47,7 @@ Start CS2 → join a match → press **`Insert`** to toggle the menu.
 | Key | Action |
 |---|---|
 | `Insert` | Toggle menu |
-| `Delete` | **Panic key** — instantly hides everything |
+| `Delete` | Panic key — instantly hides everything |
 | `Mouse 1` | Aimbot activation |
 | `Alt` | TriggerBot / Auto-Pistol activation |
 
@@ -52,77 +57,79 @@ All hotkeys are remappable in the **Configs** tab.
 
 ## Features
 
-### 🎯 Aimbot
+### Aimbot
 - Multi-bone targeting (head, neck, chest, pelvis, hands, legs)
 - Closest-to-crosshair or fixed-bone modes
-- **Recoil Control System (RCS)** with learned recoil corrections
-- **Humanization** — jitter, reaction delay, overshoot, smooth randomization
+- Recoil Control System (RCS) with learned recoil corrections
+- Humanization — jitter, reaction delay, overshoot, smooth randomization
 - Per-target aim profiles for unique smoothing per enemy
 - Velocity prediction for moving targets
-- Visibility check (only aim at players you can see)
-- Live "Kernel Mode" status indicator
+- Visibility-gated aiming (only fires at players you can see)
+- Live "Kernel Mode" status indicator (driver loaded / kernel mode active / waiting)
 
-### 👁 ESP (Player)
-- Box ESP — normal / rounded / corner styles
-- Skeleton, head, bone-dot, line, trace
+### Player ESP
+- Box ESP — normal, rounded, and corner styles
+- Skeleton, head, bone-dot, line, trace overlays
 - Health bar, armor bar, name, distance, weapon, money, scope, flashed status
-- **Visible / not-visible** color separation
+- Visible / not-visible color separation
 - Spectator list, team list, bomb ESP
-- Lingering ESP for dead players (skeleton follows ragdoll)
-- Velocity, speed, coordinates overlays
+- Lingering ESP for dead players (skeleton follows the ragdoll)
+- Velocity, speed, and coordinates overlays
 - Configurable colors and shapes per element
 
-### 🌍 World ESP
+### World ESP
 - Bomb sites, dropped weapons, grenade prediction
 
-### 📡 Radar
+### Radar
 - External draggable radar overlay (independent window)
 - Resizable, alpha-adjustable, configurable FPS
 - Fixed-range or dynamic-range modes
-- Direction indicators for self / enemies / team
-- **OBS-protected** — invisible to OBS Studio captures
+- Direction indicators for self, enemies, and team
+- OBS-protected — invisible to OBS Studio captures
 
-### 💡 Glow ESP
+### Glow ESP
 - Per-team glow colors (enemies / teammates)
 - Live color picker
 
-### 🎯 Other Combat Modules
+### Other Combat Modules
 - **TriggerBot** — vischeck-gated, configurable delay / jitter / burst
 - **Auto Pistol** — converts semi-auto pistols to full-auto
 - **BHop** — frame-perfect bunny hop
 - **Walk Bot** — pure-`ctypes` movement automation, no `psutil` dependency
+- **FOV Changer** — overrides client FOV
 
-### 🛡 Safety / Stealth
-- **OBS Protection** — overlay window excluded from screen captures
-- **Panic key** (Delete) — kills all overlays instantly
-- **Auto-cleanup on exit** — driver unloaded, registry key wiped, no forensic traces
-- **No external dependencies** at runtime — `kdmapper.exe` and `KDU.exe` are not used
+### Safety / Stealth
+- OBS Protection — overlay window excluded from screen captures
+- Panic key (Delete) kills all overlays instantly
+- Auto-cleanup on exit — driver unloaded, registry key wiped, no forensic traces
+- No external dependencies at runtime — no `kdmapper.exe`, no `KDU.exe`
 
-### ⚙️ Quality of Life
-- Modern dark/red Qt UI with hover animations
+### Quality of Life
+- Modern dark/red Qt UI with hover animations and a startup loader
 - Resizable, font-customizable menu
-- **Console tab** with text command system for every toggle
+- Console tab with text command system for every toggle
 - Multiple config slots — atomic save with `.bak` backup, autosave every N minutes
-- Live offset updates from `cs2-dumper-main` with local fallback
+- Live offset updates pulled from `cs2-dumper-main` with local fallback
+- Crash-prevention layer with a rotating debug log (`gfusion_debug.log`, 10MB × 3)
 
 ---
 
 ## How It Works
 
-GFusion talks to CS2 through a **kernel driver** (Binalyze IREC, CVE-2023-41444 — KDU provider #41, **not** on the Microsoft driver blocklist) for stealthy memory access.
+GFusion talks to CS2 through a kernel driver — **Binalyze IREC** (CVE-2023-41444, KDU provider #41, **not** on the Microsoft driver blocklist) — for stealthy memory access.
 
 The loader is **100% Python**:
 
 1. Acquires `SeLoadDriverPrivilege` via `ctypes`.
 2. Installs `IREC.sys` as kernel service `GFusionIREC`.
 3. Loads it with `NtLoadDriver` and opens `\\.\IREC`.
-4. Hands the device handle to a single shared `MemoryInterface` reused by all features.
+4. Hands the device handle to a single shared `MemoryInterface` reused by ESP, Aimbot, FOV, Glow, and every other thread.
 
-On clean exit (`aboutToQuit` + `atexit` hooks):
+On clean exit, both `aboutToQuit` (Qt) and `atexit` hooks run:
 
-1. Closes the device handle.
-2. Calls `NtUnloadDriver`.
-3. Wipes `HKLM\SYSTEM\CurrentControlSet\Services\GFusionIREC`.
+1. Close the device handle.
+2. Call `NtUnloadDriver`.
+3. Wipe `HKLM\SYSTEM\CurrentControlSet\Services\GFusionIREC`.
 
 No `kdmapper.exe`, no `KDU.exe`, no leftover service keys.
 
@@ -132,33 +139,34 @@ No `kdmapper.exe`, no `KDU.exe`, no leftover service keys.
 
 ```
 CS2-GFusion-Python-main/
-├── start.pyw                 # UAC self-elevating launcher (recommended entry point)
-├── GFusion.py                # Main app — Qt UI, feature orchestration
+├── start.pyw                 UAC self-elevating launcher (recommended entry point)
+├── GFusion.py                Main app — Qt UI, feature orchestration, logging
+├── vischeck.pyd              Precompiled visibility-check module (Python 3.14)
 ├── Features/
-│   ├── aimbot.py             # Multi-bone aimbot + RCS + humanization
-│   ├── esp.py                # Player ESP renderer
-│   ├── worldesp.py           # World object ESP
-│   ├── radar.py              # External radar overlay
-│   ├── glow.py               # Glow ESP
-│   ├── triggerbot.py         # TriggerBot
-│   ├── auto_pistol.py        # Auto-pistol
-│   ├── bhop.py               # Bunny hop
-│   ├── walk_bot.py           # Movement automation
-│   ├── fov.py                # FOV changer
-│   └── show.py               # Overlay drawing primitives
+│   ├── aimbot.py             Multi-bone aimbot + RCS + humanization
+│   ├── esp.py                Player ESP renderer
+│   ├── worldesp.py           World object ESP
+│   ├── radar.py              External radar overlay
+│   ├── glow.py               Glow ESP
+│   ├── triggerbot.py         TriggerBot
+│   ├── auto_pistol.py        Auto-pistol
+│   ├── bhop.py               Bunny hop
+│   ├── walk_bot.py           Movement automation
+│   ├── fov.py                FOV changer
+│   └── show.py               Overlay drawing primitives
 ├── Performance/
-│   └── vischeck_optimizer.py # BSP visibility checks
+│   └── vischeck_optimizer.py BSP visibility optimizations
 ├── Process/
-│   ├── memory_interface.py   # Kernel/usermode memory abstraction
-│   ├── offset_manager.py     # Offset hot-reload
-│   ├── offset_update.py      # Pulls latest offsets from cs2-dumper
-│   ├── offsets.py            # Cached offsets
-│   └── config.py             # Persistent config (atomic JSON + schema)
-├── VisCheckCS2/              # Visibility check source
-├── vischeck.pyd              # Compiled vischeck (Python 3.14)
-├── maps/                     # Pre-baked .opt visibility maps
+│   ├── memory_interface.py   Kernel/usermode memory abstraction
+│   ├── offset_manager.py     Offset hot-reload
+│   ├── offset_update.py      Pulls latest offsets from cs2-dumper
+│   ├── offsets.py            Cached offsets
+│   ├── config.py             Persistent config (atomic JSON + schema)
+│   └── drivers/              Driver wrappers (IKernelDriver implementations)
+├── VisCheckCS2/              Visibility-check source (rebuild target)
+├── maps/                     Pre-baked .opt visibility maps
 └── drivers/
-    └── IREC.sys              # Binalyze IREC kernel driver
+    └── IREC.sys              Binalyze IREC kernel driver
 ```
 
 ---
@@ -170,20 +178,22 @@ CS2-GFusion-Python-main/
 - **Privileges:** Administrator (required to load the kernel driver)
 - **Game:** Counter-Strike 2 (latest build)
 
+Third-party Python packages: `PyQt5`, `keyboard`, `matplotlib`, `requests`, `pywin32`.
+
 ---
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| UAC prompt cancelled | Re-run `start.pyw` and accept the prompt — admin is required for `NtLoadDriver` |
+| UAC prompt cancelled | Re-launch `start.pyw` and accept the prompt — admin is required for `NtLoadDriver` |
 | `IREC.sys` not found | Restore the file to `.\drivers\IREC.sys` |
-| `vischeck` import error | You're not on Python 3.14 — rebuild from `VisCheckCS2/` or update Python |
+| `vischeck` import error | You are not on Python 3.14 — rebuild from `VisCheckCS2/` or update Python |
 | Emoji crash on startup | Already fixed in v3.7 (stdio reconfigured to UTF-8 before any imports) |
-| Aimbot misses heads | CS2 may have shifted bone indices again — check `Process/config.py` `BONES` table |
-| Map status / recoil broken after CS2 update | Update offsets via the in-app updater (or check `cs2-dumper-main`) |
+| Aimbot misses heads after a CS2 update | Bone indices may have shifted — check the `BONES` table in `Process/config.py` |
+| Map status / recoil broken after a CS2 update | Update offsets via the in-app updater (or check `cs2-dumper-main`) |
 
-For live logs, look at `gfusion_debug.log` (rotating, 10MB × 3 backups) in the repo root.
+For live logs, see `gfusion_debug.log` in the repo root (rotating, 10MB with 3 backups).
 
 ---
 
