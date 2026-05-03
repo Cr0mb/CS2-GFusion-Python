@@ -335,9 +335,16 @@ class Config:
     # ===========================
     smooth_base = 0.24
     smooth_var = 0.00
+    # m_yaw cvar — fixed CS2 constant; player sensitivity is read live from
+    # client.dll (dwSensitivity → +dwSensitivity_sensitivity) each frame.
+    m_yaw = 0.022
+    # Legacy field kept for back-compat with older configs and other modules.
     sensitivity = 0.022
     invert_y = -1
-    max_mouse_move = 5
+    # Per-frame mouse move cap. Old default of 5 truncated almost every
+    # smoothed delta to 0 once sub-pixel work was discarded by int() — fixed
+    # alongside the new RemainderX/RemainderY accumulator in AimbotRCS.run.
+    max_mouse_move = 40
 
     # ===========================
     #  Recoil Control System (RCS)

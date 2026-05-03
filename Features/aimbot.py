@@ -234,6 +234,40 @@ class RPMReader(IMemoryReader):
 
 
 # -------------------------------
+# Active-weapon resolution
+# -------------------------------
+# CS2 build 14154+ no longer exposes m_pClippingWeapon as a direct pointer
+# on C_CSPlayerPawn. The active weapon is reached through:
+#   pawn + m_pWeaponServices  (deref) -> CCSPlayer_WeaponServices
+#   + m_hActiveWeapon         -> CHandle (uint32) into the entity list
+# Then the handle resolves the same way as player handles:
+#   chunk = *(entity_list + 8 * (idx >> 9) + 16)
+#   entity = *(chunk + 0x70 * (idx & 0x1FF))
+def _resolve_active_weapon(reader, client_base, pawn):
+    if not pawn:
+        return 0
+    wsvcs_off = getattr(Offsets, "m_pWeaponServices", 0)
+    hwep_off  = getattr(Offsets, "m_hActiveWeapon", 0)
+    elist_off = getattr(Offsets, "dwEntityList", 0)
+    if not (wsvcs_off and hwep_off and elist_off):
+        return 0
+    wsvcs = reader.read(pawn + wsvcs_off, "long")
+    if not wsvcs:
+        return 0
+    handle = reader.read(wsvcs + hwep_off, "int")
+    if not handle or handle == -1:
+        return 0
+    entity_list = reader.read(client_base + elist_off, "long")
+    if not entity_list:
+        return 0
+    idx = handle & 0x7FFF
+    chunk = reader.read(entity_list + 8 * (idx >> 9) + 16, "long")
+    if not chunk:
+        return 0
+    return reader.read(chunk + 0x70 * (idx & 0x1FF), "long") or 0
+
+
+# -------------------------------
 # Process Handling
 # -------------------------------
 class CS2Process:
@@ -316,10 +350,10 @@ class CS2WeaponTracker:
         self.reader = RPMReader(self.cs2process.process_id, self.process_handle, config)
 
     def get_current_weapon_id(self):
-        local_player = self.reader.read(self.client + Offsets.dwLocalPlayerPawn, "long")
-        if not local_player:
+        local_pawn = self.reader.read(self.client + Offsets.dwLocalPlayerPawn, "long")
+        if not local_pawn:
             return None
-        weapon_ptr = self.reader.read(local_player + Offsets.m_pClippingWeapon, "long")
+        weapon_ptr = _resolve_active_weapon(self.reader, self.client, local_pawn)
         if not weapon_ptr:
             return None
         item_idx_addr = weapon_ptr + Offsets.m_AttributeManager + Offsets.m_Item + Offsets.m_iItemDefinitionIndex
@@ -368,6 +402,56 @@ DEFAULT_AIM_BONES = (
     BONES["right_leg"],
 )
 
+# Hot-loop config keys + defaults. Snapshotted every ~0.5s into a SimpleNamespace
+# so the run() loop reads attributes (one C-level dict lookup) instead of
+# calling getattr() with a default ~30+ times per tick. Runtime config edits
+# from the UI propagate within the refresh interval.
+_HOT_CFG_DEFAULTS = (
+    ("enabled",                    True),
+    ("DeathMatch",                 False),
+    ("aim_key",                    "mouse5"),
+    ("max_entities",               256),
+    ("enable_velocity_prediction", False),
+    ("velocity_prediction_factor", 1.0),
+    ("downward_offset",            0.0),
+    ("stickiness_time",            0.25),
+    ("post_switch_shaky_time",     0.18),
+    ("micro_pause_chance",         0.02),
+    ("rcs_delay_seconds",          0.04),
+    ("rcs_scale",                  1.0),
+    ("enable_mouse_recording",     True),
+    ("human_blend",                0.35),
+    ("smooth_ramp_speed",          1.45),
+    ("overshoot_amount",           1.12),
+    ("overshoot_decay_time",       0.12),
+    ("m_yaw",                      0.022),
+    ("invert_y",                   -1),
+    ("max_mouse_move",             40),
+    ("max_move_jitter",            0.6),
+    ("humanization_enabled",       True),
+    ("aim_jitter_enabled",         True),
+    ("visibility_aim_enabled",     False),
+    ("aim_tick_rate",              60),
+    ("entity_cache_refresh",       0.20),
+    ("idle_drop_probability",      0.03),
+    ("engage_drop_probability",    0.012),
+)
+_HOT_CFG_REFRESH_S = 0.5
+
+
+class _HC:
+    __slots__ = tuple(k for k, _ in _HOT_CFG_DEFAULTS) + ("_refresh_at",)
+
+
+def _snap_hot_cfg(cfg, hc=None):
+    if hc is None:
+        hc = _HC()
+    g = getattr
+    for k, d in _HOT_CFG_DEFAULTS:
+        setattr(hc, k, g(cfg, k, d))
+    return hc
+
+
 class AimbotRCS:
     MAX_DELTA_ANGLE = 60
     SENSITIVITY = None
@@ -403,6 +487,17 @@ class AimbotRCS:
         # RCS tracking
         self.recoil_active = False
         self.total_recoil_compensation = [0.0, 0.0]
+
+        # Sub-pixel mouse remainders (carry fractional pixel motion across
+        # frames so smoothed/long-distance aim still progresses). Mirrors
+        # GHax_Free_v2/Features/Aimbot.cpp RemainderX/Y.
+        self.remainder_x = 0.0
+        self.remainder_y = 0.0
+
+        # Live player sensitivity (read from client.dll each frame). Falls
+        # back to 1.0 until the first successful read.
+        self.player_sensitivity = 1.0
+        self._sens_obj_ptr = 0  # cached *(client + dwSensitivity) deref
 
         # Locks & hot math refs
         self.lock = threading.Lock()
@@ -669,8 +764,31 @@ class AimbotRCS:
             return None
         return self.reader.read_vec3(bones + idx * 32)
 
+    def read_player_sensitivity(self):
+        """Read CS2 player sensitivity from client.dll. Mirrors the C++
+        reference (Client::GetSensitivity in GHax_Free_v2/Game/Entity.cpp):
+            ptr = *(client_dll + dwSensitivity)
+            sens = *(ptr + dwSensitivity_sensitivity)
+        Returns the cached value if a read fails; never returns 0."""
+        try:
+            sens_off = getattr(self.o, "dwSensitivity", 0)
+            sub_off = getattr(self.o, "dwSensitivity_sensitivity", 88)
+            if not sens_off:
+                return self.player_sensitivity
+            if not self._sens_obj_ptr:
+                self._sens_obj_ptr = self.read(self.base + sens_off, "long") or 0
+            if not self._sens_obj_ptr:
+                return self.player_sensitivity
+            sens = self.read(self._sens_obj_ptr + sub_off, "float")
+            if sens and sens > 0.0001:
+                self.player_sensitivity = float(sens)
+        except Exception:
+            # Force re-resolve next frame; client may have reloaded.
+            self._sens_obj_ptr = 0
+        return self.player_sensitivity
+
     def read_weapon_id(self, pawn):
-        w = self.read(pawn + self.o.m_pClippingWeapon, "long")
+        w = _resolve_active_weapon(self.reader, self.base, pawn)
         if not w:
             return 0
         return self.read(w + self.o.m_AttributeManager + self.o.m_Item + self.o.m_iItemDefinitionIndex, "ushort")
@@ -1036,11 +1154,17 @@ class AimbotRCS:
         GetAsyncKeyState = windll.user32.GetAsyncKeyState
 
         prev_weapon_id = None
-        max_fps = int(getattr(self.cfg, "aim_tick_rate", 60))
+
+        # Hot-config snapshot — refreshed every _HOT_CFG_REFRESH_S so the
+        # tight loop avoids ~30+ getattr() calls per iteration.
+        hc = _snap_hot_cfg(self.cfg)
+        hc._refresh_at = time.perf_counter() + _HOT_CFG_REFRESH_S
+
+        max_fps = int(hc.aim_tick_rate)
         frame_time = 1.0 / max(30, min(240, max_fps))
 
         entity_cache = {}
-        cache_refresh_rate = float(getattr(self.cfg, "entity_cache_refresh", 0.20))
+        cache_refresh_rate = float(hc.entity_cache_refresh)
         last_cache_time = 0.0
 
         post_switch_shaky_until = 0.0
@@ -1055,19 +1179,20 @@ class AimbotRCS:
             if self.read(pawn + self.o.m_lifeState) != 256: return False
             if self.read(pawn + self.o.m_bDormant, "int"): return False
             team = self.read(pawn + self.o.m_iTeamNum)
-            return getattr(self.cfg, "DeathMatch", False) or (team != my_team)
-
-        # Dithering probabilities
-        base_drop_idle = float(getattr(self.cfg, "idle_drop_probability", 0.03))
-        base_drop_engage = float(getattr(self.cfg, "engage_drop_probability", 0.012))
+            return hc.DeathMatch or (team != my_team)
 
         while not self.cfg.aim_stop:
             start_time = time.perf_counter()
             mouse_dx = mouse_dy = 0
 
+            # Refresh hot-config snapshot at ~2 Hz so UI edits propagate
+            # without the per-iteration getattr() tax.
+            if start_time >= hc._refresh_at:
+                _snap_hot_cfg(self.cfg, hc)
+                hc._refresh_at = start_time + _HOT_CFG_REFRESH_S
+
             try:
-                aim_key_cfg = getattr(self.cfg, 'aim_key', 'mouse5')
-                aim_vk = get_vk_code(aim_key_cfg) or get_vk_code('mouse5')
+                aim_vk = get_vk_code(hc.aim_key) or get_vk_code('mouse5')
                 if aim_vk is None or not self.is_cs2_focused():
                     time.sleep(0.1); continue
 
@@ -1082,10 +1207,14 @@ class AimbotRCS:
                     self.reset_recoil()
                     self.aim_start_time = None
                     self.smooth_ramp = 0.0
+                    # Drop any unsent sub-pixel motion so the next aim press
+                    # doesn't pop with a stale fractional remainder.
+                    self.remainder_x = 0.0
+                    self.remainder_y = 0.0
 
                 self.left_down = curr_aim_state
 
-                if not bool(getattr(self.cfg, 'enabled', True)):
+                if not hc.enabled:
                     time.sleep(0.01); continue
 
                 # Local
@@ -1133,7 +1262,8 @@ class AimbotRCS:
                 now = time.time()
                 if now - last_cache_time > cache_refresh_rate:
                     entity_cache.clear()
-                    for i in range(int(getattr(self.cfg, "max_entities", 256))):
+                    max_e = int(hc.max_entities)
+                    for i in range(max_e):
                         ctrl_ent = self.get_entity(entity_list, i)
                         if not ctrl_ent or ctrl_ent == ctrl: continue
                         pawn_ent = self.get_entity(entity_list, self.read(ctrl_ent + o.m_hPlayerPawn) & 0x7FFF)
@@ -1143,13 +1273,17 @@ class AimbotRCS:
 
                 # Target selection
                 target, target_pos = None, None
+                use_vel = hc.enable_velocity_prediction
+                vel_factor = float(hc.velocity_prediction_factor)
+                downward_off = float(hc.downward_offset)
+
                 if self.target_id in entity_cache:
                     _, t_pawn = entity_cache[self.target_id]
                     bone_idx = self.get_current_bone_index(t_pawn, my_pos, pitch, yaw, frame_time=frame_time)
                     pos = self.read_bone_pos(t_pawn, bone_idx) or self.read_vec3(t_pawn + o.m_vOldOrigin)
-                    vel = self.read_vec3(t_pawn + o.m_vecVelocity) if getattr(self.cfg, "enable_velocity_prediction", False) else [0,0,0]
-                    predicted = [pos[i] + vel[i] * frame_time * float(getattr(self.cfg, "velocity_prediction_factor", 1.0)) for i in range(3)]
-                    predicted[2] -= float(getattr(self.cfg, "downward_offset", 0.0))
+                    vel = self.read_vec3(t_pawn + o.m_vecVelocity) if use_vel else [0,0,0]
+                    predicted = [pos[i] + vel[i] * frame_time * vel_factor for i in range(3)]
+                    predicted[2] -= downward_off
                     tp, ty = self.calc_angle(my_pos, predicted)
                     if not self.in_fov(pitch, yaw, tp, ty) or not self.is_target_visible(my_pos, predicted):
                         self.target_id = None
@@ -1161,9 +1295,9 @@ class AimbotRCS:
                     for i, (_, pawn_ent) in entity_cache.items():
                         bone_idx = self.get_current_bone_index(pawn_ent, my_pos, pitch, yaw, frame_time=frame_time)
                         pos = self.read_bone_pos(pawn_ent, bone_idx) or self.read_vec3(pawn_ent + o.m_vOldOrigin)
-                        vel = self.read_vec3(pawn_ent + o.m_vecVelocity) if getattr(self.cfg, "enable_velocity_prediction", False) else [0,0,0]
-                        predicted = [pos[j] + vel[j] * frame_time * float(getattr(self.cfg, "velocity_prediction_factor", 1.0)) for j in range(3)]
-                        predicted[2] -= float(getattr(self.cfg, "downward_offset", 0.0))
+                        vel = self.read_vec3(pawn_ent + o.m_vecVelocity) if use_vel else [0,0,0]
+                        predicted = [pos[j] + vel[j] * frame_time * vel_factor for j in range(3)]
+                        predicted[2] -= downward_off
                         tp, ty = self.calc_angle(my_pos, predicted)
                         if not self.in_fov(pitch, yaw, tp, ty) or not self.is_target_visible(my_pos, predicted):
                             continue
@@ -1173,9 +1307,7 @@ class AimbotRCS:
 
                 # Stickiness & switch handling
                 if self.target_id != self.prev_target_id:
-                    # Stickiness: briefly prefer previous target
-                    stick_time = float(getattr(self.cfg, "stickiness_time", 0.25))
-                    if self.prev_target_id is not None and (now - self.stickiness_timer) < stick_time and self.prev_target_id in entity_cache:
+                    if self.prev_target_id is not None and (now - self.stickiness_timer) < float(hc.stickiness_time) and self.prev_target_id in entity_cache:
                         self.target_id = self.prev_target_id
                     else:
                         self.reset_recoil()
@@ -1185,22 +1317,21 @@ class AimbotRCS:
                         self.overshoot_completed = False
                         self.smooth_ramp = 0.0
                         self.stickiness_timer = now
-                        post_switch_shaky_until = now + float(getattr(self.cfg, "post_switch_shaky_time", 0.18))
+                        post_switch_shaky_until = now + float(hc.post_switch_shaky_time)
                 self.prev_target_id = self.target_id
 
-                # Frame dithering + micro-pauses are treated as jitter-like randomness.
-                # When jitter is OFF, we keep motion fully deterministic (no random frame drops or pauses).
-                if self._is_jitter_enabled():
-                    engage_drop = base_drop_engage
+                # Frame dithering / micro-pauses are jitter-like randomness.
+                # When jitter is OFF the motion stays fully deterministic.
+                jitter_on = hc.humanization_enabled and hc.aim_jitter_enabled
+                if jitter_on:
+                    engage_drop = float(hc.engage_drop_probability)
                     if now < post_switch_shaky_until:
-                        engage_drop *= 1.6  # slightly shakier just after switch
+                        engage_drop *= 1.6
                     if self.left_down and random.random() < engage_drop:
                         time.sleep(frame_time); continue
-                    if not self.left_down and random.random() < base_drop_idle:
+                    if not self.left_down and random.random() < float(hc.idle_drop_probability):
                         time.sleep(frame_time); continue
-
-                    # Optional micro-pause
-                    if self.left_down and random.random() < float(getattr(self.cfg, "micro_pause_chance", 0.02)):
+                    if self.left_down and random.random() < float(hc.micro_pause_chance):
                         time.sleep(random.uniform(0.010, 0.028))
 
                 # Reaction delay wait
@@ -1214,10 +1345,9 @@ class AimbotRCS:
 
                     # RCS: delayed engagement based on time since aim start + shots
                     time_since_start = (time.perf_counter() - (self.aim_start_time or time.perf_counter()))
-                    rcs_time = float(getattr(self.cfg, "rcs_delay_seconds", 0.04))
-                    rcs_scale_t = max(0.0, min(1.0, time_since_start / max(0.005, rcs_time)))
+                    rcs_scale_t = max(0.0, min(1.0, time_since_start / max(0.005, float(hc.rcs_delay_seconds))))
                     burst_scale = min(self.shots_fired / 3.0, 1.0)
-                    scale = float(getattr(self.cfg, "rcs_scale", 1.0)) * max(rcs_scale_t, 0.35) * burst_scale
+                    scale = float(hc.rcs_scale) * max(rcs_scale_t, 0.35) * burst_scale
 
                     comp_pitch = tp - (recoil_pitch * scale)
                     comp_yaw   = ty - (recoil_yaw   * scale)
@@ -1236,11 +1366,10 @@ class AimbotRCS:
                     self.update_learning(key, dp, dy, distance=distance, bone=bone_idx, velocity=vel)
 
                     # Blend recent human deltas
-                    if getattr(self.cfg, 'enable_mouse_recording', True):
+                    if hc.enable_mouse_recording:
                         human_dp, human_dy = self.sample_recent_human_correction(8)
                         magnitude = math.hypot(comp_pitch - pitch, comp_yaw - yaw)
-                        base_blend = float(getattr(self.cfg, 'human_blend', 0.35))
-                        dyn_blend = max(0.1, base_blend * (1.0 - min(magnitude / 15.0, 0.8)))
+                        dyn_blend = max(0.1, float(hc.human_blend) * (1.0 - min(magnitude / 15.0, 0.8)))
                         if abs(human_dp) < 2.0 and abs(human_dy) < 2.0:
                             dp = (1 - dyn_blend) * dp + dyn_blend * human_dp
                             dy = (1 - dyn_blend) * dy + dyn_blend * human_dy
@@ -1251,22 +1380,23 @@ class AimbotRCS:
                     # Per-target profile + smoothing ramp
                     profile = self.get_target_profile(self.target_id or 0)
                     dyn_smooth = min(profile["smoothing"] + (self.shots_fired * 0.0013), 0.14)
-                    self.smooth_ramp = min(1.0, self.smooth_ramp + frame_time * float(getattr(self.cfg, "smooth_ramp_speed", 1.45)))
+                    self.smooth_ramp = min(1.0, self.smooth_ramp + frame_time * float(hc.smooth_ramp_speed))
                     # Start slightly jerky then smooth out
                     ramp = self.ease_in_out_quad(self.smooth_ramp)
                     smooth = max(0.01, dyn_smooth * (0.55 + 0.45 * ramp))
                     smooth *= self.get_randomized_smooth(self.target_id or 0)
 
-                    # Overshoot & short decay
+                    # Overshoot & short decay (single time.time() call reused)
+                    overshoot_decay_s = float(hc.overshoot_decay_time)
                     if self.should_apply_overshoot():
-                        overshoot_mult = float(getattr(self.cfg, "overshoot_amount", 1.12))
+                        overshoot_mult = float(hc.overshoot_amount)
                         comp_pitch = pitch + (comp_pitch - pitch) * overshoot_mult
                         comp_yaw   = yaw  + (comp_yaw   - yaw)  * overshoot_mult
                         self.overshoot_completed = True
-                        self.overshoot_decay_until = time.time() + float(getattr(self.cfg, "overshoot_decay_time", 0.12))
+                        self.overshoot_decay_until = now + overshoot_decay_s
 
-                    if time.time() < self.overshoot_decay_until:
-                        decay_factor = max(0.0, (self.overshoot_decay_until - time.time()) / float(getattr(self.cfg, "overshoot_decay_time", 0.12)))
+                    if now < self.overshoot_decay_until:
+                        decay_factor = max(0.0, (self.overshoot_decay_until - now) / overshoot_decay_s)
                         comp_pitch = pitch + (comp_pitch - pitch) * decay_factor
                         comp_yaw   = yaw  + (comp_yaw   - yaw)  * decay_factor
 
@@ -1287,30 +1417,41 @@ class AimbotRCS:
                     if abs(sp - pitch) < 0.18: sp = comp_pitch
                     if abs(sy - yaw)   < 0.18: sy = comp_yaw
 
-                    # Convert to mouse move
-                    sensitivity = float(getattr(self.cfg, 'sensitivity', 0.022))
-                    invert_y = float(getattr(self.cfg, 'invert_y', -1))
-                    raw_dx = - (sy - yaw) / sensitivity
-                    raw_dy = - (sp - pitch) / sensitivity * invert_y
+                    # Convert angle delta to mouse counts.
+                    # CS2 mouse math:
+                    #   degrees = mouse_count * m_yaw * player_sensitivity
+                    # So:
+                    #   mouse_count = degrees / (m_yaw * player_sensitivity)
+                    # m_yaw is the fixed 0.022 cvar; player_sensitivity is
+                    # read live from client.dll each frame so changing in-game
+                    # sens no longer breaks aim distance.
+                    player_sens = self.read_player_sensitivity() or 1.0
+                    counts_per_deg = 1.0 / max(0.0001, float(hc.m_yaw) * player_sens)
+                    raw_dx = -(sy - yaw)   * counts_per_deg
+                    raw_dy = -(sp - pitch) * counts_per_deg * float(hc.invert_y)
 
-                    max_move = int(getattr(self.cfg, 'max_mouse_move', 25))
-                    if self._is_jitter_enabled():
-                        # small per-frame randomization of the clamp to avoid quantized patterns
-                        jitter_clamp = float(getattr(self.cfg, "max_move_jitter", 0.6))
+                    max_move = float(hc.max_mouse_move)
+                    if jitter_on:
+                        jitter_clamp = float(hc.max_move_jitter)
                         local_max = max_move + random.uniform(-jitter_clamp, jitter_clamp)
-                        clamped_dx = max(min(raw_dx,  local_max), -local_max)
-                        clamped_dy = max(min(raw_dy, local_max), -local_max)
-
-                        # Tiny noise
-                        clamped_dx += random.uniform(-0.14, 0.14)
-                        clamped_dy += random.uniform(-0.14, 0.14)
+                        raw_dx = max(min(raw_dx, local_max), -local_max)
+                        raw_dy = max(min(raw_dy, local_max), -local_max)
+                        raw_dx += random.uniform(-0.14, 0.14)
+                        raw_dy += random.uniform(-0.14, 0.14)
                     else:
-                        # Deterministic clamp (no jitter/noise)
-                        clamped_dx = max(min(raw_dx,  max_move), -max_move)
-                        clamped_dy = max(min(raw_dy, max_move), -max_move)
+                        raw_dx = max(min(raw_dx, max_move), -max_move)
+                        raw_dy = max(min(raw_dy, max_move), -max_move)
 
-                    mouse_dx = int(clamped_dx)
-                    mouse_dy = int(clamped_dy)
+                    # Sub-pixel remainder accumulation (matches GHax_Free_v2
+                    # AimControl::AimBot RemainderX/Y). Without this, smoothed
+                    # deltas under 1 px/frame are int-truncated to zero and
+                    # the aim stalls indefinitely on small adjustments.
+                    raw_dx += self.remainder_x
+                    raw_dy += self.remainder_y
+                    mouse_dx = int(raw_dx)
+                    mouse_dy = int(raw_dy)
+                    self.remainder_x = raw_dx - mouse_dx
+                    self.remainder_y = raw_dy - mouse_dy
 
                     self.last_aim_angle = (sp, sy)
                 else:
