@@ -27,7 +27,7 @@ forensic traces. Loading is pure Python; no `kdmapper.exe`, no `KDU.exe`,
 nothing external.
 
 <div style="display:flex; gap:250px;">
-  <img src="https://github.com/user-attachments/assets/ca6fcbb6-68ea-4493-8038-c3929397ba10" width="850">
+  <img src="<img width="938" height="691" alt="image" src="https://github.com/user-attachments/assets/b25d707d-16bd-4897-8f27-b983e8657148" />" width="850">
 </div>
 
 
