@@ -205,6 +205,14 @@ This project is provided **for educational and research purposes only**. Using c
 
 ## Changelog
 
+### v3.8 — 2026-05-16
+- **Live offset dumper** — pattern-scans `client.dll` / `inputsystem.dll` / `matchmaking.dll` and walks `schemasystem.dll` on every launch, so ESP/Aimbot survive CS2 updates without waiting for a new `offsets.json`. Fixes ESP not drawing on builds past 14154.
+- Dumper finishes in **under a second** (anchored `bytes.find` for patterns, 1 MiB module reads, batched schema-field reads).
+- **Aimbot v4** — replaced 5 compound jitter sources with a single time-correlated curl noise; replaced the lerp+ease pipeline with frame-rate-independent exponential smoothing on one `tau`. Buttery convergence, no chatter.
+- **Real spray-pattern learning** — per-weapon EMA over `m_predictableBaseAngle` deltas, saved to `aimbot_data/spray_patterns.json`. Replaces the old `(pitch_q,yaw_q,phase)` lookup that just cached its own output.
+- **Aim Feel UI collapsed** to four knobs + one toggle: Smoothness, Reaction Delay, Max Mouse Move, Humanization (+ Strength), Spray Learning.
+- **Fix:** aimbot silently doing nothing because `enable_learning` was missing from the hot-config snapshot — now also logs exception type + traceback to `gfusion_debug.log`.
+
 ### v3.7 — 2026-05-02
 - **Replaced backend with Binalyze IREC** (CVE-2023-41444).
 - Pure-Python kernel driver loader. `SeLoadDriverPrivilege` + `NtLoadDriver` via `ctypes`.

@@ -305,9 +305,21 @@ class Config:
     enable_logging = True
 
     # ===========================
-    #  Aimbot Humanization
+    #  Aimbot — v4 (one knob per behavior)
     # ===========================
+    # 0..100; higher = more smoothed. Maps to an exponential time constant of
+    # 10ms..250ms. Replaces the old smooth_base / smooth_var / smooth_random*.
+    aim_smoothness = 45
+    # Single humanization toggle. When True, the aim path gets a small
+    # time-correlated curl and a tau-wobble so it doesn't look mechanical.
     humanization_enabled = True
+    # 0..1; scales the curl amplitude. 0 = perfectly straight aim, 1 = noticeable wobble.
+    humanization_strength = 0.5
+    # Reaction window after a target switch, in milliseconds. ~60ms feels legit.
+    aim_reaction_delay_ms = 60.0
+
+    # --- Legacy keys kept so old configs.json loads don't crash. They are
+    # ignored by the v4 aim core but read by a few other features (UI, RCS).
     aim_jitter_enabled = True
     aim_jitter_amount = 0.15
     aim_shake_frequency = 8.0
@@ -317,9 +329,9 @@ class Config:
     reaction_delay_enabled = True
     reaction_delay_min = 0.01
     reaction_delay_max = 0.08
-    overshoot_enabled = True
-    overshoot_chance = 0.15
-    overshoot_amount = 1.2
+    overshoot_enabled = False
+    overshoot_chance = 0.0
+    overshoot_amount = 1.0
 
     # ===========================
     #  Aimbot Learning & Prediction

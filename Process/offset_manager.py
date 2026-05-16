@@ -578,7 +578,7 @@ def get_offsets(force_update: bool = False) -> Tuple[SimpleNamespace, SimpleName
     if _offsets_cache and _class_offsets_cache and not force_update:
         return _offsets_cache, _class_offsets_cache
 
-    result = _load_from_json()
+    result = None # Bypass _load_from_json()
     if result is None:
         try:
             result = _load_from_signature_scan()

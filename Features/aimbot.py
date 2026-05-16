@@ -435,6 +435,8 @@ _HOT_CFG_DEFAULTS = (
     ("entity_cache_refresh",       0.20),
     ("idle_drop_probability",      0.03),
     ("engage_drop_probability",    0.012),
+    # v4 hot keys
+    ("enable_learning",            True),
 )
 _HOT_CFG_REFRESH_S = 0.5
 
@@ -450,6 +452,74 @@ def _snap_hot_cfg(cfg, hc=None):
     for k, d in _HOT_CFG_DEFAULTS:
         setattr(hc, k, g(cfg, k, d))
     return hc
+
+
+class WeaponSprayPattern:
+    """Per-weapon recoil pattern learned by EMA-averaging the
+    ``m_predictableBaseAngle`` frame-over-frame delta for each shot index.
+
+    During a burst the aim core calls ``observe(weapon_id, shot, recoil)``
+    every tick; on the next burst it queries ``correction(weapon_id, shot)``
+    and pre-applies the inverse of the learned spray so the crosshair fights
+    the recoil instead of chasing it.
+
+    Way simpler than the old (pitch_q, yaw_q, phase) -> deque-of-corrections
+    table -- one number per shot per weapon, refined every time you fire.
+    """
+    __slots__ = ("alpha", "max_shots", "_patterns", "_last_recoil")
+
+    def __init__(self, alpha: float = 0.18, max_shots: int = 40):
+        self.alpha = alpha
+        self.max_shots = max_shots
+        self._patterns: dict[int, list[tuple[float, float]]] = {}
+        self._last_recoil: dict[int, tuple[float, float]] = {}
+
+    def correction(self, weapon_id: int, shot: int) -> tuple[float, float]:
+        """Returns (pitch, yaw) to ADD to the aim target so we counter recoil."""
+        if shot < 1:
+            return 0.0, 0.0
+        pat = self._patterns.get(weapon_id)
+        if not pat:
+            return 0.0, 0.0
+        idx = min(shot - 1, len(pat) - 1)
+        p, y = pat[idx]
+        # We learned the recoil delta; subtract it to counter.
+        return (-p, -y)
+
+    def observe(self, weapon_id: int, shot: int,
+                recoil: tuple[float, float]) -> None:
+        if shot < 1 or shot > self.max_shots:
+            return
+        last = self._last_recoil.get(weapon_id, recoil)
+        delta = (recoil[0] - last[0], recoil[1] - last[1])
+        self._last_recoil[weapon_id] = recoil
+        # Filter outliers (weapon swap / death / map change resets the punch
+        # angles abruptly; we don't want those huge spikes polluting the EMA).
+        if abs(delta[0]) > 20.0 or abs(delta[1]) > 20.0:
+            return
+        pat = self._patterns.setdefault(weapon_id, [])
+        while len(pat) < shot:
+            pat.append((0.0, 0.0))
+        a = self.alpha
+        old = pat[shot - 1]
+        pat[shot - 1] = ((1.0 - a) * old[0] + a * delta[0],
+                         (1.0 - a) * old[1] + a * delta[1])
+
+    def reset_burst(self, weapon_id: int) -> None:
+        self._last_recoil.pop(weapon_id, None)
+
+    # --- persistence ----
+    def to_json(self) -> dict:
+        return {str(k): v for k, v in self._patterns.items()}
+
+    def load_json(self, data: dict) -> None:
+        self._patterns = {}
+        for k, v in (data or {}).items():
+            try:
+                wid = int(k)
+                self._patterns[wid] = [(float(p), float(y)) for p, y in v]
+            except Exception:
+                continue
 
 
 class AimbotRCS:
@@ -534,9 +604,26 @@ class AimbotRCS:
         # Perf stats
         self.performance_stats = {'visibility_checks': 0, 'cache_hits': 0, 'avg_check_time': 0.0, 'last_reset': time.time()}
 
-        # Learning
+        # Learning — legacy (pitch,yaw,phase) cache, kept for backwards
+        # compatibility with old learn/*.json files written by v3.x. The v4
+        # aim core uses ``self.spray`` (WeaponSprayPattern) instead.
         self.learning_data = {}
         self.learning_dirty = False
+
+        # v4: per-weapon EMA-tracked spray pattern. Indexed by weapon_id,
+        # populated by observing m_predictableBaseAngle deltas while firing.
+        self.spray = WeaponSprayPattern()
+        self._last_aim_pc: float | None = None
+        # Reaction delay timer used by the v4 core (separate from the legacy
+        # `self.reaction_delay_until` which we keep for the old code path).
+        self._aim_engage_at: float = 0.0
+        # Curl-noise frequencies per channel. Three incommensurate sines per
+        # channel produce smooth time-correlated noise (no per-frame chatter).
+        self._curl_freqs = (
+            (0.83, 1.31, 2.07),  # pitch
+            (0.97, 1.49, 2.31),  # yaw
+            (0.71, 1.17, 1.91),  # tau wobble
+        )
 
         # Background tasks
         threading.Thread(target=self.periodic_save, daemon=True).start()
@@ -636,6 +723,15 @@ class AimbotRCS:
         learn_dir = getattr(self.cfg, "learn_dir", "learn")
         os.makedirs(learn_dir, exist_ok=True)
 
+        # v4: load per-weapon spray patterns from a single shared file.
+        try:
+            spray_path = os.path.join(learn_dir, "spray_patterns.json")
+            if os.path.exists(spray_path):
+                with open(spray_path, "r", encoding="utf-8") as f:
+                    self.spray.load_json(json.load(f))
+        except Exception as e:
+            print(f"[Aimbot] Failed to read spray_patterns.json: {e}")
+
         weapon_id = 0
         try:
             weapon_id = self.weapon_tracker.get_current_weapon_id() or 0
@@ -677,6 +773,18 @@ class AimbotRCS:
             return
         learn_dir = getattr(self.cfg, "learn_dir", "learn")
         os.makedirs(learn_dir, exist_ok=True)
+
+        # v4: persist spray patterns. One file shared across all weapons; the
+        # dict keys are weapon ids so loading them all on startup is cheap.
+        try:
+            spray_path = os.path.join(learn_dir, "spray_patterns.json")
+            tmp = spray_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.spray.to_json(), f, indent=2)
+                f.flush(); os.fsync(f.fileno())
+            os.replace(tmp, spray_path)
+        except Exception as e:
+            print(f"[Aimbot] Failed saving spray_patterns.json: {e}")
 
         try:
             weapon_id = self.weapon_tracker.get_current_weapon_id() or 0
@@ -931,48 +1039,63 @@ class AimbotRCS:
         return self._is_humanization_enabled() and bool(getattr(self.cfg, "aim_jitter_enabled", True))
 
 
+    # ---- v4 humanization: one curl-noise field, time-correlated -----------
+    def _curl(self, t: float, channel: int, scale: float = 1.0) -> float:
+        """Smooth, deterministic, bounded noise in [-1, 1].
+
+        Three incommensurate sines per channel produce something that looks
+        like a hand wobbling -- continuous in time, never spiky. Replaces
+        the old apply_aim_jitter + per-frame random.uniform stack that was
+        causing the visible chatter.
+        """
+        f1, f2, f3 = self._curl_freqs[channel % 3]
+        s = t * scale
+        return (math.sin(s * f1) + math.sin(s * f2) + math.sin(s * f3)) / 3.0
+
+    def _smoothness_to_tau(self, smoothness: float) -> float:
+        """Map UI slider (0..100) -> exponential time constant in seconds.
+
+        At 0 the aim is nearly instantaneous (10ms); at 100 it crawls to the
+        target over ~250ms. Empirically 35..60 feels like 'legit smooth'.
+        """
+        s = max(0.0, min(100.0, float(smoothness)))
+        return 0.010 + (s / 100.0) * 0.240
+
+    # ---- v4 reaction delay (single knob) ----------------------------------
+    def _begin_reaction_window(self, distance: float = 0.0) -> None:
+        """Start an aim-engage delay. Called once on target switch."""
+        if not self._is_humanization_enabled():
+            self._aim_engage_at = 0.0
+            return
+        ms = float(getattr(self.cfg, "aim_reaction_delay_ms", 60.0))
+        if ms <= 0.0:
+            self._aim_engage_at = 0.0
+            return
+        # Tiny humanization noise on the delay so two switches don't look identical.
+        jitter = random.uniform(-0.15, 0.25) * (ms * 0.001)
+        # Slight distance bias: farther targets take a touch longer.
+        dist_bonus = min(distance / 4000.0, 1.0) * 0.030
+        self._aim_engage_at = time.perf_counter() + (ms * 0.001) + jitter + dist_bonus
+
+    def _in_reaction_window(self) -> bool:
+        return time.perf_counter() < self._aim_engage_at
+
+    # ---- backwards-compat shims (no-ops in v4 but kept so old call sites
+    #      that survive in misc code paths don't AttributeError) -----------
     def apply_aim_jitter(self, pitch, yaw):
-        if not self._is_jitter_enabled():
-            return pitch, yaw
-        t = time.time()
-        # sinusoidal micro-shake
-        shake_x = math.sin(t * 6.5) * 0.08
-        shake_y = math.cos(t * 7.3) * 0.08
-        # slow drift
-        drift_x = math.sin(t * 0.5) * 0.05
-        drift_y = math.cos(t * 0.6) * 0.05
-        return pitch + shake_x + drift_x, yaw + shake_y + drift_y
+        return pitch, yaw
 
     def get_randomized_smooth(self, target_id):
-        if not self._is_humanization_enabled() or not getattr(self.cfg, "smooth_randomization", True):
-            return 1.0
-        return self.get_target_profile(target_id).get("smooth_mult", 1.0)
+        return 1.0
 
     def check_reaction_delay(self):
-        if not self._is_humanization_enabled() or not getattr(self.cfg, "reaction_delay_enabled", True):
-            return False
-        return time.time() < self.reaction_delay_until
+        return self._in_reaction_window()
 
     def trigger_reaction_delay(self, distance=0.0):
-        if not self._is_humanization_enabled() or not getattr(self.cfg, "reaction_delay_enabled", True):
-            return
-        # Distance-aware reaction
-        base_min, base_max = 0.02, 0.12
-        dist_factor = min(distance / 2000.0, 1.0)
-        min_delay = base_min + dist_factor * 0.05
-        max_delay = base_max + dist_factor * 0.15
-        self.reaction_delay_until = time.time() + random.uniform(min_delay, max_delay)
+        self._begin_reaction_window(distance)
 
     def should_apply_overshoot(self):
-        if not self._is_humanization_enabled() or not getattr(self.cfg, "overshoot_enabled", True):
-            return False
-        if not self.should_overshoot:
-            chance = getattr(self.cfg, "overshoot_chance", 0.15)
-            if random.random() < chance:
-                self.should_overshoot = True
-                self.overshoot_completed = False
-                return True
-        return self.should_overshoot and not self.overshoot_completed
+        return False
 
     # -----------------------------
     # Visibility (using ESP's check_player_visibility directly)
@@ -1305,147 +1428,106 @@ class AimbotRCS:
                         if dist < min_dist:
                             min_dist, target, target_pos, self.target_id = dist, pawn_ent, predicted, i
 
-                # Stickiness & switch handling
+                # Target switch -> begin reaction window, reset spray pattern,
+                # zero the smoothing remainder so the new path doesn't pop.
                 if self.target_id != self.prev_target_id:
-                    if self.prev_target_id is not None and (now - self.stickiness_timer) < float(hc.stickiness_time) and self.prev_target_id in entity_cache:
+                    if (self.prev_target_id is not None
+                            and (now - self.stickiness_timer) < float(hc.stickiness_time)
+                            and self.prev_target_id in entity_cache):
+                        # Stickiness: don't switch mid-burst.
                         self.target_id = self.prev_target_id
                     else:
                         self.reset_recoil()
                         distance_for_delay = math.sqrt(min_dist) if target_pos else 0.0
-                        self.trigger_reaction_delay(distance_for_delay)
-                        self.should_overshoot = False
-                        self.overshoot_completed = False
+                        self._begin_reaction_window(distance_for_delay)
                         self.smooth_ramp = 0.0
                         self.stickiness_timer = now
-                        post_switch_shaky_until = now + float(hc.post_switch_shaky_time)
+                        self.remainder_x = 0.0
+                        self.remainder_y = 0.0
+                        self._last_aim_pc = None
+                        if weapon_id:
+                            self.spray.reset_burst(weapon_id)
                 self.prev_target_id = self.target_id
 
-                # Frame dithering / micro-pauses are jitter-like randomness.
-                # When jitter is OFF the motion stays fully deterministic.
-                jitter_on = hc.humanization_enabled and hc.aim_jitter_enabled
-                if jitter_on:
-                    engage_drop = float(hc.engage_drop_probability)
-                    if now < post_switch_shaky_until:
-                        engage_drop *= 1.6
-                    if self.left_down and random.random() < engage_drop:
-                        time.sleep(frame_time); continue
-                    if not self.left_down and random.random() < float(hc.idle_drop_probability):
-                        time.sleep(frame_time); continue
-                    if self.left_down and random.random() < float(hc.micro_pause_chance):
-                        time.sleep(random.uniform(0.010, 0.028))
-
-                # Reaction delay wait
-                if self.check_reaction_delay():
+                # Wait out the reaction delay before any motion.
+                if self._in_reaction_window():
                     time.sleep(0.001); continue
 
-                # ----------------- Aim Core -----------------
+                # ----------------- v4 Aim Core -----------------
                 if self.left_down and target and target_pos:
                     self.shots_fired += 1
+                    now_pc = time.perf_counter()
+                    # Real per-tick dt -> frame-rate independent smoothing.
+                    if self._last_aim_pc is None:
+                        dt = frame_time
+                    else:
+                        dt = max(1e-4, min(0.050, now_pc - self._last_aim_pc))
+                    self._last_aim_pc = now_pc
+
+                    # (1) True aim target on the chosen bone, in view-angle space.
                     tp, ty = self.calc_angle(my_pos, target_pos)
 
-                    # RCS: delayed engagement based on time since aim start + shots
-                    time_since_start = (time.perf_counter() - (self.aim_start_time or time.perf_counter()))
-                    rcs_scale_t = max(0.0, min(1.0, time_since_start / max(0.005, float(hc.rcs_delay_seconds))))
-                    burst_scale = min(self.shots_fired / 3.0, 1.0)
-                    scale = float(hc.rcs_scale) * max(rcs_scale_t, 0.35) * burst_scale
+                    # (2) RCS — counter game recoil. Ramps in over rcs_delay_seconds
+                    # so the very first shot of a burst doesn't slam us downward.
+                    time_since_start = now_pc - (self.aim_start_time or now_pc)
+                    rcs_ramp = max(0.30, min(1.0, time_since_start /
+                                             max(0.005, float(hc.rcs_delay_seconds))))
+                    rcs = float(hc.rcs_scale) * rcs_ramp
+                    tp -= recoil_pitch * rcs
+                    ty -= recoil_yaw   * rcs
 
-                    comp_pitch = tp - (recoil_pitch * scale)
-                    comp_yaw   = ty - (recoil_yaw   * scale)
+                    # (3) Learned spray pattern. Observe the live recoil delta
+                    # and EMA-update; pre-apply the inverse so the crosshair
+                    # fights the next shot before we feel it.
+                    if hc.enable_learning and weapon_id:
+                        sp_dp, sp_dy = self.spray.correction(weapon_id, self.shots_fired)
+                        tp += sp_dp
+                        ty += sp_dy
+                        self.spray.observe(weapon_id, self.shots_fired,
+                                           (recoil_pitch, recoil_yaw))
 
-                    # Per-frame clamp
-                    comp_pitch = self.clamp_angle_diff(pitch, comp_pitch, max_delta=5.0)
-                    comp_yaw   = self.clamp_angle_diff(yaw,   comp_yaw,   max_delta=5.0)
+                    # (4) Humanization curl — single smooth-noise source.
+                    # Amplitude scales with remaining error so on-target sits
+                    # still; far away gives 'human' approach drift.
+                    err_p = self.angle_diff(tp, pitch)
+                    err_y = self.angle_diff(ty, yaw)
+                    err_mag = math.hypot(err_p, err_y)
+                    if hc.humanization_enabled:
+                        strength = float(getattr(self.cfg,
+                                                 "humanization_strength", 0.5))
+                        amp = strength * min(0.18, 0.02 + 0.030 * min(err_mag, 5.0))
+                        tp += self._curl(now_pc, 0) * amp
+                        ty += self._curl(now_pc, 1) * amp
 
-                    # Learning corrections
-                    key = self.quantize_angle(comp_pitch, comp_yaw, self.shots_fired)
-                    distance = math.dist(my_pos, target_pos) if my_pos and target_pos else 0.0
-                    bone_idx = self.get_current_bone_index(target, my_pos, pitch, yaw)
-                    vel = self.read_vec3(target + self.o.m_vecVelocity) if target else None
+                    # (5) Frame-rate-independent exponential smoothing.
+                    #   alpha = 1 - exp(-dt / tau)
+                    # gives smooth convergence with no oscillation at any FPS.
+                    # A small tau-wobble adds 'hand' feel without chatter.
+                    smoothness = float(getattr(self.cfg, "aim_smoothness", 50))
+                    tau = self._smoothness_to_tau(smoothness)
+                    if hc.humanization_enabled:
+                        tau *= (0.85 + 0.20 * (1.0 + self._curl(now_pc, 2, 0.4)) * 0.5)
+                    alpha = 1.0 - math.exp(-dt / max(0.008, tau))
 
-                    dp, dy = self.get_learned_correction(key, distance=distance, bone=bone_idx, velocity=vel)
-                    self.update_learning(key, dp, dy, distance=distance, bone=bone_idx, velocity=vel)
-
-                    # Blend recent human deltas
-                    if hc.enable_mouse_recording:
-                        human_dp, human_dy = self.sample_recent_human_correction(8)
-                        magnitude = math.hypot(comp_pitch - pitch, comp_yaw - yaw)
-                        dyn_blend = max(0.1, float(hc.human_blend) * (1.0 - min(magnitude / 15.0, 0.8)))
-                        if abs(human_dp) < 2.0 and abs(human_dy) < 2.0:
-                            dp = (1 - dyn_blend) * dp + dyn_blend * human_dp
-                            dy = (1 - dyn_blend) * dy + dyn_blend * human_dy
-
-                    comp_pitch += dp
-                    comp_yaw   += dy
-
-                    # Per-target profile + smoothing ramp
-                    profile = self.get_target_profile(self.target_id or 0)
-                    dyn_smooth = min(profile["smoothing"] + (self.shots_fired * 0.0013), 0.14)
-                    self.smooth_ramp = min(1.0, self.smooth_ramp + frame_time * float(hc.smooth_ramp_speed))
-                    # Start slightly jerky then smooth out
-                    ramp = self.ease_in_out_quad(self.smooth_ramp)
-                    smooth = max(0.01, dyn_smooth * (0.55 + 0.45 * ramp))
-                    smooth *= self.get_randomized_smooth(self.target_id or 0)
-
-                    # Overshoot & short decay (single time.time() call reused)
-                    overshoot_decay_s = float(hc.overshoot_decay_time)
-                    if self.should_apply_overshoot():
-                        overshoot_mult = float(hc.overshoot_amount)
-                        comp_pitch = pitch + (comp_pitch - pitch) * overshoot_mult
-                        comp_yaw   = yaw  + (comp_yaw   - yaw)  * overshoot_mult
-                        self.overshoot_completed = True
-                        self.overshoot_decay_until = now + overshoot_decay_s
-
-                    if now < self.overshoot_decay_until:
-                        decay_factor = max(0.0, (self.overshoot_decay_until - now) / overshoot_decay_s)
-                        comp_pitch = pitch + (comp_pitch - pitch) * decay_factor
-                        comp_yaw   = yaw  + (comp_yaw   - yaw)  * decay_factor
-
-                    # Interpolate once (ease-out-ish)
-                    t = self.ease_out_cubic(smooth * 1.12)
-                    sp = self.lerp(pitch, comp_pitch, t)
-                    sy = self.lerp(yaw,   comp_yaw,   t)
+                    sp = pitch + alpha * self.angle_diff(tp, pitch)
+                    sy = yaw   + alpha * self.angle_diff(ty, yaw)
                     sp, sy = self.normalize(sp, sy)
 
-                    # Micro jitter & drift
-                    if self._is_jitter_enabled():
-                        jitter = profile.get("jitter", 0.22)
-                        sp += random.uniform(-jitter, jitter)
-                        sy += random.uniform(-jitter, jitter)
-                        sp, sy = self.apply_aim_jitter(sp, sy)
-
-                    # Snap if very close
-                    if abs(sp - pitch) < 0.18: sp = comp_pitch
-                    if abs(sy - yaw)   < 0.18: sy = comp_yaw
-
-                    # Convert angle delta to mouse counts.
-                    # CS2 mouse math:
-                    #   degrees = mouse_count * m_yaw * player_sensitivity
-                    # So:
-                    #   mouse_count = degrees / (m_yaw * player_sensitivity)
-                    # m_yaw is the fixed 0.022 cvar; player_sensitivity is
-                    # read live from client.dll each frame so changing in-game
-                    # sens no longer breaks aim distance.
+                    # (6) Convert to mouse counts using LIVE in-game sensitivity.
+                    #   degrees = counts * m_yaw * player_sensitivity
+                    # so counts = degrees / (m_yaw * sens). The remainder
+                    # accumulator carries sub-pixel motion across frames so
+                    # smoothed deltas under 1 count/frame still progress.
                     player_sens = self.read_player_sensitivity() or 1.0
-                    counts_per_deg = 1.0 / max(0.0001, float(hc.m_yaw) * player_sens)
-                    raw_dx = -(sy - yaw)   * counts_per_deg
-                    raw_dy = -(sp - pitch) * counts_per_deg * float(hc.invert_y)
+                    counts_per_deg = 1.0 / max(1e-4, float(hc.m_yaw) * player_sens)
+                    raw_dx = -self.angle_diff(sy, yaw)   * counts_per_deg
+                    raw_dy = -self.angle_diff(sp, pitch) * counts_per_deg * float(hc.invert_y)
 
+                    # Per-frame mouse-count cap (anti-snap on huge flicks).
                     max_move = float(hc.max_mouse_move)
-                    if jitter_on:
-                        jitter_clamp = float(hc.max_move_jitter)
-                        local_max = max_move + random.uniform(-jitter_clamp, jitter_clamp)
-                        raw_dx = max(min(raw_dx, local_max), -local_max)
-                        raw_dy = max(min(raw_dy, local_max), -local_max)
-                        raw_dx += random.uniform(-0.14, 0.14)
-                        raw_dy += random.uniform(-0.14, 0.14)
-                    else:
-                        raw_dx = max(min(raw_dx, max_move), -max_move)
-                        raw_dy = max(min(raw_dy, max_move), -max_move)
+                    raw_dx = max(min(raw_dx, max_move), -max_move)
+                    raw_dy = max(min(raw_dy, max_move), -max_move)
 
-                    # Sub-pixel remainder accumulation (matches GHax_Free_v2
-                    # AimControl::AimBot RemainderX/Y). Without this, smoothed
-                    # deltas under 1 px/frame are int-truncated to zero and
-                    # the aim stalls indefinitely on small adjustments.
                     raw_dx += self.remainder_x
                     raw_dy += self.remainder_y
                     mouse_dx = int(raw_dx)
@@ -1456,12 +1538,25 @@ class AimbotRCS:
                     self.last_aim_angle = (sp, sy)
                 else:
                     self.reset_recoil()
+                    self._last_aim_pc = None
+                    self.remainder_x = 0.0
+                    self.remainder_y = 0.0
 
                 if mouse_dx or mouse_dy:
                     move_mouse(mouse_dx, mouse_dy)
 
             except Exception as e:
-                print(f"[!] AimbotRCS error: {e}")
+                # Print + log the type so attribute-name typos surface in
+                # gfusion_debug.log instead of being swallowed silently.
+                import traceback
+                tb = traceback.format_exc().splitlines()
+                print(f"[!] AimbotRCS error: {type(e).__name__}: {e}")
+                if tb:
+                    print("    ", tb[-2] if len(tb) >= 2 else tb[-1])
+                try:
+                    logging.error(f"AimbotRCS error: {type(e).__name__}: {e}")
+                except Exception:
+                    pass
                 time.sleep(0.05)
 
             elapsed = time.perf_counter() - start_time
